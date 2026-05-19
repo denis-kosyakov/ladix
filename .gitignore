@@ -1,0 +1,41 @@
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dist/
+build/
+coverage/
+
+# Java
+*.class
+target/
+out/
+
+# Go
+bin/
+*.test
+
+# Rust
+target/
+
+# IDE
+.idea/
+.vscode/
+
