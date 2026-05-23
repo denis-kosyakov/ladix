@@ -39,3 +39,6 @@ target/
 .idea/
 .vscode/
 
+# Claude
+.claude/settings.local.json
+
