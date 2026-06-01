@@ -1,50 +1,164 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+SYNC IMPACT REPORT
+==================
+Version change: (незаполненный шаблон) → 1.0.0
+Bump rationale: первичная ратификация конституции — переход от template-плейсхолдеров
+                к конкретному набору из 9 обязательных принципов. Первичная adoption по semver = 1.0.0.
+
+Modified principles: первичное определение, переименований нет.
+Newly defined principles (I–IX):
+  I.    Язык и сборка
+  II.   Парсинг — ручной
+  III.  Ошибки — явные типы
+  IV.   Позиции — сквозные
+  V.    Без глобального состояния
+  VI.   Тесты — вперёд (лексер и парсер)
+  VII.  Раскладка проекта
+  VIII. Язык сообщений
+  IX.   Спека — источник истины
+
+Added sections: Core Principles (I–IX), Governance.
+Removed sections: плейсхолдеры шаблона [SECTION_2_*]/[SECTION_3_*] не инстанцированы —
+                  все ограничения выражены как принципы; отдельные «Additional Constraints»/
+                  «Development Workflow» секции не требуются.
+
+Templates / artifacts consistency:
+  ✅ .specify/templates/plan-template.md   — «Constitution Check» подтягивает правила
+                                             динамически, хардкод-ссылок нет; правок не требует.
+  ✅ .specify/templates/spec-template.md   — generic, принцип-специфичных слотов нет.
+  ✅ .specify/templates/tasks-template.md  — generic; принцип VI (tests-first для лексера/парсера)
+                                             совместим с OPTIONAL-тестами шаблона, конфликта нет.
+  ✅ .specify/templates/checklist-template.md — generic.
+  ✅ .specify/extensions/git/commands/*    — без устаревших ссылок на принципы.
+
+Deferred TODOs: нет. Принципы III/IV/VII кодируют ast-local модель Position (D1 решён в пользу ARCHITECTURE §2.1/§4.1; Position дублируется, не разделяется). Версия остаётся 1.0.0. Ratification date известна (первичная ратификация сегодня).
+-->
+
+# Ladix Constitution
+
+Ladix — интерпретатор DSL для управления бизнесом; язык реализации — Go. Эта конституция
+обязательна для всех артефактов Spec Kit (`/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
+`/speckit-implement`, `/speckit-clarify`, `/speckit-analyze`, `/speckit-checklist`) и имеет
+приоритет над их дефолтами. Нормативные термины: **ОБЯЗАН** — жёсткое требование, **ЗАПРЕЩЕНО** —
+жёсткий запрет, **ДОПУСКАЕТСЯ** — явно разрешённое исключение.
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Язык и сборка
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+- Целевой Go — **1.22+**. Код ОБЯЗАН быть идиоматичным: `gofmt`-форматирование обязательно,
+  `go vet ./...` проходит **без замечаний**.
+- CGO **ЗАПРЕЩЕН**. Артефакт сборки — один статический бинарник `ladix` через `go build`;
+  кросс-компиляция под Windows/macOS/Linux выполняется одной командой.
+- Единственная внешняя зависимость для хранилища — `modernc.org/sqlite` (чистый Go, без CGO).
+  Иные тяжёлые зависимости вводить **ЗАПРЕЩЕНО** без явного зафиксированного решения.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+**Rationale**: предсказуемая дистрибуция (один файл, любая платформа) и отсутствие
+C-toolchain делают установку и кросс-сборку тривиальными; ограничение зависимостей удерживает
+поверхность поддержки и аудита минимальной.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### II. Парсинг — ручной
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+- Лексер и парсер ОБЯЗАНЫ быть написаны вручную (recursive descent).
+- Генераторы парсеров и комбинаторы (participle, goyacc, ANTLR и т. п.) использовать **ЗАПРЕЩЕНО**.
+- Токенизация — посимвольный сканер; регулярные выражения для токенизации применять **ЗАПРЕЩЕНО**.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+**Rationale**: ручной разбор даёт полный контроль над позициями и диагностикой (см. принцип IV),
+понятные сообщения об ошибках и отсутствие скрытой кодогенерации в графе сборки.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### III. Ошибки — явные типы
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+- Ошибки ОБЯЗАНЫ моделироваться явными типами в пакете `internal/errors`
+  (например `LexError`, `ParseError`, …), каждый несёт встраиваемую `Position{ Line, Col int }` пакета `errors`.
+- Сравнение и развёртка ошибок — через `errors.Is` / `errors.As`; сентинелы объявляются явно.
+- В штатных путях паниковать **ЗАПРЕЩЕНО**. Паника ДОПУСКАЕТСЯ только как инвариант
+  «не должно случиться». На границе каждой CLI-подкоманды ОБЯЗАН стоять `recover`-барьер,
+  превращающий любую панику в дженерик «внутренняя ошибка интерпретатора» — **без Go stack trace**.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+**Rationale**: типизированные ошибки с позициями дают точную, тестируемую диагностику и
+устойчивую обработку, а recover-барьер защищает пользователя от утечки внутренних деталей рантайма.
+
+### IV. Позиции — сквозные
+
+- `Position{Line, Col}` (оба отсчёта **с 1**) ОБЯЗАТЕЛЬНА на КАЖДОМ токене и КАЖДОМ узле AST
+  и протаскивается до рантайма. Узлы `ast` несут **локальную** `Position` пакета `ast`
+  (не импортируют `errors`) — это сохраняет листовость `ast` (D1 решён в пользу
+  ARCHITECTURE §2.1/§4.1); токены и `errors` несут свою `Position`. Тип **дублируется, не разделяется**.
+- Любая пользовательская ошибка (лексическая, синтаксическая, семантическая, типа, выполнения,
+  процесса) ОБЯЗАНА печатать **строку И колонку**.
+- Строки и колонки считаются в **рунах** (Unicode code points), не в байтах — язык кириллический.
+
+**Rationale**: точная локализация ошибки в координатах исходника — базовое удобство языка;
+подсчёт в рунах гарантирует корректные колонки для кириллицы и любого Unicode.
+
+### V. Без глобального состояния
+
+- Изменяемое состояние уровня пакета **ЗАПРЕЩЕНО**.
+- Лексер, парсер, интерпретатор и движок — значения/структуры, создаваемые явно и
+  передаваемые через параметры (включая `context.Context` там, где нужна отменяемость/таймеры).
+- Зависимости ОБЯЗАНЫ инжектироваться (например, `Store` — интерфейс).
+
+**Rationale**: отсутствие глобалов даёт тестируемость, параллельную безопасность и
+переиспользуемость компонентов без скрытых связей и гонок.
+
+### VI. Тесты — вперёд (лексер и парсер)
+
+- Лексер и парсер разрабатываются **tests-first**: табличные (table-driven) тесты на каждую
+  категорию токенов / правило грамматики **И** на ошибочные кейсы пишутся до/вместе с кодом.
+- Тесты — часть **каждой** задачи, а не «потом».
+- `testify/require` ДОПУСКАЕТСЯ точечно; злоупотреблять им ЗАПРЕЩЕНО.
+
+**Rationale**: грамматика и токенизатор — фундамент языка; ранние табличные тесты, включая
+негативные кейсы, фиксируют контракт диагностики и предотвращают регрессии при расширении.
+
+### VII. Раскладка проекта
+
+- Стандартная Go-раскладка: `cmd/ladix/` (точка входа) и `internal/` с пакетами
+  `lexer`, `parser`, `ast`, `value`, `errors`, `eval`, `engine`, `store`.
+- Граф зависимостей ОБЯЗАН быть **без циклов**; `internal/value`, `internal/errors` и
+  `internal/ast` — **листовые** (на них опираются, они ни на кого выше не опираются;
+  `ast` держит локальную `Position`, не импортируя `errors`).
+- Детали графа зависимостей фиксируются в `ARCHITECTURE.md`.
+
+**Rationale**: единая предсказуемая раскладка и ацикличный граф с листовыми `value`/`errors`/`ast`
+удерживают архитектуру связной и навигируемой по мере роста.
+
+### VIII. Язык сообщений
+
+- ВСЕ пользовательские сообщения (ошибки, предупреждения, вывод CLI) ОБЯЗАНЫ быть **на русском**,
+  по канону SPEC §13 — двухстрочный формат «Ошибка в строке N, колонка M:».
+- Английский ДОПУСКАЕТСЯ только в Go-коде, идентификаторах и комментариях.
+- Тексты диагностик берутся **дословно** из SPEC §13 / docs; переформулировать их ЗАПРЕЩЕНО.
+
+**Rationale**: целевая аудитория — русскоязычная; единый дословный канон сообщений делает
+диагностику узнаваемой, переводимой в тесты «как есть» и стабильной между версиями.
+
+### IX. Спека — источник истины
+
+- Поведение определяется размещёнными документами: `SPEC.md`, `docs/grammar.md`,
+  `docs/execution-model.md`, `docs/stdlib.md`, `ARCHITECTURE.md`, `README.md`.
+- Если в задаче чего-то не хватает или есть противоречие — это сигнал **остановиться и спросить**,
+  а не додумывать. Принимать недокументированные решения молча ЗАПРЕЩЕНО.
+
+**Rationale**: единый письменный источник истины предотвращает расхождение реализации и
+намерения; явная остановка на пробелах дешевле, чем переделка по неверной догадке.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- **Верховенство.** Эта конституция имеет приоритет над дефолтами шаблонов и команд Spec Kit.
+  При конфликте принципа и шаблона — действует принцип. Принципы I–IX — обязательны (не «по
+  возможности»).
+- **Поправки.** Изменение принципа оформляется правкой этого файла с обновлением версии, даты
+  `Last Amended` и Sync Impact Report; затронутые шаблоны/команды приводятся в соответствие в той
+  же правке.
+- **Версионирование (semver).**
+  - **MAJOR** — несовместимое удаление или переопределение принципа/правила управления.
+  - **MINOR** — добавление нового принципа/раздела или существенное расширение требований.
+  - **PATCH** — уточнения формулировок, опечатки, не меняющие смысла.
+- **Контроль соответствия.** Каждый `/speckit-plan` ОБЯЗАН пройти секцию «Constitution Check»;
+  нарушение принципа допускается только с записью в «Complexity Tracking» (что, зачем, почему
+  более простой путь отвергнут). Ревью PR проверяет соответствие принципам I–IX.
+- **Источник истины при сомнении.** Спорные места поведения разрешаются документами из принципа IX;
+  при их пробеле — остановка и вопрос, а не догадка.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-06-01 | **Last Amended**: 2026-06-01
