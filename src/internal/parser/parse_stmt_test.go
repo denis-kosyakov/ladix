@@ -139,3 +139,153 @@ func TestExamplesParseCleanP1(t *testing.T) {
 		})
 	}
 }
+
+// firstParseError возвращает первую накопленную ошибку как ParseError.
+func firstParseError(t *testing.T, el *errors.ErrorList) errors.ParseError {
+	t.Helper()
+	if el.Len() == 0 {
+		t.Fatalf("ошибок нет")
+	}
+	pe, ok := el.Errors()[0].(errors.ParseError)
+	if !ok {
+		t.Fatalf("первая ошибка не ParseError: %T", el.Errors()[0])
+	}
+	return pe
+}
+
+// T029: условия/циклы/блоки, вложенность, голый/значимый вернуть, SE-EMPTY-BLOCK,
+// иначеесли слитно → SE-EXPECTED, примеры условие/цикл parse-clean.
+
+func TestIfElseChain(t *testing.T) {
+	src := "если a >= 10000:\n    c = 1\nиначе если a >= 3000:\n    c = 2\nиначе:\n    c = 3\n"
+	prog, el := parseProgramSrc(t, src)
+	if !el.Empty() {
+		t.Fatalf("ошибки: %v", el.Error())
+	}
+	is, ok := prog.Items[0].(*ast.IfStmt)
+	if !ok {
+		t.Fatalf("Items[0] = %T, хотим *IfStmt", prog.Items[0])
+	}
+	if sexpr(is.Cond) != "(>= a 10000)" {
+		t.Errorf("Cond = %s", sexpr(is.Cond))
+	}
+	if is.Else == nil || is.Else.IsFinal() {
+		t.Fatalf("Else должен быть ветвью 'иначе если'")
+	}
+	if sexpr(is.Else.Cond) != "(>= a 3000)" {
+		t.Errorf("else-if Cond = %s", sexpr(is.Else.Cond))
+	}
+	if is.Else.Else == nil || !is.Else.Else.IsFinal() {
+		t.Errorf("последняя ветвь должна быть финальным 'иначе'")
+	}
+}
+
+func TestNestedBlocks(t *testing.T) {
+	src := "для i в r:\n    если c:\n        прервать\n    x = 1\n"
+	prog, el := parseProgramSrc(t, src)
+	if !el.Empty() {
+		t.Fatalf("ошибки: %v", el.Error())
+	}
+	fs, ok := prog.Items[0].(*ast.ForStmt)
+	if !ok {
+		t.Fatalf("Items[0] = %T, хотим *ForStmt", prog.Items[0])
+	}
+	if fs.Var.Name != "i" {
+		t.Errorf("Var = %q, хотим i", fs.Var.Name)
+	}
+	if len(fs.Body.Stmts) != 2 {
+		t.Fatalf("тело для: %d операторов, хотим 2 (если + присваивание)", len(fs.Body.Stmts))
+	}
+	inner, ok := fs.Body.Stmts[0].(*ast.IfStmt)
+	if !ok {
+		t.Fatalf("вложенный[0] = %T, хотим *IfStmt", fs.Body.Stmts[0])
+	}
+	if len(inner.Then.Stmts) != 1 {
+		t.Fatalf("тело если: %d, хотим 1", len(inner.Then.Stmts))
+	}
+	if _, ok := inner.Then.Stmts[0].(*ast.BreakStmt); !ok {
+		t.Errorf("вложенный оператор = %T, хотим *BreakStmt", inner.Then.Stmts[0])
+	}
+}
+
+func TestForCallIterableAndWhileBreak(t *testing.T) {
+	prog, el := parseProgramSrc(t, "для i в диапазон(1, 11):\n    x = i\n")
+	if !el.Empty() {
+		t.Fatalf("for: ошибки %v", el.Error())
+	}
+	fs := prog.Items[0].(*ast.ForStmt)
+	if sexpr(fs.Iterable) != "(call диапазон 1 11)" {
+		t.Errorf("Iterable = %s, хотим (call диапазон 1 11)", sexpr(fs.Iterable))
+	}
+
+	prog2, el2 := parseProgramSrc(t, "пока истина:\n    прервать\n")
+	if !el2.Empty() {
+		t.Fatalf("while: ошибки %v", el2.Error())
+	}
+	ws := prog2.Items[0].(*ast.WhileStmt)
+	if sexpr(ws.Cond) != "истина" {
+		t.Errorf("while Cond = %s", sexpr(ws.Cond))
+	}
+	if _, ok := ws.Body.Stmts[0].(*ast.BreakStmt); !ok {
+		t.Errorf("тело пока: %T, хотим *BreakStmt", ws.Body.Stmts[0])
+	}
+}
+
+func TestReturnBareAndValue(t *testing.T) {
+	// внутри функции тела (используем блок если, чтобы вернуть был в блоке)
+	prog, el := parseProgramSrc(t, "если c:\n    вернуть\nиначе:\n    вернуть x + 1\n")
+	if !el.Empty() {
+		t.Fatalf("ошибки: %v", el.Error())
+	}
+	is := prog.Items[0].(*ast.IfStmt)
+	bare, ok := is.Then.Stmts[0].(*ast.ReturnStmt)
+	if !ok || bare.Value != nil {
+		t.Errorf("голый вернуть: %+v", is.Then.Stmts[0])
+	}
+	withVal := is.Else.Body.Stmts[0].(*ast.ReturnStmt)
+	if withVal.Value == nil || sexpr(withVal.Value) != "(+ x 1)" {
+		t.Errorf("вернуть E: %v", withVal.Value)
+	}
+}
+
+func TestEmptyBlockError(t *testing.T) {
+	// тело если пустое: следующая строка на том же уровне (INDENT не эмитится)
+	_, el := parseProgramSrc(t, "если x:\nпечать(1)\n")
+	pe := firstParseError(t, el)
+	if pe.Msg != msgEmptyBlock {
+		t.Errorf("Msg = %q, хотим %q", pe.Msg, msgEmptyBlock)
+	}
+	if pe.Pos.Line != 2 || pe.Pos.Col != 1 {
+		t.Errorf("позиция SE-EMPTY-BLOCK = %+v, хотим {2,1}", pe.Pos)
+	}
+}
+
+func TestElseIfGluedError(t *testing.T) {
+	// 'иначеесли' слитно — это IDENT, не KW_ELSE KW_IF → SE-EXPECTED 'конец строки'
+	src := "если x:\n    a = 1\nиначеесли C:\n    b = 2\n"
+	_, el := parseProgramSrc(t, src)
+	pe := firstParseError(t, el)
+	if pe.Msg != "ожидалось 'конец строки', получено 'C'" {
+		t.Errorf("Msg = %q, хотим \"ожидалось 'конец строки', получено 'C'\"", pe.Msg)
+	}
+	if pe.Pos.Line != 3 || pe.Pos.Col != 11 {
+		t.Errorf("позиция = %+v, хотим {3,11} (токен 'C' после 'иначеесли ')", pe.Pos)
+	}
+}
+
+func TestExamplesParseCleanP2a(t *testing.T) {
+	for _, name := range []string{"условие.ladix", "цикл.ladix"} {
+		t.Run(name, func(t *testing.T) {
+			prog, el, lexErrs := parseExampleFile(t, name)
+			if !lexErrs.Empty() {
+				t.Fatalf("%s: лексические ошибки: %v", name, lexErrs.Error())
+			}
+			if !el.Empty() {
+				t.Fatalf("%s: синтаксические ошибки: %v", name, el.Error())
+			}
+			if len(prog.Items) == 0 {
+				t.Errorf("%s: пустой Program.Items", name)
+			}
+		})
+	}
+}
