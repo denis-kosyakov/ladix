@@ -6,16 +6,35 @@ import (
 )
 
 // parseTopLevelItem разбирает один элемент верхнего уровня: функция →
-// FunctionDecl, иначе — statement. nil-результат (поглощённая ошибочная
-// конструкция) вызывающий пропускает.
+// FunctionDecl; отложенные декларации/значение/{ } → SE-UNEXPECTED; иначе —
+// statement. nil-результат (поглощённая ошибочная конструкция) вызывающий
+// пропускает.
 func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
 	if p.check(lexer.KW_FUNC) {
 		return p.parseFunctionDecl()
+	}
+	if isUnexpectedTopLevel(p.peek().Type) {
+		bad := p.advance() // потребляем ведущий токен (прогресс), затем синхронизация
+		p.error(bad.Pos, msgUnexpected(bad))
+		return nil
 	}
 	if s := p.parseStatement(); s != nil {
 		return s
 	}
 	return nil
+}
+
+// isUnexpectedTopLevel — ведущие токены, недопустимые на верхнем уровне scope B:
+// отложенные декларации (источник/метрика/процесс/когда), значение, фигурные
+// скобки. Все дают SE-UNEXPECTED (FR-017, guardrail 12).
+func isUnexpectedTopLevel(t lexer.TokenType) bool {
+	switch t {
+	case lexer.KW_SOURCE, lexer.KW_METRIC, lexer.KW_PROCESS, lexer.KW_WHEN,
+		lexer.KW_VALUE, lexer.LBRACE, lexer.RBRACE:
+		return true
+	default:
+		return false
+	}
 }
 
 // parseStatement — диспетчер по ведущему токену. Ветви управления (US3) и
@@ -50,7 +69,7 @@ func (p *Parser) parseStatement() ast.Statement {
 // синтаксически (grammar §4) → SE-NESTED-FN на токене функция. Структура
 // поглощается best-effort; statement не порождается (вызывающий пропускает nil).
 func (p *Parser) parseNestedFunc() ast.Statement {
-	p.error(p.peek().Pos, msgNestedFn)
+	p.errorLocal(p.peek().Pos, msgNestedFn)
 	p.parseFunctionDecl() // поглотить тело, результат отбросить
 	return nil
 }
@@ -114,7 +133,7 @@ func (p *Parser) parseExprStatement() ast.Statement {
 		if id, ok := expr.(*ast.Ident); ok {
 			return ast.NewAssignStmt(*id, value)
 		}
-		p.error(assignTok.Pos, msgAssignTarget)
+		p.errorLocal(assignTok.Pos, msgAssignTarget)
 		return ast.NewExpressionStmt(expr) // best-effort: дерево остаётся валидным
 	}
 	p.expect(lexer.NEWLINE, "конец строки")
@@ -128,14 +147,19 @@ func (p *Parser) parseExprStatement() ast.Statement {
 func (p *Parser) parseBlock() *ast.Block {
 	p.expect(lexer.NEWLINE, "конец строки")
 	if !p.check(lexer.INDENT) {
-		p.error(p.peek().Pos, msgEmptyBlock)
+		p.errorLocal(p.peek().Pos, msgEmptyBlock)
 		return ast.NewBlock(toASTPos(p.peek().Pos), nil)
 	}
 	indent := p.advance() // INDENT
 	var stmts []ast.Statement
 	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
+		p.suppress = false // граница оператора внутри блока
+		before := p.pos
 		if s := p.parseStatement(); s != nil {
 			stmts = append(stmts, s)
+		}
+		if p.pos == before {
+			p.advance() // backstop: гарантия прогресса
 		}
 	}
 	p.expect(lexer.DEDENT, "конец блока")

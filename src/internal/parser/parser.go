@@ -73,24 +73,41 @@ func (p *Parser) match(t lexer.TokenType) bool {
 }
 
 // expect потребляет токен вида t. При несовпадении эмитит SE-EXPECTED
-// (ожидалось expected) на позиции текущего токена и возвращает ok=false БЕЗ
-// продвижения (вызвавший решает про восстановление — US5).
+// (ожидалось expected) на позиции проблемного токена и возвращает его с ok=false;
+// error() при этом синхронизируется (panic-mode), так что курсор сдвигается к
+// точке возобновления.
 func (p *Parser) expect(t lexer.TokenType, expected string) (lexer.Token, bool) {
 	if p.check(t) {
 		return p.advance(), true
 	}
-	p.error(p.peek().Pos, msgExpected(expected, p.peek()))
-	return p.peek(), false
+	bad := p.peek()
+	p.error(bad.Pos, msgExpected(expected, bad))
+	return bad, false
 }
 
-// error регистрирует синтаксическую ошибку в общем накопителе. В Фазе 0 флаг
-// подавления — заглушка (всегда false); полное panic-mode-восстановление со
-// сбросом suppress в точке синхронизации подключается в US5 (recover.go).
+// error регистрирует синтаксическую ошибку «потерянного» парсера (SE-EXPECTED/
+// SE-UNEXPECTED): ставит panic-mode-флаг и синхронизируется до ближайшего
+// синхро-токена (recover.go). До снятия suppress (граница оператора) новые ошибки
+// не регистрируются — фантомный каскад исключён (FR-025/FR-026).
 func (p *Parser) error(pos errors.Position, msg string) {
 	if p.suppress {
 		return
 	}
 	p.errs.Add(errors.ParseError{Pos: pos, Msg: msg})
+	p.suppress = true
+	p.synchronize()
+}
+
+// errorLocal регистрирует ошибку, после которой парсер восстанавливается ЛОКАЛЬНО
+// и продолжает штатно (SE-CHAIN/SE-INT-RANGE/SE-ASSIGN-TARGET/SE-EMPTY-BLOCK/
+// SE-NESTED-FN): ставит panic-mode-флаг без синхронизации (узел уже построен
+// best-effort, пропускать токены не нужно).
+func (p *Parser) errorLocal(pos errors.Position, msg string) {
+	if p.suppress {
+		return
+	}
+	p.errs.Add(errors.ParseError{Pos: pos, Msg: msg})
+	p.suppress = true
 }
 
 // Parse — точка входа: строит Program из top-level-элементов до EOF и фиксирует
@@ -98,8 +115,13 @@ func (p *Parser) error(pos errors.Position, msg string) {
 func (p *Parser) Parse() *ast.Program {
 	prog := &ast.Program{}
 	for !p.check(lexer.EOF) {
+		p.suppress = false // граница оператора: снимаем panic-mode
+		before := p.pos
 		if item := p.parseTopLevelItem(); item != nil {
 			prog.Items = append(prog.Items, item)
+		}
+		if p.pos == before {
+			p.advance() // backstop: гарантия прогресса
 		}
 	}
 	prog.EOFPos = toASTPos(p.peek().Pos)

@@ -70,7 +70,8 @@ func (p *Parser) parseComparison() ast.Expression {
 	result := ast.NewBinaryExpr(toASTPos(opTok.Pos), op, left, right)
 
 	if _, chained := compOpOf(p.peek().Type); chained {
-		p.error(p.peek().Pos, msgChain)
+		p.errorLocal(p.peek().Pos, msgChain)
+		// Локальное восстановление: дочитать остаток цепочки без новых ошибок.
 		for {
 			if _, more := compOpOf(p.peek().Type); !more {
 				break
@@ -195,10 +196,10 @@ func (p *Parser) parsePrimary() ast.Expression {
 	case lexer.KW_RUN:
 		return p.parseRunProcess()
 	default:
-		// Ведущий токен не начинает выражение → SE-UNEXPECTED; узел-заглушка,
-		// чтобы вернуть валидное дерево. advance даёт прогресс (до US5 panic-mode).
+		// Ведущий токен не начинает выражение → SE-UNEXPECTED; error()
+		// синхронизируется (пропускает junk до точки возобновления). Возвращаем
+		// узел-заглушку, чтобы дерево осталось валидным.
 		p.error(t.Pos, msgUnexpected(t))
-		p.advance()
 		return ast.NewNoneLit(toASTPos(t.Pos))
 	}
 }

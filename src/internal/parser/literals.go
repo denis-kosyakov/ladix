@@ -14,7 +14,7 @@ import (
 func (p *Parser) buildIntLit(t lexer.Token) *ast.IntLit {
 	v, err := strconv.ParseInt(t.Lexeme, 10, 64)
 	if err != nil {
-		p.error(t.Pos, msgIntRange(t.Lexeme))
+		p.errorLocal(t.Pos, msgIntRange(t.Lexeme))
 		return ast.NewIntLit(toASTPos(t.Pos), 0)
 	}
 	return ast.NewIntLit(toASTPos(t.Pos), v)
