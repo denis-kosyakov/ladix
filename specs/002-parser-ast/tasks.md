@@ -99,13 +99,13 @@ US5 финализирует полный golden-каталог и многоо�
 
 ### Тесты (пишутся первыми, обязаны падать)
 
-- [ ] T024 [P] [US2] `src/internal/ast/stmt_test.go` (подмножество US2): конструкторы `LetStmt`/`AssignStmt`/`ExpressionStmt` и `Pos()` (ведущий токен / `Expr.Pos()`) — data-model §4
-- [ ] T025 [US2] `src/internal/parser/parse_stmt_test.go` (US2-часть): `печать("Привет, Уклад!")` → `Program` из `ExpressionStmt(CallExpr(Ident(печать), …))` (нет отдельного print-узла); `пусть a = 2+3*4` → `LetStmt`; `x = x + 1` → `AssignStmt`(lvalue=`Ident`); `печать(a, b)` → 2 аргумента; завершение на `EOF` + `EOFPos` (SC-006); golden SE-ASSIGN-TARGET `неверная цель присваивания: слева от '=' допустима только переменная` для `x.поле = 5` и `x[i] = 5`; `examples/hello.ladix`, `examples/арифметика.ladix` → 0 синтаксических ошибок (SC-001)
+- [X] T024 [P] [US2] `src/internal/ast/stmt_test.go` (подмножество US2): конструкторы `LetStmt`/`AssignStmt`/`ExpressionStmt` и `Pos()` (ведущий токен / `Expr.Pos()`) — data-model §4
+- [X] T025 [US2] `src/internal/parser/parse_stmt_test.go` (US2-часть): `печать("Привет, Уклад!")` → `Program` из `ExpressionStmt(CallExpr(Ident(печать), …))` (нет отдельного print-узла); `пусть a = 2+3*4` → `LetStmt`; `x = x + 1` → `AssignStmt`(lvalue=`Ident`); `печать(a, b)` → 2 аргумента; завершение на `EOF` + `EOFPos` (SC-006); golden SE-ASSIGN-TARGET `неверная цель присваивания: слева от '=' допустима только переменная` для `x.поле = 5` и `x[i] = 5`; `examples/hello.ladix`, `examples/арифметика.ladix` → 0 синтаксических ошибок (SC-001)
 
 ### Реализация
 
-- [ ] T026 [P] [US2] `src/internal/ast/stmt.go` (US2-часть): `LetStmt{Name Ident; Value Expression}`, `AssignStmt{Name Ident; Value Expression}`, `ExpressionStmt{Expr Expression}`; реализуют `Statement`; `Pos()` по D4
-- [ ] T027 [US2] `src/internal/parser/parse_stmt.go` (US2-часть): top-level-цикл `Parse()` строит `Program.Items` до `EOF` (фиксирует `EOFPos`, FR-007); `parseStatement` — диспетчер по ведущему ключевому слову (заглушки для US3/US4) + ветка «начинается с выражения»: разобрать выражение; если следующий `ASSIGN` → `AssignStmt`, причём lvalue ОБЯЗАН быть `*ast.Ident`, иначе SE-ASSIGN-TARGET; иначе `ExpressionStmt` + завершающий `NEWLINE`; `LetStmt` = `пусть Ident "=" Expression NEWLINE`; `печать` — обычный `Ident` в `Callee` (FR-008/FR-009/FR-010, D-R11; зависит от T026, US1)
+- [X] T026 [P] [US2] `src/internal/ast/stmt.go` (US2-часть): `LetStmt{Name Ident; Value Expression}`, `AssignStmt{Name Ident; Value Expression}`, `ExpressionStmt{Expr Expression}`; реализуют `Statement`; `Pos()` по D4
+- [X] T027 [US2] `src/internal/parser/parse_stmt.go` (US2-часть): top-level-цикл `Parse()` строит `Program.Items` до `EOF` (фиксирует `EOFPos`, FR-007); `parseStatement` — диспетчер по ведущему ключевому слову (заглушки для US3/US4) + ветка «начинается с выражения»: разобрать выражение; если следующий `ASSIGN` → `AssignStmt`, причём lvalue ОБЯЗАН быть `*ast.Ident`, иначе SE-ASSIGN-TARGET; иначе `ExpressionStmt` + завершающий `NEWLINE`; `LetStmt` = `пусть Ident "=" Expression NEWLINE`; `печать` — обычный `Ident` в `Callee` (FR-008/FR-009/FR-010, D-R11; зависит от T026, US1)
 
 **Checkpoint**: US1+US2 = MVP — выражения встроены в каркас программы; `hello`/`арифметика` parse-clean.
 

@@ -93,13 +93,14 @@ func (p *Parser) error(pos errors.Position, msg string) {
 	p.errs.Add(errors.ParseError{Pos: pos, Msg: msg})
 }
 
-// Parse — точка входа: строит Program до EOF. В Фазе 0 top-level-цикл — заглушка
-// (элементы разбираются начиная с US2); фиксируется EOFPos. Program возвращается
-// всегда (best-effort).
+// Parse — точка входа: строит Program из top-level-элементов до EOF и фиксирует
+// EOFPos (FR-007). Program возвращается всегда (best-effort даже при ошибках).
 func (p *Parser) Parse() *ast.Program {
 	prog := &ast.Program{}
 	for !p.check(lexer.EOF) {
-		p.advance() // заглушка до US2
+		if item := p.parseTopLevelItem(); item != nil {
+			prog.Items = append(prog.Items, item)
+		}
 	}
 	prog.EOFPos = toASTPos(p.peek().Pos)
 	return prog
