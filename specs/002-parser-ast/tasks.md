@@ -31,9 +31,9 @@ US5 финализирует полный golden-каталог и многоо�
 
 **Purpose**: каркас двух новых пакетов и фиксация чистой базовой линии перед изменениями.
 
-- [ ] T001 [P] Создать пакет `src/internal/ast/doc.go` с пакет-комментарием: листовой пакет AST подмножества B, несёт ЛОКАЛЬНУЮ `Position`, НЕ импортирует `internal/errors` (D1, guardrail 1)
-- [ ] T002 [P] Создать пакет `src/internal/parser/doc.go` с пакет-комментарием: ручной recursive-descent разборщик, граф `parser → {ast, errors, lexer}`, без пакет-уровневого состояния (FR-029, guardrail 9)
-- [ ] T003 Зафиксировать базовую линию: из `src/` прогнать `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...` — всё зелёное (лексер 001 не сломан) до начала работ
+- [X] T001 [P] Создать пакет `src/internal/ast/doc.go` с пакет-комментарием: листовой пакет AST подмножества B, несёт ЛОКАЛЬНУЮ `Position`, НЕ импортирует `internal/errors` (D1, guardrail 1)
+- [X] T002 [P] Создать пакет `src/internal/parser/doc.go` с пакет-комментарием: ручной recursive-descent разборщик, граф `parser → {ast, errors, lexer}`, без пакет-уровневого состояния (FR-029, guardrail 9)
+- [X] T003 Зафиксировать базовую линию: из `src/` прогнать `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...` — всё зелёное (лексер 001 не сломан) до начала работ
 
 ---
 
@@ -47,21 +47,21 @@ US5 финализирует полный golden-каталог и многоо�
 
 ### Тесты (пишутся первыми, обязаны падать)
 
-- [ ] T004 [P] Табличный тест `src/internal/ast/op_test.go`: `BinOp`(14)/`CompOp`(6)/`UnOp`(2) `String()` и предикат принадлежности `CompOp` подмножеству `BinOp` (D3, contracts/ast.md §C-3)
-- [ ] T005 [P] Тест `src/internal/errors/parserror_test.go`: `ParseError.Error()` — двухстрочный канон `Ошибка в строке N, колонка M:`+`\n`+`Msg`; разворачивание `errors.As(&ParseError{})`; складывание в существующий `ErrorList` через `Add(error)` (FR-023, data-model §10)
-- [ ] T006 [P] Тест `src/internal/parser/errors_test.go`: каждый из 7 строителей текста даёт ДОСЛОВНО текст из contracts/syntax-errors.md (3 канона §13.4 байт-в-байт + 4 эталона), включая псевдо-лексемы виртуальных токенов (`NEWLINE`→`конец строки`, `INDENT`→`увеличение отступа`, `DEDENT`→`конец блока`, `EOF`→`конец файла`)
+- [X] T004 [P] Табличный тест `src/internal/ast/op_test.go`: `BinOp`(14)/`CompOp`(6)/`UnOp`(2) `String()` и предикат принадлежности `CompOp` подмножеству `BinOp` (D3, contracts/ast.md §C-3)
+- [X] T005 [P] Тест `src/internal/errors/parserror_test.go`: `ParseError.Error()` — двухстрочный канон `Ошибка в строке N, колонка M:`+`\n`+`Msg`; разворачивание `errors.As(&ParseError{})`; складывание в существующий `ErrorList` через `Add(error)` (FR-023, data-model §10)
+- [X] T006 [P] Тест `src/internal/parser/errors_test.go`: каждый из 7 строителей текста даёт ДОСЛОВНО текст из contracts/syntax-errors.md (3 канона §13.4 байт-в-байт + 4 эталона), включая псевдо-лексемы виртуальных токенов (`NEWLINE`→`конец строки`, `INDENT`→`увеличение отступа`, `DEDENT`→`конец блока`, `EOF`→`конец файла`)
 
 ### Реализация
 
-- [ ] T007 [P] `src/internal/ast/position.go`: локальный `Position{Line, Col int}` (1-based, руны); БЕЗ импорта `internal/errors` (D1, FR-001, data-model §1)
-- [ ] T008 [P] `src/internal/ast/op.go`: единый enum `BinOp` (14: `или и + - * / // % == != < <= > >=`), `CompOp` как подмножество `BinOp` (6 сравнений; `IsComparison()` или defined type `type CompOp BinOp`, без дублирования констант; НЕ type-alias `= BinOp` — принял бы любой `BinOp`), `UnOp` (2: `не`, унарный `-`); `String()` у всех трёх (D3, FR-004; зависит от T004)
-- [ ] T009 `src/internal/ast/node.go`: интерфейс `Node{Pos() Position}`, встраиваемая база `base{position Position}` с `Pos()`, маркер-подынтерфейсы `Statement`/`Expression`/`Decl`/`TopLevelItem` (sum-type через пустые маркер-методы; FR-001, data-model §2; зависит от T007)
-- [ ] T010 `src/internal/ast/block.go`: корень `Program{Items []TopLevelItem; EOFPos Position}` (узел `Block` добавляется в US3); FR-007, data-model §3 (зависит от T009)
-- [ ] T011 [P] `src/internal/errors/parserror.go`: `ParseError{Pos Position; Msg string}` + `Error()` → тот же двухстрочный канон, что у `LexError`; складывается в неизменённый `ErrorList` (правок `aggregate.go` НЕ делать — guardrail 8; FR-023; зависит от T005)
-- [ ] T012 [P] `src/internal/parser/errors.go`: строители текстов 7 кодов SE (3 канона дословно из SPEC §13.4 + 4 эталона из contracts/syntax-errors.md) + helper отображения лексемы токена (реальная лексема либо псевдо-лексема виртуального токена) для `<лексема>`/`<X>` (FR-024, contracts/syntax-errors.md; зависит от T006)
-- [ ] T013 `src/internal/parser/pos.go`: конвертер `errors.Position → ast.Position` (D1: helper живёт в `parser`, НЕ в `ast`; FR-029; зависит от T007)
-- [ ] T014 Тест `src/internal/parser/parser_test.go`: пустой и только-`EOF` ввод → `Program{Items:[], EOFPos=поз. EOF}`; базовое поведение `peek`/`advance`/`check`; `expect` при несовпадении эмитит SE-EXPECTED в `ErrorList` (FR-007, SC-006; пишется перед T015)
-- [ ] T015 `src/internal/parser/parser.go`: структура `Parser` + явный конструктор (`tokens []lexer.Token`, опц. `*errors.ErrorList` — если nil, создаёт свой), курсор по слайсу, `peek`/`advance`/`check`/`expect(type, ожид.лексема)` (mismatch → SE-EXPECTED через T012), регистрация ошибки `(*Parser).error(pos, msg)` в `ErrorList`, флаг подавления panic-mode (stub; полная синхронизация — US5), точка входа `Parse() *ast.Program` (top-level-цикл — заглушка до `EOF`, фиксирует `EOFPos`); FR-029, data-model §12 (зависит от T009/T010/T011/T012/T013)
+- [X] T007 [P] `src/internal/ast/position.go`: локальный `Position{Line, Col int}` (1-based, руны); БЕЗ импорта `internal/errors` (D1, FR-001, data-model §1)
+- [X] T008 [P] `src/internal/ast/op.go`: единый enum `BinOp` (14: `или и + - * / // % == != < <= > >=`), `CompOp` как подмножество `BinOp` (6 сравнений; `IsComparison()` или defined type `type CompOp BinOp`, без дублирования констант; НЕ type-alias `= BinOp` — принял бы любой `BinOp`), `UnOp` (2: `не`, унарный `-`); `String()` у всех трёх (D3, FR-004; зависит от T004)
+- [X] T009 `src/internal/ast/node.go`: интерфейс `Node{Pos() Position}`, встраиваемая база `base{position Position}` с `Pos()`, маркер-подынтерфейсы `Statement`/`Expression`/`Decl`/`TopLevelItem` (sum-type через пустые маркер-методы; FR-001, data-model §2; зависит от T007)
+- [X] T010 `src/internal/ast/block.go`: корень `Program{Items []TopLevelItem; EOFPos Position}` (узел `Block` добавляется в US3); FR-007, data-model §3 (зависит от T009)
+- [X] T011 [P] `src/internal/errors/parserror.go`: `ParseError{Pos Position; Msg string}` + `Error()` → тот же двухстрочный канон, что у `LexError`; складывается в неизменённый `ErrorList` (правок `aggregate.go` НЕ делать — guardrail 8; FR-023; зависит от T005)
+- [X] T012 [P] `src/internal/parser/errors.go`: строители текстов 7 кодов SE (3 канона дословно из SPEC §13.4 + 4 эталона из contracts/syntax-errors.md) + helper отображения лексемы токена (реальная лексема либо псевдо-лексема виртуального токена) для `<лексема>`/`<X>` (FR-024, contracts/syntax-errors.md; зависит от T006)
+- [X] T013 `src/internal/parser/pos.go`: конвертер `errors.Position → ast.Position` (D1: helper живёт в `parser`, НЕ в `ast`; FR-029; зависит от T007)
+- [X] T014 Тест `src/internal/parser/parser_test.go`: пустой и только-`EOF` ввод → `Program{Items:[], EOFPos=поз. EOF}`; базовое поведение `peek`/`advance`/`check`; `expect` при несовпадении эмитит SE-EXPECTED в `ErrorList` (FR-007, SC-006; пишется перед T015)
+- [X] T015 `src/internal/parser/parser.go`: структура `Parser` + явный конструктор (`tokens []lexer.Token`, опц. `*errors.ErrorList` — если nil, создаёт свой), курсор по слайсу, `peek`/`advance`/`check`/`expect(type, ожид.лексема)` (mismatch → SE-EXPECTED через T012), регистрация ошибки `(*Parser).error(pos, msg)` в `ErrorList`, флаг подавления panic-mode (stub; полная синхронизация — US5), точка входа `Parse() *ast.Program` (top-level-цикл — заглушка до `EOF`, фиксирует `EOFPos`); FR-029, data-model §12 (зависит от T009/T010/T011/T012/T013)
 
 **Checkpoint**: каркас готов — реализация user stories может начинаться.
 
