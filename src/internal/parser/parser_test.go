@@ -15,6 +15,9 @@ func lexTokens(t *testing.T, src string) []lexer.Token {
 	return toks
 }
 
+// errAs — обёртка stderrors.As для тестов (поиск конкретной ошибки в агрегате).
+func errAs(err error, target any) bool { return stderrors.As(err, target) }
+
 // T014: каркас Parser — пустой/только-EOF ввод, базовый курсор, expect.
 
 func TestParseEmptyProgram(t *testing.T) {
