@@ -55,3 +55,18 @@ func TestCallIndexFieldPos(t *testing.T) {
 		t.Errorf("FieldExpr.Field.Name = %q, хотим \"поле\"", fld.Field.Name)
 	}
 }
+
+// T033 (часть US4): RunProcessExpr — Pos() = токен запустить; реализует Expression.
+
+func TestRunProcessExprPos(t *testing.T) {
+	runPos := Position{Line: 1, Col: 1}
+	rpe := NewRunProcessExpr(runPos, *NewIdent(Position{Line: 1, Col: 18}, "Отчёт"),
+		[]Expression{NewIntLit(Position{Line: 1, Col: 24}, 2024)})
+	if rpe.Pos() != runPos {
+		t.Errorf("RunProcessExpr.Pos() = %+v, хотим токен запустить %+v", rpe.Pos(), runPos)
+	}
+	if rpe.Process.Name != "Отчёт" || len(rpe.Args) != 1 {
+		t.Errorf("поля RunProcessExpr: %+v", rpe)
+	}
+	var _ Expression = rpe
+}

@@ -5,10 +5,17 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/lexer"
 )
 
-// parseTopLevelItem разбирает один элемент верхнего уровня. Декларация функция →
-// FunctionDecl подключается в US4 (parse_decl.go); остальное — statements.
+// parseTopLevelItem разбирает один элемент верхнего уровня: функция →
+// FunctionDecl, иначе — statement. nil-результат (поглощённая ошибочная
+// конструкция) вызывающий пропускает.
 func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
-	return p.parseStatement()
+	if p.check(lexer.KW_FUNC) {
+		return p.parseFunctionDecl()
+	}
+	if s := p.parseStatement(); s != nil {
+		return s
+	}
+	return nil
 }
 
 // parseStatement — диспетчер по ведущему токену. Ветви управления (US3) и
@@ -30,9 +37,57 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseBreak()
 	case lexer.KW_CONTINUE:
 		return p.parseContinue()
+	case lexer.KW_FUNC:
+		return p.parseNestedFunc()
+	case lexer.KW_SET, lexer.KW_CALL, lexer.KW_NOTIFY:
+		return p.parseStepAction()
 	default:
 		return p.parseExprStatement()
 	}
+}
+
+// parseNestedFunc обрабатывает функцию внутри блока: вложенные функции запрещены
+// синтаксически (grammar §4) → SE-NESTED-FN на токене функция. Структура
+// поглощается best-effort; statement не порождается (вызывающий пропускает nil).
+func (p *Parser) parseNestedFunc() ast.Statement {
+	p.error(p.peek().Pos, msgNestedFn)
+	p.parseFunctionDecl() // поглотить тело, результат отбросить
+	return nil
+}
+
+// parseStepAction разбирает зарезервированные действия шага (grammar §7). Гард
+// «только в шаге процесса» НЕ проверяется (guardrail 6) — узлы строятся всюду.
+func (p *Parser) parseStepAction() ast.Statement {
+	switch p.peek().Type {
+	case lexer.KW_SET: // присвоить Ident "=" Expression NEWLINE
+		tok := p.advance()
+		nameTok, _ := p.expect(lexer.IDENT, "имя переменной")
+		name := p.identFrom(nameTok)
+		p.expect(lexer.ASSIGN, "=")
+		value := p.parseExpression()
+		p.expect(lexer.NEWLINE, "конец строки")
+		return ast.NewAssignAction(toASTPos(tok.Pos), *name, value)
+	case lexer.KW_CALL: // вызвать Ident "(" ArgList? ")" NEWLINE
+		tok := p.advance()
+		name, args := p.parseActionCall()
+		p.expect(lexer.NEWLINE, "конец строки")
+		return ast.NewCallAction(toASTPos(tok.Pos), name, args)
+	default: // KW_NOTIFY: уведомить Ident "(" ArgList? ")" NEWLINE
+		tok := p.advance()
+		name, args := p.parseActionCall()
+		p.expect(lexer.NEWLINE, "конец строки")
+		return ast.NewNotifyAction(toASTPos(tok.Pos), name, args)
+	}
+}
+
+// parseActionCall разбирает общий хвост вызвать/уведомить: Ident "(" ArgList? ")".
+func (p *Parser) parseActionCall() (ast.Ident, []ast.Expression) {
+	nameTok, _ := p.expect(lexer.IDENT, "имя")
+	name := p.identFrom(nameTok)
+	p.expect(lexer.LPAREN, "(")
+	args := p.parseArgList(lexer.RPAREN)
+	p.expect(lexer.RPAREN, ")")
+	return *name, args
 }
 
 // parseLet: пусть Ident "=" Expression NEWLINE. Pos() = токен пусть.
@@ -79,7 +134,9 @@ func (p *Parser) parseBlock() *ast.Block {
 	indent := p.advance() // INDENT
 	var stmts []ast.Statement
 	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
-		stmts = append(stmts, p.parseStatement())
+		if s := p.parseStatement(); s != nil {
+			stmts = append(stmts, s)
+		}
 	}
 	p.expect(lexer.DEDENT, "конец блока")
 	return ast.NewBlock(toASTPos(indent.Pos), stmts)

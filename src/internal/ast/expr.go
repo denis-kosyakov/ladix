@@ -62,3 +62,17 @@ type FieldExpr struct {
 func NewFieldExpr(target Expression, field Ident) *FieldExpr {
 	return &FieldExpr{exprBase: exprBase{base{target.Pos()}}, Target: target, Field: field}
 }
+
+// RunProcessExpr — запуск процесса как выражение: запустить процесс Process(Args).
+// Зарезервирован (семантика — eval). Скобки — часть узла, не постфикс-вызов по
+// результату (grammar §9). Pos() = токен запустить.
+type RunProcessExpr struct {
+	exprBase
+	Process Ident
+	Args    []Expression
+}
+
+// NewRunProcessExpr строит запуск процесса; pos — позиция токена запустить.
+func NewRunProcessExpr(pos Position, process Ident, args []Expression) *RunProcessExpr {
+	return &RunProcessExpr{exprBase: exprBase{base{pos}}, Process: process, Args: args}
+}

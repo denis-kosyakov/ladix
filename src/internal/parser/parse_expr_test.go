@@ -32,6 +32,12 @@ func sexpr(e ast.Expression) string {
 			s += " " + sexpr(a)
 		}
 		return s + ")"
+	case *ast.RunProcessExpr:
+		s := "(run " + n.Process.Name
+		for _, a := range n.Args {
+			s += " " + sexpr(a)
+		}
+		return s + ")"
 	case *ast.IndexExpr:
 		return "(index " + sexpr(n.Target) + " " + sexpr(n.Index) + ")"
 	case *ast.FieldExpr:

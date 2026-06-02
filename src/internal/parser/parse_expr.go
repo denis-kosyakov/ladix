@@ -192,6 +192,8 @@ func (p *Parser) parsePrimary() ast.Expression {
 	case lexer.LBRACKET:
 		lbracket := p.advance()
 		return p.parseList(lbracket)
+	case lexer.KW_RUN:
+		return p.parseRunProcess()
 	default:
 		// Ведущий токен не начинает выражение → SE-UNEXPECTED; узел-заглушка,
 		// чтобы вернуть валидное дерево. advance даёт прогресс (до US5 panic-mode).
@@ -199,6 +201,22 @@ func (p *Parser) parsePrimary() ast.Expression {
 		p.advance()
 		return ast.NewNoneLit(toASTPos(t.Pos))
 	}
+}
+
+// parseRunProcess: запустить процесс Ident ("(" ArgList? ")")? — RunProcessExpr.
+// Скобки — часть узла (не постфикс-вызов, grammar §9). Pos() = токен запустить.
+func (p *Parser) parseRunProcess() ast.Expression {
+	runTok := p.advance() // запустить
+	p.expect(lexer.KW_PROCESS, "процесс")
+	nameTok, _ := p.expect(lexer.IDENT, "имя процесса")
+	process := p.identFrom(nameTok)
+	var args []ast.Expression
+	if p.check(lexer.LPAREN) {
+		p.advance()
+		args = p.parseArgList(lexer.RPAREN)
+		p.expect(lexer.RPAREN, ")")
+	}
+	return ast.NewRunProcessExpr(toASTPos(runTok.Pos), *process, args)
 }
 
 // parseArgList разбирает позиционные аргументы до closer (висящая запятая).
