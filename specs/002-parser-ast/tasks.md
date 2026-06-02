@@ -54,7 +54,7 @@ US5 финализирует полный golden-каталог и многоо�
 ### Реализация
 
 - [ ] T007 [P] `src/internal/ast/position.go`: локальный `Position{Line, Col int}` (1-based, руны); БЕЗ импорта `internal/errors` (D1, FR-001, data-model §1)
-- [ ] T008 [P] `src/internal/ast/op.go`: единый enum `BinOp` (14: `или и + - * / // % == != < <= > >=`), `CompOp` как подмножество `BinOp` (6 сравнений; `IsComparison()` или alias+набор, без дублирования констант), `UnOp` (2: `не`, унарный `-`); `String()` у всех трёх (D3, FR-004; зависит от T004)
+- [ ] T008 [P] `src/internal/ast/op.go`: единый enum `BinOp` (14: `или и + - * / // % == != < <= > >=`), `CompOp` как подмножество `BinOp` (6 сравнений; `IsComparison()` или defined type `type CompOp BinOp`, без дублирования констант; НЕ type-alias `= BinOp` — принял бы любой `BinOp`), `UnOp` (2: `не`, унарный `-`); `String()` у всех трёх (D3, FR-004; зависит от T004)
 - [ ] T009 `src/internal/ast/node.go`: интерфейс `Node{Pos() Position}`, встраиваемая база `base{position Position}` с `Pos()`, маркер-подынтерфейсы `Statement`/`Expression`/`Decl`/`TopLevelItem` (sum-type через пустые маркер-методы; FR-001, data-model §2; зависит от T007)
 - [ ] T010 `src/internal/ast/block.go`: корень `Program{Items []TopLevelItem; EOFPos Position}` (узел `Block` добавляется в US3); FR-007, data-model §3 (зависит от T009)
 - [ ] T011 [P] `src/internal/errors/parserror.go`: `ParseError{Pos Position; Msg string}` + `Error()` → тот же двухстрочный канон, что у `LexError`; складывается в неизменённый `ErrorList` (правок `aggregate.go` НЕ делать — guardrail 8; FR-023; зависит от T005)

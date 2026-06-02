@@ -64,7 +64,8 @@ ast-local; конвертер `errors.Position → ast.Position` живёт в `
 **Scale/Scope**: два новых пакета — `internal/ast` (узлы + `BinOp`/`CompOp`/`UnOp`) и `internal/parser`
 (каскад + statements + восстановление) — плюс одно дополнение к `internal/errors` (`ParseError`).
 ~30 типов узлов AST, 14 бинарных операторов (`CompOp` = подмножество из 6), 7 кодов синтаксических
-ошибок, множество синхро-токенов из ~14 видов.
+ошибок, множество синхро-токенов из 18 видов (3 структурных + 7 ведущих statement + 1 `функция`
++ 3 step-action + 4 отложенных декларации).
 
 ## Constitution Check
 

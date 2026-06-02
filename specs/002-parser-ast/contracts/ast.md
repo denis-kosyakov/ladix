@@ -56,6 +56,8 @@ Postfix → Primary` (SPEC §5, grammar §9).
 | `IndexExpr`, `FieldExpr` | позиция `Target` |
 | литералы, `Ident` | свой токен |
 | `LetStmt`/`IfStmt`/`WhileStmt`/`ForStmt`/`ReturnStmt`/`BreakStmt`/`ContinueStmt` | ведущий ключевой токен |
+| `AssignStmt` | позиция lvalue (токен `Name`) — без ведущего ключевого слова |
+| `ExpressionStmt` | `Expr.Pos()` — без ведущего ключевого слова |
 | `AssignAction`/`CallAction`/`NotifyAction` | ведущий ключевой токен |
 | `FunctionDecl` | токен `функция` |
 | `Block` | позиция `INDENT`/первого оператора |

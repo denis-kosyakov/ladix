@@ -50,8 +50,8 @@ Position}` даёт `Pos()` через embedding — без копипасты �
 | Узел | Поля | `Pos()` |
 |---|---|---|
 | `LetStmt` | `Name Ident; Value Expression` | токен `пусть` |
-| `AssignStmt` | `Name Ident; Value Expression` (lvalue только `Ident`) | токен `Name`/`=` (ведущий) |
-| `ExpressionStmt` | `Expr Expression` | `Expr.Pos()` |
+| `AssignStmt` | `Name Ident; Value Expression` (lvalue только `Ident`) | позиция lvalue (токен `Name`) — без ведущего ключевого слова |
+| `ExpressionStmt` | `Expr Expression` | `Expr.Pos()` — без ведущего ключевого слова |
 | `IfStmt` | `Cond Expression; Then *Block; Else *ElseClause` (nil → без `иначе`) | токен `если` |
 | `WhileStmt` | `Cond Expression; Body *Block` | токен `пока` |
 | `ForStmt` | `Var Ident; Iterable Expression; Body *Block` | токен `для` |
@@ -97,7 +97,7 @@ Position}` даёт `Pos()` через embedding — без копипасты �
 | `CallExpr` | `Callee Expression; Args []Expression` | `Callee.Pos()` |
 | `IndexExpr` | `Target Expression; Index Expression` (срезов нет v1) | `Target.Pos()` |
 | `FieldExpr` | `Target Expression; Field Ident` (`.поле`) | `Target.Pos()` |
-| `RunProcessExpr` | `Process Ident; Args []Expression` (зарезервирован; скобки — часть узла) | токен `запустить` |
+| `RunProcessExpr` | `Process Ident; Args []Expression` (зарезервирован; потребляет пару `запустить процесс`; скобки — часть узла) | токен `запустить` |
 
 **Правила**:
 - Бинарные — **лево-ассоциативны** (цикл в каскаде); `и`/`или` — короткозамкнутые (семантика — eval).
@@ -128,8 +128,8 @@ Position}` даёт `Pos()` через embedding — без копипасты �
 | `CompOp` | подмножество `BinOp`: `==` `!=` `<` `<=` `>` `>=` (6) | сравнения; отбор из `BinOp` без дублирования; для будущего `MetricTrigger.Op` |
 | `UnOp` | `не`, унарный `-` (2) | унарные операторы |
 
-- `CompOp` реализуется как **подмножество** `BinOp` (alias + предикат `IsComparison()` или эквивалент),
-  НЕ как независимый enum-дубль констант.
+- `CompOp` реализуется как **подмножество** `BinOp` (defined type `type CompOp BinOp` + предикат `IsComparison()`, или эквивалент),
+  НЕ как независимый enum-дубль констант и НЕ как type-alias `= BinOp` (alias принял бы любой `BinOp`).
 - Все три имеют `String()` для диагностики и табличных тестов.
 
 ## 10. `ParseError` (пакет `internal/errors`) — НОВЫЙ файл `parserror.go`
@@ -185,7 +185,7 @@ Position}` даёт `Pos()` через embedding — без копипасты �
 
 Явный набор точек синхронизации (FR-026, D-R8); полный список — contracts/syntax-errors.md.
 
-| Группа | Токены | Семантика при синхронизации |
+| Группа | Токены | При синхронизации |
 |---|---|---|
 | Структурные | `NEWLINE`, `DEDENT`, `EOF` | `NEWLINE`/`DEDENT` **потребляются**; на `EOF` разбор завершается |
 | Ведущие ключевые слова statements | `пусть`, `если`, `пока`, `для`, `вернуть`, `прервать`, `продолжить` | НЕ потребляются (разбор начинается с них) |
