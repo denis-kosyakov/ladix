@@ -31,6 +31,9 @@ out/
 # Go
 bin/
 *.test
+*.exe
+*.out
+vendor/
 
 # Rust
 target/
