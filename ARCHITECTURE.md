@@ -141,6 +141,8 @@ type TopLevelItem interface { Node }                  // Statement | Decl
 > `Position` дублируется как локальный тип `ast`, а не тащится из `errors`: иначе `ast → errors` лишает `ast` листовости. `errors` держит собственные поля `Line, Col int` (не импортирует `ast`); связка — на месте создания ошибки в `eval`/`parser`, где обе стороны видны.
 >
 > **Конвенция `Pos()` узла** (load-bearing для диагностик `eval`): `BinaryExpr.Pos`/`UnaryExpr.Pos` = токен **оператора** (не левого операнда); `CallExpr.Pos` = позиция `Callee`; `IndexExpr.Pos`/`FieldExpr.Pos` = позиция `Target`; литералы и `Ident` — свой токен. Так runtime-диагностика указывает на оператор — деление на ноль рапортуется на колонке `/` (см. `examples/ошибка.ladix`, стр. 5 кол. 14).
+>
+> **Statement-узлы:** инструкции с ведущим ключевым словом (`LetStmt`/`IfStmt`/`WhileStmt`/`ForStmt`/`ReturnStmt`/`BreakStmt`/`ContinueStmt`) и декларации (`FunctionDecl`, а также `RunProcessExpr` по ведущему `запустить`, `StepAction` по `присвоить`/`вызвать`/`уведомить`) берут `Pos` = свой ведущий ключевой токен. Два statement без ключевого слова — явные исключения: `AssignStmt.Pos` = позиция lvalue (токен `Name`/`Ident`), `ExpressionStmt.Pos` = `Expr.Pos()`.
 
 ### 4.2. Верхний уровень (`SPEC §3`)
 
