@@ -37,17 +37,17 @@ auto_commit:
     enabled: false
     message: "[Spec Kit] Add project constitution"
   after_specify:
-    enabled: false
-    message: "[Spec Kit] Add specification"
+    enabled: true
+    message: "docs(spec): спецификация фичи (speckit specify)"
   after_clarify:
     enabled: false
     message: "[Spec Kit] Clarify specification"
   after_plan:
-    enabled: false
-    message: "[Spec Kit] Add implementation plan"
+    enabled: true
+    message: "docs(plan): план реализации (speckit plan)"
   after_tasks:
-    enabled: false
-    message: "[Spec Kit] Add tasks"
+    enabled: true
+    message: "docs(tasks): декомпозиция на задачи (speckit tasks)"
   after_implement:
     enabled: false
     message: "[Spec Kit] Implementation progress"

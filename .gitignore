@@ -44,4 +44,5 @@ target/
 
 # Claude
 .claude/settings.local.json
+.claude/*.lock
 
