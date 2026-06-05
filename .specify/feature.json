@@ -1,3 +1,3 @@
 {
-  "feature_directory": "specs/002-parser-ast"
+  "feature_directory": "specs/003-interpreter-eval"
 }
