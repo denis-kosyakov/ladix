@@ -1,0 +1,193 @@
+package eval
+
+import (
+	"fmt"
+
+	"github.com/denis-kosyakov/ladix/internal/ast"
+	"github.com/denis-kosyakov/ladix/internal/value"
+)
+
+// evalStmt исполняет один statement (§4.2). Два канала: error (рантайм, всплывает
+// немедленно) и Signal (штатный поток).
+func (i *Interpreter) evalStmt(env *Environment, s ast.Statement) (Signal, error) {
+	switch st := s.(type) {
+	case *ast.LetStmt:
+		v, err := i.evalExpr(env, st.Value)
+		if err != nil {
+			return Signal{}, err
+		}
+		env.Define(st.Name.Name, v)
+		return Signal{Kind: SigNormal}, nil
+
+	case *ast.AssignStmt:
+		v, err := i.evalExpr(env, st.Value)
+		if err != nil {
+			return Signal{}, err
+		}
+		if !env.Assign(st.Name.Name, v) {
+			return Signal{}, runtimeErr(st.Name.Pos(), fmt.Sprintf("'%s' не объявлено", st.Name.Name))
+		}
+		return Signal{Kind: SigNormal}, nil
+
+	case *ast.ExpressionStmt:
+		if _, err := i.evalExpr(env, st.Expr); err != nil {
+			return Signal{}, err
+		}
+		return Signal{Kind: SigNormal}, nil
+
+	case *ast.IfStmt:
+		return i.evalIf(env, st)
+
+	case *ast.WhileStmt:
+		return i.evalWhile(env, st)
+
+	case *ast.ForStmt:
+		return i.evalFor(env, st)
+
+	case *ast.ReturnStmt:
+		if st.Value == nil {
+			return Signal{Kind: SigReturn, Value: value.None}, nil
+		}
+		v, err := i.evalExpr(env, st.Value)
+		if err != nil {
+			return Signal{}, err
+		}
+		return Signal{Kind: SigReturn, Value: v}, nil
+
+	case *ast.BreakStmt:
+		return Signal{Kind: SigBreak}, nil
+
+	case *ast.ContinueStmt:
+		return Signal{Kind: SigContinue}, nil
+
+	case *ast.AssignAction, *ast.CallAction, *ast.NotifyAction:
+		return Signal{}, i.deferredConstruct(st)
+	}
+	return Signal{}, runtimeErr(s.Pos(), "внутренняя ошибка: неизвестный statement")
+}
+
+// evalBlock исполняет последовательность statements в ТЕКУЩЕЙ области (блок свою
+// область не создаёт). err≠nil → наверх; sig≠SigNormal → прекратить блок и
+// вернуть сигнал (§4.1).
+func (i *Interpreter) evalBlock(env *Environment, b *ast.Block) (Signal, error) {
+	for _, st := range b.Stmts {
+		sig, err := i.evalStmt(env, st)
+		if err != nil {
+			return Signal{}, err
+		}
+		if sig.Kind != SigNormal {
+			return sig, nil
+		}
+	}
+	return Signal{Kind: SigNormal}, nil
+}
+
+// evalIf — если/иначе если/иначе (§4.2): strict-Булево, первая истинная ветвь,
+// цепочка ElseClause по IsFinal().
+func (i *Interpreter) evalIf(env *Environment, st *ast.IfStmt) (Signal, error) {
+	cond, err := i.condBool(env, st.Cond)
+	if err != nil {
+		return Signal{}, err
+	}
+	if cond {
+		return i.evalBlock(env, st.Then)
+	}
+	return i.evalElse(env, st.Else)
+}
+
+func (i *Interpreter) evalElse(env *Environment, e *ast.ElseClause) (Signal, error) {
+	if e == nil {
+		return Signal{Kind: SigNormal}, nil
+	}
+	if e.IsFinal() {
+		return i.evalBlock(env, e.Body)
+	}
+	cond, err := i.condBool(env, e.Cond)
+	if err != nil {
+		return Signal{}, err
+	}
+	if cond {
+		return i.evalBlock(env, e.Then)
+	}
+	return i.evalElse(env, e.Else)
+}
+
+// condBool вычисляет условие со strict-Булево (truthiness не действует, §1.3.3).
+// Позиция ошибки = Cond.Pos().
+func (i *Interpreter) condBool(env *Environment, cond ast.Expression) (bool, error) {
+	v, err := i.evalExpr(env, cond)
+	if err != nil {
+		return false, err
+	}
+	bv, ok := v.(value.Булево)
+	if !ok {
+		return false, typeErr(cond.Pos(), fmt.Sprintf("условие должно быть Булево, получено %s", v.TypeName()))
+	}
+	return bv.V, nil
+}
+
+// evalWhile — пока Cond: Body (§4.3). SigBreak поглощается (выход), SigContinue
+// поглощается (следующая итерация), SigReturn пробрасывается наверх.
+func (i *Interpreter) evalWhile(env *Environment, st *ast.WhileStmt) (Signal, error) {
+	for {
+		cond, err := i.condBool(env, st.Cond)
+		if err != nil {
+			return Signal{}, err
+		}
+		if !cond {
+			break
+		}
+		sig, err := i.evalBlock(env, st.Body)
+		if err != nil {
+			return Signal{}, err
+		}
+		switch sig.Kind {
+		case SigBreak:
+			return Signal{Kind: SigNormal}, nil
+		case SigContinue:
+			continue
+		case SigReturn:
+			return sig, nil
+		}
+	}
+	return Signal{Kind: SigNormal}, nil
+}
+
+// evalFor — для Var в Iterable: Body (§4.3). Iterable обязан Список; переменная
+// привязывается в ОХВАТЫВАЮЩЕЙ области (Define-если-нет, затем Assign); на пустом
+// списке не создаётся; список помечается «итерируется» (защита от мутации).
+func (i *Interpreter) evalFor(env *Environment, st *ast.ForStmt) (Signal, error) {
+	it, err := i.evalExpr(env, st.Iterable)
+	if err != nil {
+		return Signal{}, err
+	}
+	lst, ok := it.(value.Список)
+	if !ok {
+		return Signal{}, typeErr(st.Iterable.Pos(), fmt.Sprintf("'для' требует Список, получено %s", it.TypeName()))
+	}
+	name := st.Var.Name
+	i.markIterating(lst.Elems)
+	defer i.unmarkIterating(lst.Elems)
+	n := len(*lst.Elems)
+	for idx := 0; idx < n; idx++ {
+		elem := (*lst.Elems)[idx]
+		if env.hasLocal(name) {
+			env.Assign(name, elem)
+		} else {
+			env.Define(name, elem)
+		}
+		sig, err := i.evalBlock(env, st.Body)
+		if err != nil {
+			return Signal{}, err
+		}
+		switch sig.Kind {
+		case SigBreak:
+			return Signal{Kind: SigNormal}, nil
+		case SigContinue:
+			continue
+		case SigReturn:
+			return sig, nil
+		}
+	}
+	return Signal{Kind: SigNormal}, nil
+}
