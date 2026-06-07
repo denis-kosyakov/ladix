@@ -18,7 +18,7 @@ func (i *Interpreter) evalCall(env *Environment, c *ast.CallExpr) (value.Value, 
 		if err != nil {
 			return nil, err
 		}
-		return nil, runtimeErr(c.Pos(), fmt.Sprintf("значение типа %s не является функцией", v.TypeName()))
+		return nil, runtimeErr(c.Pos(), fmt.Sprintf("значение — не функция (%s), вызов невозможен", v.TypeName()))
 	}
 	name := id.Name
 

@@ -260,6 +260,11 @@ func mulInt64(a, b int64) (int64, bool) {
 	if a == 0 || b == 0 {
 		return 0, false
 	}
+	// MinInt64 * -1 невыразимо в int64, но проверка p/b!=a его НЕ ловит: деление
+	// MinInt64/-1 заворачивается обратно в MinInt64 (p/b==a), маскируя wrap. Явная ловушка.
+	if (a == math.MinInt64 && b == -1) || (b == math.MinInt64 && a == -1) {
+		return 0, true
+	}
 	p := a * b
 	if p/b != a {
 		return 0, true

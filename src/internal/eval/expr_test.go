@@ -83,3 +83,54 @@ func TestIntOverflow(t *testing.T) {
 		t.Errorf("категория не ОшибкаВыполнения")
 	}
 }
+
+// Переполнение int64 в умножении на краю диапазона: MinInt64 * -1 (и зеркально
+// -1 * MinInt64) НЕ ловится проверкой p/b!=a (деление MinInt64/-1 заворачивается
+// обратно в MinInt64), поэтому нужна явная ловушка. Ожидаем RT-OVERFLOW на токене
+// оператора '*', а НЕ молчаливый wrap. MinInt64 строим арифметикой (литерал невыразим).
+func TestMulOverflowEdge(t *testing.T) {
+	overflow := []struct{ name, src string }{
+		{"MinInt64 * -1", "печать((0 - 9223372036854775807 - 1) * -1)"},
+		{"-1 * MinInt64", "печать(-1 * (0 - 9223372036854775807 - 1))"},
+	}
+	for _, tt := range overflow {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := run(t, tt.src)
+			if err == nil {
+				t.Fatalf("ожидалось переполнение, получено %q", out)
+			}
+			line, col, msg := evalErr(t, err)
+			if msg != "переполнение целого числа" {
+				t.Errorf("msg = %q, хотим «переполнение целого числа»", msg)
+			}
+			if !isRuntime(err) {
+				t.Errorf("категория не ОшибкаВыполнения")
+			}
+			// Позиция = токен оператора '*' (§8.2: BinaryExpr.Pos()).
+			runes := []rune(tt.src)
+			if line != 1 || col < 1 || col > len(runes) || runes[col-1] != '*' {
+				t.Errorf("позиция (%d,%d) не на операторе '*'", line, col)
+			}
+		})
+	}
+
+	// Регресс: корректные умножения (вкл. MaxInt64*1 и MinInt64*1) НЕ дают ложного
+	// переполнения — явная ловушка не должна срабатывать вне пары (MinInt64, -1).
+	ok := []struct{ name, src, want string }{
+		{"обычное", "печать(6 * 7)", "42\n"},
+		{"MaxInt64 * 1", "печать(9223372036854775807 * 1)", "9223372036854775807\n"},
+		{"MinInt64 * 1", "печать((0 - 9223372036854775807 - 1) * 1)", "-9223372036854775808\n"},
+		{"-1 * -1", "печать(-1 * -1)", "1\n"},
+	}
+	for _, tt := range ok {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := run(t, tt.src)
+			if err != nil {
+				t.Fatalf("неожиданная ошибка: %v", err)
+			}
+			if out != tt.want {
+				t.Errorf("= %q, хотим %q", out, tt.want)
+			}
+		})
+	}
+}

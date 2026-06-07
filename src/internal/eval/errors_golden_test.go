@@ -5,6 +5,8 @@ import "testing"
 // Исчерпывающее exact-match покрытие реестра §8.3 (contracts/runtime-errors.md
 // RE-1): по одному golden-кейсу на каждый из 30 кодов — категория (тип Go-ошибки),
 // позиция (строка + колонка в РУНАХ) и ДОСЛОВНЫЙ текст (SC-003).
+// Вариант «значение — не функция …» (не-Ident callee, тот же код RT-NOT-FUNC, но
+// субъект — «значение») покрыт отдельно в TestNonIdentCalleeNotFunc.
 func TestErrorsRegistryExactMatch(t *testing.T) {
 	const (
 		sem = "sem"
@@ -203,5 +205,27 @@ func TestErrorsRegistryExactMatch(t *testing.T) {
 	}
 	if len(seen) != 30 {
 		t.Errorf("покрыто кодов = %d, хотим 30", len(seen))
+	}
+}
+
+// Не-Ident callee (§8.3, строка «значение — не функция (<тип>), вызов невозможен»):
+// у произвольного выражения нет имени, поэтому субъект — «значение», а не «'имя'».
+// Тот же код RT-NOT-FUNC, что у Ident-ветки; позиция = CallExpr.Pos() (= Callee.Pos()).
+func TestNonIdentCalleeNotFunc(t *testing.T) {
+	const src = `печать((5)(3))`
+	_, err := run(t, src)
+	if err == nil {
+		t.Fatal("ожидалась ОшибкаВыполнения")
+	}
+	line, col, msg := evalErr(t, err)
+	if msg != "значение — не функция (Целое), вызов невозможен" {
+		t.Errorf("msg = %q", msg)
+	}
+	if !isRuntime(err) {
+		t.Errorf("категория не ОшибкаВыполнения")
+	}
+	// Callee — литерал 5 внутри скобок; CallExpr.Pos() = его позиция.
+	if line != 1 || col != 9 {
+		t.Errorf("позиция = (%d,%d), хотим (1,9)", line, col)
 	}
 }
