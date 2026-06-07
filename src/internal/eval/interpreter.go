@@ -24,6 +24,7 @@ type Interpreter struct {
 	iterating map[*[]value.Value]int       // списки под активной итерацией для (§4.3)
 	analyzed  bool                         // Analyze уже отработал (защита от двойного резолва)
 	clock     Clock                        // инъекция времени (§SM-7): сегодня()/окна метрик
+	today     *value.Дата                  // дата запуска, зафиксированная на первый вызов now() (§SM-7/§10.6)
 	// Реестры декларативного слоя (§SM-4, data-model §3). Заполнение — фаза D
 	// (Analyze регистрирует источники/метрики); здесь только заводятся пустыми.
 	sources     map[string]*ast.SourceDecl // реестр источников (Шаг 1 Analyze)
@@ -93,6 +94,18 @@ func (i *Interpreter) unmarkIterating(p *[]value.Value) {
 	i.iterating[p]--
 }
 func (i *Interpreter) isIterating(p *[]value.Value) bool { return i.iterating[p] > 0 }
+
+// now возвращает дату запуска, зафиксированную ОДИН раз на первый вызов (§SM-7/§10.6,
+// CK-4). Снимает i.clock.Now() единожды и кеширует в i.today; все последующие вызовы
+// (сегодня() и движок метрики в фазе E) переиспользуют то же значение — дата запуска
+// консистентна на весь run. Никогда не зовёт time.Now() напрямую (только через Clock).
+func (i *Interpreter) now() value.Дата {
+	if i.today == nil {
+		d := i.clock.Now()
+		i.today = &d
+	}
+	return *i.today
+}
 
 // --- конструкторы диагностик (привязка ast.Position → errors.Position) ---
 

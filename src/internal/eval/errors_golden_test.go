@@ -166,8 +166,8 @@ func TestErrorsRegistryExactMatch(t *testing.T) {
 			line: 1, col: 11, cat: sem, msg: "конструкция литерал длительности не поддерживается в этой версии",
 		},
 		{
-			code: "SEM-DEFERRED-BUILTIN", src: `печать(сегодня())`,
-			line: 1, col: 8, cat: sem, msg: "функция 'сегодня' не поддерживается в этой версии",
+			code: "SEM-DEFERRED-BUILTIN", src: `печать(вчера())`,
+			line: 1, col: 8, cat: sem, msg: "функция 'вчера' не поддерживается в этой версии",
 		},
 	}
 
