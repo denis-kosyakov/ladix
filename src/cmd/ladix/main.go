@@ -90,7 +90,7 @@ func runFile(path string, maxDepth int, stdout, stderr io.Writer) int {
 		return 1 // накопленные лексические/синтаксические ошибки
 	}
 	return guard(stderr, func() int {
-		interp := eval.NewInterpreter(stdout, maxDepth)
+		interp := eval.NewInterpreter(stdout, maxDepth, eval.SystemClock{})
 		if err := interp.Run(prog); err != nil {
 			// Все типы eval/lexer/parser реализуют канонический двухстрочный Error() (§8.1).
 			fmt.Fprintln(stderr, err.Error())

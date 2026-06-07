@@ -23,22 +23,32 @@ type Interpreter struct {
 	out       io.Writer                    // канал печать()
 	iterating map[*[]value.Value]int       // списки под активной итерацией для (§4.3)
 	analyzed  bool                         // Analyze уже отработал (защита от двойного резолва)
+	clock     Clock                        // инъекция времени (§SM-7): сегодня()/окна метрик
+	// Реестры декларативного слоя (sources/metrics/recordCache/metricStack)
+	// добавляются в фазе B вместе с ast.SourceDecl/MetricDecl (§SM-4, data-model §3).
 }
 
-// NewInterpreter создаёт интерпретатор с инжектированным каналом вывода и лимитом
-// глубины (maxDepth ≤ 0 → DefaultMaxDepth).
-func NewInterpreter(out io.Writer, maxDepth int) *Interpreter {
+// NewInterpreter создаёт интерпретатор с инжектированным каналом вывода, лимитом
+// глубины (maxDepth ≤ 0 → DefaultMaxDepth) и инъектированным Clock (§SM-7).
+// При инициализации в global регистрируются 5 предопределённых Период (§SM-5 §2.2,
+// read-only иденты из value.PeriodNames).
+func NewInterpreter(out io.Writer, maxDepth int, clock Clock) *Interpreter {
 	if maxDepth <= 0 {
 		maxDepth = DefaultMaxDepth
 	}
-	return &Interpreter{
+	i := &Interpreter{
 		global:    NewEnvironment(nil),
 		funcs:     make(map[string]*ast.FunctionDecl),
 		builtins:  registerBuiltins(),
 		maxDepth:  maxDepth,
 		out:       out,
 		iterating: make(map[*[]value.Value]int),
+		clock:     clock,
 	}
+	for _, name := range value.PeriodNames {
+		i.global.Define(name, value.Период{Name: name})
+	}
+	return i
 }
 
 // Run исполняет программу: семпроход Analyze (если ещё не выполнен), затем

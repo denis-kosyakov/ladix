@@ -64,6 +64,12 @@ func Equal(a, b Value) bool {
 			}
 		}
 		return true
+	case Дата:
+		y, ok := b.(Дата)
+		return ok && x.Year == y.Year && x.Month == y.Month && x.Day == y.Day
+	case Период:
+		y, ok := b.(Период)
+		return ok && x.Name == y.Name
 	}
 	return false
 }
@@ -93,8 +99,34 @@ func Compare(a, b Value) (int, bool) {
 		if y, ok := b.(Строка); ok {
 			return strings.Compare(x.V, y.V), true
 		}
+	case Дата:
+		if y, ok := b.(Дата); ok {
+			return cmpDate(x, y), true
+		}
 	}
 	return 0, false
+}
+
+// cmpDate сравнивает две даты лексикографически по (Year, Month, Day).
+func cmpDate(a, b Дата) int {
+	if c := cmpInt(a.Year, b.Year); c != 0 {
+		return c
+	}
+	if c := cmpInt(a.Month, b.Month); c != 0 {
+		return c
+	}
+	return cmpInt(a.Day, b.Day)
+}
+
+func cmpInt(a, b int) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func cmpInt64(a, b int64) int {
