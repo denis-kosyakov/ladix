@@ -24,8 +24,12 @@ type Interpreter struct {
 	iterating map[*[]value.Value]int       // списки под активной итерацией для (§4.3)
 	analyzed  bool                         // Analyze уже отработал (защита от двойного резолва)
 	clock     Clock                        // инъекция времени (§SM-7): сегодня()/окна метрик
-	// Реестры декларативного слоя (sources/metrics/recordCache/metricStack)
-	// добавляются в фазе B вместе с ast.SourceDecl/MetricDecl (§SM-4, data-model §3).
+	// Реестры декларативного слоя (§SM-4, data-model §3). Заполнение — фаза D
+	// (Analyze регистрирует источники/метрики); здесь только заводятся пустыми.
+	sources     map[string]*ast.SourceDecl // реестр источников (Шаг 1 Analyze)
+	metrics     map[string]*ast.MetricDecl // реестр метрик (Шаг 1 Analyze)
+	recordCache map[string][]value.Запись  // лень + кеш загрузки источника на запуск (§9.6)
+	metricStack []string                   // стек активных метрик для детекта цикла (D-8)
 }
 
 // NewInterpreter создаёт интерпретатор с инжектированным каналом вывода, лимитом
@@ -37,13 +41,16 @@ func NewInterpreter(out io.Writer, maxDepth int, clock Clock) *Interpreter {
 		maxDepth = DefaultMaxDepth
 	}
 	i := &Interpreter{
-		global:    NewEnvironment(nil),
-		funcs:     make(map[string]*ast.FunctionDecl),
-		builtins:  registerBuiltins(),
-		maxDepth:  maxDepth,
-		out:       out,
-		iterating: make(map[*[]value.Value]int),
-		clock:     clock,
+		global:      NewEnvironment(nil),
+		funcs:       make(map[string]*ast.FunctionDecl),
+		builtins:    registerBuiltins(),
+		maxDepth:    maxDepth,
+		out:         out,
+		iterating:   make(map[*[]value.Value]int),
+		clock:       clock,
+		sources:     make(map[string]*ast.SourceDecl),
+		metrics:     make(map[string]*ast.MetricDecl),
+		recordCache: make(map[string][]value.Запись),
 	}
 	for _, name := range value.PeriodNames {
 		i.global.Define(name, value.Период{Name: name})

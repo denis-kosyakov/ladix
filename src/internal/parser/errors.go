@@ -16,7 +16,19 @@ const (
 	// Эталоны.
 	msgEmptyBlock   = "пустой блок не допускается, добавьте хотя бы один оператор"
 	msgAssignTarget = "неверная цель присваивания: слева от '=' допустима только переменная"
+	// Декларативный слой 004 (§SM-9.A, дословно).
+	msgSourceName = "ожидается имя источника"
 )
+
+// msgUnknownAttr — §SM-9.A: имя атрибута вне фикс-набора (поз. имени).
+func msgUnknownAttr(name string) string {
+	return fmt.Sprintf("неизвестный атрибут '%s'", name)
+}
+
+// msgDuplicateAttr — §SM-9.A: повтор атрибута (поз. повтора).
+func msgDuplicateAttr(name string) string {
+	return fmt.Sprintf("атрибут '%s' уже задан", name)
+}
 
 // msgIntRange — канон §13.4 с подстановкой реальной лексемы числа целиком.
 func msgIntRange(lexeme string) string {
