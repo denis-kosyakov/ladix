@@ -31,6 +31,19 @@ type Interpreter struct {
 	metrics     map[string]*ast.MetricDecl // реестр метрик (Шаг 1 Analyze)
 	recordCache map[string][]value.Запись  // лень + кеш загрузки источника на запуск (§9.6)
 	metricStack []string                   // стек активных метрик для детекта цикла (D-8)
+	recordCtx   *recordContext             // контекст полей текущей записи (per-record, движок метрики, §SM-8)
+}
+
+// recordContext — контекст вычисления выражений метрики per-record (§SM-8, D-9).
+// Несёт текущую запись rec, схему источника schema (объединение ключей всех записей)
+// и отсортированный список полей sortedFields (для текста «неизвестное поле»).
+// Голое имя ∈ schema резолвится в rec.Get(имя) (отсутствует → value.None); имя
+// «запись» — на всю rec. Сохраняется/восстанавливается реентерабельно (метрика-как-
+// значение может вложенно менять recordCtx).
+type recordContext struct {
+	rec          value.Запись
+	schema       map[string]struct{}
+	sortedFields []string
 }
 
 // NewInterpreter создаёт интерпретатор с инжектированным каналом вывода, лимитом
