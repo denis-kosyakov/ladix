@@ -24,6 +24,16 @@ var aggregateNames = map[string]struct{}{
 // результат. Шаги: (2) загрузка источника + схема; (3) окно периода (глобально);
 // (4) фильтр по_дате/где per-record; (5) агрегат-проекция; пустой результат §10.5.
 func (i *Interpreter) evalMetric(m *ast.MetricDecl) (value.Value, error) {
+	// recordCtx сброшен на входе: период:/глобальные подвыражения метрики
+	// вычисляются в ГЛОБАЛЬНОЙ области (D-9, D9-1). На реентерабельном пути
+	// (метрика-как-значение, D-8: внешняя метрика читает эту по имени во время
+	// фильтра/проекции) внешний recordCtx сохраняется и восстанавливается через
+	// defer — иначе голое имя в период:, совпавшее с полем внешней схемы, молча
+	// резолвилось бы в поле вместо глобальной области.
+	prevCtx := i.recordCtx
+	i.recordCtx = nil
+	defer func() { i.recordCtx = prevCtx }()
+
 	// (2) Загрузка источника + схема. Источник провалидирован Analyze (Шаг 1b).
 	decl := i.sources[m.Source.Name]
 	records, err := i.loadSource(decl)
@@ -32,7 +42,8 @@ func (i *Interpreter) evalMetric(m *ast.MetricDecl) (value.Value, error) {
 	}
 	schema, sortedFields := buildSchema(records)
 
-	// (3) Окно периода — один раз, в ГЛОБАЛЬНОЙ области (recordCtx=nil), §SM-8 D-9.
+	// (3) Окно периода — один раз, в ГЛОБАЛЬНОЙ области (recordCtx сброшен на входе,
+	// см. выше), §SM-8 D-9.
 	var winStart, winEnd value.Дата
 	hasPeriod := m.Period != nil
 	if hasPeriod {
@@ -60,8 +71,35 @@ func (i *Interpreter) evalMetric(m *ast.MetricDecl) (value.Value, error) {
 		}
 	}
 
+	// (5) Пустой набор выживших → решение по КОРНЮ m.Aggregate ДО вычисления
+	// (§SM-8 шаг 5, §10.5, ревью №1 D4-1): корневой единичный сумма/количество →
+	// Целое 0; единичный среднее/мин/макс ИЛИ любое составное (деривативное)
+	// выражение → Пусто коротким замыканием, НЕ спускаясь в evalAggExpr/арифметику
+	// (иначе сумма(x)/количество(y) дало бы 0/0, а сумма(x)+1 → Целое 1).
+	if len(surviving) == 0 {
+		return emptyWindowResult(m.Aggregate), nil
+	}
+
 	// (5) Агрегат-проекция (R3) поверх выживших.
 	return i.evalAggExpr(m.Aggregate, surviving, schema, sortedFields)
+}
+
+// emptyWindowResult выбирает результат метрики на ПУСТОМ наборе выживших по КОРНЮ
+// выражения «агрегат:» (§SM-8 шаг 5, §10.5, ревью №1 D4-1) — ДО любого вычисления.
+// Корневой единичный вызов сумма/количество → Целое 0; всё прочее (единичные
+// среднее/мин/макс ИЛИ составное деривативное выражение, напр. средний чек
+// сумма(x)/количество(запись)) → Пусто. Короткое замыкание на КОРНЕ (а не per-leaf)
+// не даёт деривативу схлопнуться в 0/0 или Целое 1.
+func emptyWindowResult(root ast.Expression) value.Value {
+	if call, ok := root.(*ast.CallExpr); ok && len(call.Args) == 1 {
+		if id, ok := call.Callee.(*ast.Ident); ok {
+			switch id.Name {
+			case "сумма", "количество":
+				return value.Целое{V: 0}
+			}
+		}
+	}
+	return value.None
 }
 
 // recordSurvives применяет дату-фильтр и фильтр «где» к одной записи в scope полей
@@ -131,7 +169,7 @@ func (i *Interpreter) evalAggExpr(expr ast.Expression, surviving []value.Зап�
 			}
 		}
 		// Не-агрегатный вызов: подвыражения не в scope полей (вне агрегата) —
-		// вычисляем в global (recordCtx уже сброшен на этом уровне).
+		// вычисляем в global (recordCtx сброшен на входе в evalMetric, см. выше).
 		return i.evalExpr(i.global, expr)
 
 	case *ast.Ident:

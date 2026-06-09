@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
+	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
 // Analyze — семантический проход стадии 3 (§9, FR-034/035). Лёгкий fail-fast
@@ -50,8 +51,14 @@ func (i *Interpreter) Analyze(prog *ast.Program) error {
 			i.funcs[name] = d
 		case *ast.SourceDecl:
 			i.sources[name] = d
+			if err := i.checkReservedDeclName(name, d.Pos()); err != nil {
+				return err
+			}
 		case *ast.MetricDecl:
 			i.metrics[name] = d
+			if err := i.checkReservedDeclName(name, d.Pos()); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -121,6 +128,24 @@ func (i *Interpreter) checkMetricDecl(m *ast.MetricDecl) error {
 			return semErr(m.Attrs.SourcePos, fmt.Sprintf("метрика '%s': '%s' — не источник", name, src))
 		}
 		return semErr(m.Attrs.SourcePos, fmt.Sprintf("метрика '%s': источник '%s' не объявлен", name, src))
+	}
+	return nil
+}
+
+// checkReservedDeclName запрещает имени источника/метрики совпадать с
+// зарезервированным (§SM-4, §SM-9.A, ревью №1 C1-1): встроенной функцией (активной
+// или deferred — туда же входят 5 агрегатов сумма/количество/среднее/мин/макс) либо
+// предопределённым периодом (value.PeriodNames). Позиция — ведущий токен источник/
+// метрика (decl.Pos()). Пользовательских функций НЕ касается: для них затенение
+// встроенного — предупреждение (SPEC §6.5), а не жёсткий запрет.
+func (i *Interpreter) checkReservedDeclName(name string, pos ast.Position) error {
+	if _, ok := i.builtins[name]; ok {
+		return semErr(pos, fmt.Sprintf("имя '%s' зарезервировано встроенной функцией", name))
+	}
+	for _, p := range value.PeriodNames {
+		if name == p {
+			return semErr(pos, fmt.Sprintf("имя '%s' зарезервировано предопределённым периодом", name))
+		}
 	}
 	return nil
 }
