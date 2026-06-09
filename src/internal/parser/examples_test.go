@@ -37,7 +37,7 @@ func TestDeclarativeExamplesUnexpected(t *testing.T) {
 		name     string
 		firstMsg string
 	}{
-		{"выручка.ladix", "неожиданный токен 'источник'"},
+		{"выручка.ladix", "неожиданный токен 'процесс'"},
 		{"онбординг.ladix", "неожиданный токен 'процесс'"},
 	}
 	for _, c := range cases {

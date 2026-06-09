@@ -24,7 +24,7 @@ func runExample(t *testing.T, name string) (string, error) {
 		t.Fatalf("%s: лексические/синтаксические ошибки: %v", name, errList.Error())
 	}
 	var buf bytes.Buffer
-	interp := NewInterpreter(&buf, 0)
+	interp := NewInterpreter(&buf, 0, testClock)
 	runErr := interp.Run(prog)
 	return buf.String(), runErr // stdout (включая успевшее напечататься) + ошибка
 }

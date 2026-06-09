@@ -2,6 +2,7 @@ package eval
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
 	"github.com/denis-kosyakov/ladix/internal/value"
@@ -52,9 +53,14 @@ func (i *Interpreter) evalExpr(env *Environment, e ast.Expression) (value.Value,
 	return nil, runtimeErr(e.Pos(), "внутренняя ошибка: неизвестный узел выражения")
 }
 
-// evalIdent резолвит идентификатор в позиции ЗНАЧЕНИЯ (§2.3): сперва переменная,
-// затем — имя функции (→ «функция-как-значение»), иначе → «не объявлено». Оба
-// промаха flow-зависимы, поэтому это рантайм, не семпроход.
+// evalIdent резолвит идентификатор в позиции ЗНАЧЕНИЯ (§2.3, §SM-8.1). Порядок:
+// (1) переменная (Lookup: локаль→…→глобаль, включая предопр. периоды); (2) имя
+// функции (→ «функция-как-значение»); (3) имя источника (→ «нельзя как значение»,
+// R6/FR-032); (4) имя метрики (→ пересчёт метрики, D-8); (5) поле текущей записи,
+// если активен recordCtx (имя «запись» / поле схемы / иначе «неизвестное поле»);
+// (6) «не объявлено». Глобаль/функция/встроенное/источник/метрика имеют приоритет
+// над полем записи (env.Lookup и isFunctionName идут ПЕРЕД recordCtx). Все промахи
+// flow-зависимы → рантайм, не семпроход.
 func (i *Interpreter) evalIdent(env *Environment, id *ast.Ident) (value.Value, error) {
 	if v, ok := env.Lookup(id.Name); ok {
 		return v, nil
@@ -62,6 +68,26 @@ func (i *Interpreter) evalIdent(env *Environment, id *ast.Ident) (value.Value, e
 	if i.isFunctionName(id.Name) {
 		return nil, runtimeErr(id.Pos(), fmt.Sprintf("'%s' — функция, её нельзя использовать как значение", id.Name))
 	}
+	// (a) имя источника — не первоклассно (R6/FR-032, §SM-9.B).
+	if _, ok := i.sources[id.Name]; ok {
+		return nil, runtimeErr(id.Pos(), fmt.Sprintf("'%s' — источник, его нельзя использовать как значение", id.Name))
+	}
+	// (b) имя метрики — запускает пересчёт (D-8); цикл ловит evalMetricByName.
+	if _, ok := i.metrics[id.Name]; ok {
+		return i.evalMetricByName(id.Name, id.Pos())
+	}
+	// (c) контекст полей записи (метрика-контекст, §SM-8.1).
+	if i.recordCtx != nil {
+		if id.Name == "запись" {
+			return i.recordCtx.rec, nil
+		}
+		if _, ok := i.recordCtx.schema[id.Name]; ok {
+			return i.recordCtx.rec.Get(id.Name), nil // нет в этой записи → value.None
+		}
+		return nil, runtimeErr(id.Pos(),
+			fmt.Sprintf("неизвестное поле '%s' (известные: %s)", id.Name, strings.Join(i.recordCtx.sortedFields, ", ")))
+	}
+	// (d) обычный промах вне контекста метрики.
 	return nil, runtimeErr(id.Pos(), fmt.Sprintf("'%s' не объявлено", id.Name))
 }
 

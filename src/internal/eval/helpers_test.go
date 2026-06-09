@@ -27,7 +27,7 @@ func runDepth(t *testing.T, src string, maxDepth int) (string, error) {
 		t.Fatalf("неожиданные лексические/синтаксические ошибки: %v", errList.Error())
 	}
 	var buf bytes.Buffer
-	interp := NewInterpreter(&buf, maxDepth)
+	interp := NewInterpreter(&buf, maxDepth, testClock)
 	err := interp.Run(prog)
 	return buf.String(), err
 }
@@ -43,7 +43,7 @@ func evalExpr1(t *testing.T, exprSrc string) value.Value {
 	if !errList.Empty() {
 		t.Fatalf("неожиданные ошибки разбора %q: %v", exprSrc, errList.Error())
 	}
-	interp := NewInterpreter(&bytes.Buffer{}, 0)
+	interp := NewInterpreter(&bytes.Buffer{}, 0, testClock)
 	if err := interp.Run(prog); err != nil {
 		t.Fatalf("ошибка вычисления %q: %v", exprSrc, err)
 	}
@@ -62,7 +62,7 @@ func analyzeSrc(t *testing.T, src string) error {
 	if !errList.Empty() {
 		t.Fatalf("неожиданные лексические/синтаксические ошибки: %v", errList.Error())
 	}
-	interp := NewInterpreter(&bytes.Buffer{}, 0)
+	interp := NewInterpreter(&bytes.Buffer{}, 0, testClock)
 	return interp.Analyze(prog)
 }
 

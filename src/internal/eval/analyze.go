@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
+	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
 // Analyze — семантический проход стадии 3 (§9, FR-034/035). Лёгкий fail-fast
@@ -15,19 +16,63 @@ import (
 func (i *Interpreter) Analyze(prog *ast.Program) error {
 	i.analyzed = true
 
-	// Шаг 1 — регистрация top-level FunctionDecl.
+	// Шаг 1 — объединённый упорядоченный проход по top-level декларациям
+	// (FunctionDecl+SourceDecl+MetricDecl) в общем глобальном пространстве имён
+	// (§SM-4). declLine — строка первого объявления имени; declIsFunc — было ли
+	// первое объявление функцией (для различения текста повтора, R5).
 	declLine := map[string]int{}
+	declIsFunc := map[string]bool{}
 	for _, item := range prog.Items {
-		fd, ok := item.(*ast.FunctionDecl)
+		var name string
+		var pos ast.Position
+		isFunc := false
+		switch d := item.(type) {
+		case *ast.FunctionDecl:
+			name, pos, isFunc = d.Name.Name, d.Name.Pos(), true
+		case *ast.SourceDecl:
+			name, pos = d.Name.Name, d.Name.Pos()
+		case *ast.MetricDecl:
+			name, pos = d.Name.Name, d.Name.Pos()
+		default:
+			continue
+		}
+		if line, exists := declLine[name]; exists {
+			// функция↔функция → старый текст (регресс 003, R5); любая коллизия
+			// с участием источника/метрики → общий §SM-9.A текст.
+			if isFunc && declIsFunc[name] {
+				return semErr(pos, fmt.Sprintf("функция '%s' уже объявлена в строке %d", name, line))
+			}
+			return semErr(pos, fmt.Sprintf("'%s' уже объявлено в строке %d", name, line))
+		}
+		declLine[name] = pos.Line
+		declIsFunc[name] = isFunc
+		switch d := item.(type) {
+		case *ast.FunctionDecl:
+			i.funcs[name] = d
+		case *ast.SourceDecl:
+			i.sources[name] = d
+			if err := i.checkReservedDeclName(name, d.Pos()); err != nil {
+				return err
+			}
+		case *ast.MetricDecl:
+			i.metrics[name] = d
+			if err := i.checkReservedDeclName(name, d.Pos()); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Шаг 1b — статическая валидация метрик: обязательность источник/агрегат,
+	// связка период↔по_дате, резолв источника (§SM-4, §SM-9.A). НЕ резолвит поля
+	// записи/типы/голое поле/цикл — это eval-time (D-5/D-6/D-8).
+	for _, item := range prog.Items {
+		md, ok := item.(*ast.MetricDecl)
 		if !ok {
 			continue
 		}
-		name := fd.Name.Name
-		if line, exists := declLine[name]; exists {
-			return semErr(fd.Name.Pos(), fmt.Sprintf("функция '%s' уже объявлена в строке %d", name, line))
+		if err := i.checkMetricDecl(md); err != nil {
+			return err
 		}
-		declLine[name] = fd.Pos().Line
-		i.funcs[name] = fd
 	}
 
 	// Шаг 2 — обход глобальной области и тел функций (блоки область не открывают).
@@ -45,6 +90,61 @@ func (i *Interpreter) Analyze(prog *ast.Program) error {
 			if err := i.analyzeArea(fd.Body.Stmts, fd.Params, true, 0); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// checkMetricDecl — статическая валидация одной метрики (Шаг 1b, §SM-4). Порядок:
+// (1) обязательность источник/агрегат; (2) пара период↔по_дате; (3) резолв
+// источника. Тексты §SM-9.A дословно; fail-fast. Поля/типы/голое поле/цикл не
+// резолвятся — eval-time. Присутствие атрибута определяется по ненулевой строке
+// его позиции в Attrs (парсер выставляет Line!=0 ровно для присутствующих).
+func (i *Interpreter) checkMetricDecl(m *ast.MetricDecl) error {
+	name := m.Name.Name
+	// (1) обязательные атрибуты источник/агрегат (поз. токена метрика).
+	if m.Attrs.SourcePos.Line == 0 {
+		return semErr(m.Pos(), fmt.Sprintf("метрика '%s': отсутствует обязательный атрибут 'источник'", name))
+	}
+	if m.Attrs.AggregatePos.Line == 0 {
+		return semErr(m.Pos(), fmt.Sprintf("метрика '%s': отсутствует обязательный атрибут 'агрегат'", name))
+	}
+	// (2) связка период↔по_дате.
+	hasPeriod := m.Attrs.PeriodPos.Line != 0
+	hasByDate := m.Attrs.ByDatePos.Line != 0
+	if hasPeriod && !hasByDate {
+		return semErr(m.Attrs.PeriodPos, fmt.Sprintf("метрика '%s': 'период' требует 'по_дате'", name))
+	}
+	if hasByDate && !hasPeriod {
+		return semErr(m.Attrs.ByDatePos, fmt.Sprintf("метрика '%s': 'по_дате' без 'период' не имеет смысла", name))
+	}
+	// (3) резолв источника: имя должно быть зарегистрированным источником.
+	src := m.Source.Name
+	if _, ok := i.sources[src]; !ok {
+		if _, fn := i.funcs[src]; fn {
+			return semErr(m.Attrs.SourcePos, fmt.Sprintf("метрика '%s': '%s' — не источник", name, src))
+		}
+		if _, mt := i.metrics[src]; mt {
+			return semErr(m.Attrs.SourcePos, fmt.Sprintf("метрика '%s': '%s' — не источник", name, src))
+		}
+		return semErr(m.Attrs.SourcePos, fmt.Sprintf("метрика '%s': источник '%s' не объявлен", name, src))
+	}
+	return nil
+}
+
+// checkReservedDeclName запрещает имени источника/метрики совпадать с
+// зарезервированным (§SM-4, §SM-9.A, ревью №1 C1-1): встроенной функцией (активной
+// или deferred — туда же входят 5 агрегатов сумма/количество/среднее/мин/макс) либо
+// предопределённым периодом (value.PeriodNames). Позиция — ведущий токен источник/
+// метрика (decl.Pos()). Пользовательских функций НЕ касается: для них затенение
+// встроенного — предупреждение (SPEC §6.5), а не жёсткий запрет.
+func (i *Interpreter) checkReservedDeclName(name string, pos ast.Position) error {
+	if _, ok := i.builtins[name]; ok {
+		return semErr(pos, fmt.Sprintf("имя '%s' зарезервировано встроенной функцией", name))
+	}
+	for _, p := range value.PeriodNames {
+		if name == p {
+			return semErr(pos, fmt.Sprintf("имя '%s' зарезервировано предопределённым периодом", name))
 		}
 	}
 	return nil

@@ -34,3 +34,140 @@ func (p *Parser) parseParamList() []ast.Ident {
 	}
 	return params
 }
+
+// parseSourceDecl: источник Ident ":" NEWLINE INDENT (файл ":" STRING NEWLINE)+
+// DEDENT (§SM-3). Единственный допустимый атрибут — файл; неизвестный → §SM-9.A,
+// повтор → §SM-9.A. Пустой блок → msgEmptyBlock. Pos() = токен источник.
+func (p *Parser) parseSourceDecl() *ast.SourceDecl {
+	srcTok := p.advance() // источник
+	nameTok, _ := p.expect(lexer.IDENT, "имя источника")
+	name := p.identFrom(nameTok)
+	p.expect(lexer.COLON, ":")
+	if !p.openAttrBlock() {
+		return ast.NewSourceDecl(toASTPos(srcTok.Pos), *name, ast.StringLit{}, ast.Position{})
+	}
+	var file *ast.StringLit
+	var filePos lexer.Token
+	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
+		before := p.pos
+		attrTok := p.peek()
+		if attrTok.Lexeme != "файл" {
+			p.error(attrTok.Pos, msgUnknownAttr(attrTok.Lexeme))
+			break
+		}
+		p.advance() // файл
+		p.expect(lexer.COLON, ":")
+		strTok, ok := p.expect(lexer.STRING, "путь к файлу")
+		if ok {
+			if file != nil {
+				p.error(attrTok.Pos, msgDuplicateAttr("файл"))
+				break
+			}
+			file = p.buildStringLit(strTok)
+			filePos = strTok
+		}
+		p.expect(lexer.NEWLINE, "конец строки")
+		if p.pos == before {
+			p.advance() // backstop: гарантия прогресса
+		}
+	}
+	p.expect(lexer.DEDENT, "конец блока")
+	if file == nil {
+		return ast.NewSourceDecl(toASTPos(srcTok.Pos), *name, ast.StringLit{}, ast.Position{})
+	}
+	return ast.NewSourceDecl(toASTPos(srcTok.Pos), *name, *file, toASTPos(filePos.Pos))
+}
+
+// parseSourceRef разбирает значение атрибута источник: — ровно один IDENT (D-1).
+// Иной токен → §SM-9.A «ожидается имя источника». Возвращает Ident и ok.
+func (p *Parser) parseSourceRef() (ast.Ident, bool) {
+	if !p.check(lexer.IDENT) {
+		p.error(p.peek().Pos, msgSourceName)
+		return ast.Ident{}, false
+	}
+	tok := p.advance()
+	return *p.identFrom(tok), true
+}
+
+// metricAttrName сопоставляет лексему ведущего токена строки атрибута метрики
+// фикс-набору {источник,где,агрегат,период,по_дате} — унифицированно по лексеме
+// (атрибуты лексируются как ключевые слова, но имя проверяется по тексту).
+func metricAttrName(lexeme string) bool {
+	switch lexeme {
+	case "источник", "где", "агрегат", "период", "по_дате":
+		return true
+	}
+	return false
+}
+
+// parseMetricDecl: метрика Ident ":" NEWLINE INDENT MetricAttr+ DEDENT (§SM-3).
+// MetricAttr = attrName ":" value NEWLINE; источник: → parseSourceRef (D-1), прочие
+// → parseExpression. Неизвестное имя/повтор → §SM-9.A. Обязательность и связку
+// период↔по_дате парсер НЕ проверяет (D-4, семпроход). Pos() = токен метрика.
+func (p *Parser) parseMetricDecl() *ast.MetricDecl {
+	mTok := p.advance() // метрика
+	nameTok, _ := p.expect(lexer.IDENT, "имя метрики")
+	name := p.identFrom(nameTok)
+	p.expect(lexer.COLON, ":")
+
+	var source ast.Ident
+	var where, aggregate, period, byDate ast.Expression
+	var attrs ast.MetricAttrPos
+
+	if !p.openAttrBlock() {
+		return ast.NewMetricDecl(toASTPos(mTok.Pos), *name, source, where, aggregate, period, byDate, attrs)
+	}
+	seen := make(map[string]bool, 5)
+	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
+		before := p.pos
+		attrTok := p.peek()
+		lexeme := attrTok.Lexeme
+		if !metricAttrName(lexeme) {
+			p.error(attrTok.Pos, msgUnknownAttr(lexeme))
+			break
+		}
+		if seen[lexeme] {
+			p.error(attrTok.Pos, msgDuplicateAttr(lexeme))
+			break
+		}
+		seen[lexeme] = true
+		p.advance() // ключевое слово атрибута
+		p.expect(lexer.COLON, ":")
+		switch lexeme {
+		case "источник":
+			src, _ := p.parseSourceRef()
+			source = src
+			attrs.SourcePos = toASTPos(attrTok.Pos)
+		case "где":
+			where = p.parseExpression()
+			attrs.WherePos = toASTPos(attrTok.Pos)
+		case "агрегат":
+			aggregate = p.parseExpression()
+			attrs.AggregatePos = toASTPos(attrTok.Pos)
+		case "период":
+			period = p.parseExpression()
+			attrs.PeriodPos = toASTPos(attrTok.Pos)
+		case "по_дате":
+			byDate = p.parseExpression()
+			attrs.ByDatePos = toASTPos(attrTok.Pos)
+		}
+		p.expect(lexer.NEWLINE, "конец строки")
+		if p.pos == before {
+			p.advance() // backstop: гарантия прогресса
+		}
+	}
+	p.expect(lexer.DEDENT, "конец блока")
+	return ast.NewMetricDecl(toASTPos(mTok.Pos), *name, source, where, aggregate, period, byDate, attrs)
+}
+
+// openAttrBlock потребляет NEWLINE и открывающий INDENT блока атрибутов; при
+// пустом блоке (нет INDENT) эмитит msgEmptyBlock и возвращает false (как parseBlock).
+func (p *Parser) openAttrBlock() bool {
+	p.expect(lexer.NEWLINE, "конец строки")
+	if !p.check(lexer.INDENT) {
+		p.errorLocal(p.peek().Pos, msgEmptyBlock)
+		return false
+	}
+	p.advance() // INDENT
+	return true
+}

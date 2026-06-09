@@ -7,7 +7,8 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
-// Закрытый реестр: РОВНО 23 активных + 12 deferred = 35 (D6); длина в счёте ×1.
+// Закрытый реестр: РОВНО 25 активных + 10 deferred = 35 (D6, после активации
+// дата/сегодня в 004 — §SM-6); длина в счёте ×1.
 func TestBuiltinRegistryClosed(t *testing.T) {
 	m := registerBuiltins()
 	if len(m) != 35 {
@@ -21,11 +22,11 @@ func TestBuiltinRegistryClosed(t *testing.T) {
 			active++
 		}
 	}
-	if active != 23 {
-		t.Errorf("активных = %d, хотим 23", active)
+	if active != 25 {
+		t.Errorf("активных = %d, хотим 25", active)
 	}
-	if deferred != 12 {
-		t.Errorf("deferred = %d, хотим 12", deferred)
+	if deferred != 10 {
+		t.Errorf("deferred = %d, хотим 10", deferred)
 	}
 }
 
@@ -141,7 +142,7 @@ func TestBuiltinKopiyaIndependent(t *testing.T) {
 	}
 }
 
-// Все 12 deferred → SEM-DEFERRED-BUILTIN (отлично от «не объявлена»).
+// Все 10 deferred → SEM-DEFERRED-BUILTIN (отлично от «не объявлена»).
 func TestBuiltinDeferredAll(t *testing.T) {
 	for _, name := range deferredNames {
 		t.Run(name, func(t *testing.T) {

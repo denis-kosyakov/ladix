@@ -23,22 +23,53 @@ type Interpreter struct {
 	out       io.Writer                    // канал печать()
 	iterating map[*[]value.Value]int       // списки под активной итерацией для (§4.3)
 	analyzed  bool                         // Analyze уже отработал (защита от двойного резолва)
+	clock     Clock                        // инъекция времени (§SM-7): сегодня()/окна метрик
+	today     *value.Дата                  // дата запуска, зафиксированная на первый вызов now() (§SM-7/§10.6)
+	// Реестры декларативного слоя (§SM-4, data-model §3). Заполнение — фаза D
+	// (Analyze регистрирует источники/метрики); здесь только заводятся пустыми.
+	sources     map[string]*ast.SourceDecl // реестр источников (Шаг 1 Analyze)
+	metrics     map[string]*ast.MetricDecl // реестр метрик (Шаг 1 Analyze)
+	recordCache map[string][]value.Запись  // лень + кеш загрузки источника на запуск (§9.6)
+	metricStack []string                   // стек активных метрик для детекта цикла (D-8)
+	recordCtx   *recordContext             // контекст полей текущей записи (per-record, движок метрики, §SM-8)
 }
 
-// NewInterpreter создаёт интерпретатор с инжектированным каналом вывода и лимитом
-// глубины (maxDepth ≤ 0 → DefaultMaxDepth).
-func NewInterpreter(out io.Writer, maxDepth int) *Interpreter {
+// recordContext — контекст вычисления выражений метрики per-record (§SM-8, D-9).
+// Несёт текущую запись rec, схему источника schema (объединение ключей всех записей)
+// и отсортированный список полей sortedFields (для текста «неизвестное поле»).
+// Голое имя ∈ schema резолвится в rec.Get(имя) (отсутствует → value.None); имя
+// «запись» — на всю rec. Сохраняется/восстанавливается реентерабельно (метрика-как-
+// значение может вложенно менять recordCtx).
+type recordContext struct {
+	rec          value.Запись
+	schema       map[string]struct{}
+	sortedFields []string
+}
+
+// NewInterpreter создаёт интерпретатор с инжектированным каналом вывода, лимитом
+// глубины (maxDepth ≤ 0 → DefaultMaxDepth) и инъектированным Clock (§SM-7).
+// При инициализации в global регистрируются 5 предопределённых Период (§SM-5 §2.2,
+// read-only иденты из value.PeriodNames).
+func NewInterpreter(out io.Writer, maxDepth int, clock Clock) *Interpreter {
 	if maxDepth <= 0 {
 		maxDepth = DefaultMaxDepth
 	}
-	return &Interpreter{
-		global:    NewEnvironment(nil),
-		funcs:     make(map[string]*ast.FunctionDecl),
-		builtins:  registerBuiltins(),
-		maxDepth:  maxDepth,
-		out:       out,
-		iterating: make(map[*[]value.Value]int),
+	i := &Interpreter{
+		global:      NewEnvironment(nil),
+		funcs:       make(map[string]*ast.FunctionDecl),
+		builtins:    registerBuiltins(),
+		maxDepth:    maxDepth,
+		out:         out,
+		iterating:   make(map[*[]value.Value]int),
+		clock:       clock,
+		sources:     make(map[string]*ast.SourceDecl),
+		metrics:     make(map[string]*ast.MetricDecl),
+		recordCache: make(map[string][]value.Запись),
 	}
+	for _, name := range value.PeriodNames {
+		i.global.Define(name, value.Период{Name: name})
+	}
+	return i
 }
 
 // Run исполняет программу: семпроход Analyze (если ещё не выполнен), затем
@@ -76,6 +107,18 @@ func (i *Interpreter) unmarkIterating(p *[]value.Value) {
 	i.iterating[p]--
 }
 func (i *Interpreter) isIterating(p *[]value.Value) bool { return i.iterating[p] > 0 }
+
+// now возвращает дату запуска, зафиксированную ОДИН раз на первый вызов (§SM-7/§10.6,
+// CK-4). Снимает i.clock.Now() единожды и кеширует в i.today; все последующие вызовы
+// (сегодня() и движок метрики в фазе E) переиспользуют то же значение — дата запуска
+// консистентна на весь run. Никогда не зовёт time.Now() напрямую (только через Clock).
+func (i *Interpreter) now() value.Дата {
+	if i.today == nil {
+		d := i.clock.Now()
+		i.today = &d
+	}
+	return *i.today
+}
 
 // --- конструкторы диагностик (привязка ast.Position → errors.Position) ---
 

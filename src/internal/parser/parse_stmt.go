@@ -13,6 +13,12 @@ func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
 	if p.check(lexer.KW_FUNC) {
 		return p.parseFunctionDecl()
 	}
+	if p.check(lexer.KW_SOURCE) {
+		return p.parseSourceDecl()
+	}
+	if p.check(lexer.KW_METRIC) {
+		return p.parseMetricDecl()
+	}
 	if isUnexpectedTopLevel(p.peek().Type) {
 		bad := p.advance() // потребляем ведущий токен (прогресс), затем синхронизация
 		p.error(bad.Pos, msgUnexpected(bad))
@@ -24,12 +30,13 @@ func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
 	return nil
 }
 
-// isUnexpectedTopLevel — ведущие токены, недопустимые на верхнем уровне scope B:
-// отложенные декларации (источник/метрика/процесс/когда), значение, фигурные
-// скобки. Все дают SE-UNEXPECTED (FR-017, guardrail 12).
+// isUnexpectedTopLevel — ведущие токены, недопустимые на верхнем уровне: отложенные
+// декларации процессов/триггеров (процесс/когда), значение, фигурные скобки. Все
+// дают SE-UNEXPECTED (FR-017, guardrail 12). источник/метрика теперь парсятся
+// (004, §SM-3) — здесь их нет.
 func isUnexpectedTopLevel(t lexer.TokenType) bool {
 	switch t {
-	case lexer.KW_SOURCE, lexer.KW_METRIC, lexer.KW_PROCESS, lexer.KW_WHEN,
+	case lexer.KW_PROCESS, lexer.KW_WHEN,
 		lexer.KW_VALUE, lexer.LBRACE, lexer.RBRACE:
 		return true
 	default:
