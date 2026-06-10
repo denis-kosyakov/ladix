@@ -56,9 +56,9 @@ func TestGoldenSEAssignTarget(t *testing.T) {
 }
 
 func TestGoldenSEUnexpectedTopLevel(t *testing.T) {
-	// источник/метрика теперь парсятся (004, §SM-3) — здесь только отложенные
-	// процесс/когда/значение/{ } остаются SE-UNEXPECTED.
-	leads := []string{"процесс", "когда", "значение", "{"}
+	// источник/метрика парсятся с 004 (§SM-3), процесс — с 005 (§PM-3, D-6) —
+	// здесь только отложенные когда/значение/{ } остаются SE-UNEXPECTED.
+	leads := []string{"когда", "значение", "{"}
 	for _, lead := range leads {
 		t.Run(lead, func(t *testing.T) {
 			assertGolden(t, lead+"\n",

@@ -160,6 +160,118 @@ func (p *Parser) parseMetricDecl() *ast.MetricDecl {
 	return ast.NewMetricDecl(toASTPos(mTok.Pos), *name, source, where, aggregate, period, byDate, attrs)
 }
 
+// parseProcessDecl: процесс Ident ("(" ParamList? ")")? ":" NEWLINE INDENT
+// StepDecl+ DEDENT (§PM-3). Параметры опциональны (без скобок → Params=nil).
+// В блоке допустимы только шаги: не-шаг → SE-UNEXPECTED на ведущем токене
+// строки; пустой блок → msgEmptyBlock и ProcessDecl с пустыми Steps.
+// Pos() = токен процесс.
+func (p *Parser) parseProcessDecl() *ast.ProcessDecl {
+	procTok := p.advance() // процесс
+	nameTok, _ := p.expect(lexer.IDENT, "имя процесса")
+	name := p.identFrom(nameTok)
+	var params []ast.Ident
+	if p.check(lexer.LPAREN) {
+		p.advance() // (
+		params = p.parseParamList()
+		p.expect(lexer.RPAREN, ")")
+	}
+	p.expect(lexer.COLON, ":")
+	if !p.openAttrBlock() {
+		return ast.NewProcessDecl(toASTPos(procTok.Pos), *name, params, nil)
+	}
+	var steps []*ast.StepDecl
+	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
+		before := p.pos
+		if p.check(lexer.KW_STEP) {
+			if sd := p.parseStepDecl(); sd != nil {
+				steps = append(steps, sd)
+			}
+		} else {
+			p.error(p.peek().Pos, msgUnexpected(p.peek()))
+			break
+		}
+		if p.pos == before {
+			p.advance() // backstop: гарантия прогресса
+		}
+	}
+	p.expect(lexer.DEDENT, "конец блока")
+	return ast.NewProcessDecl(toASTPos(procTok.Pos), *name, params, steps)
+}
+
+// parseStepDecl: шаг Ident StepAfter? ":" NEWLINE INDENT StepLine+ DEDENT, где
+// StepLine ::= StepAttr | Statement, StepAttr ::= ("исполнитель" | "срок") ":"
+// Expression NEWLINE (§PM-3). Атрибуты и операторы чередуются свободно;
+// «неизвестного атрибута» НЕТ (в отличие от metric) — любая не-исполнитель/срок
+// строка разбирается как Statement. Повтор атрибута → msgDuplicateAttr + break
+// (D-8, как parseMetricDecl); пустой блок → msgEmptyBlock. Pos() = токен шаг.
+func (p *Parser) parseStepDecl() *ast.StepDecl {
+	stepTok := p.advance() // шаг
+	nameTok, _ := p.expect(lexer.IDENT, "имя шага")
+	name := p.identFrom(nameTok)
+	var after []ast.Ident
+	if p.check(lexer.KW_AFTER) {
+		p.advance() // после
+		after = p.parseAfterList()
+	}
+	p.expect(lexer.COLON, ":")
+
+	var assignee, deadline ast.Expression
+	var attrs ast.StepAttrPos
+	var body []ast.Statement
+
+	if !p.openAttrBlock() {
+		return ast.NewStepDecl(toASTPos(stepTok.Pos), *name, after, assignee, deadline, attrs, body)
+	}
+	seen := make(map[string]bool, 2)
+	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
+		before := p.pos
+		if p.check(lexer.KW_ASSIGNEE) || p.check(lexer.KW_DEADLINE) {
+			attrTok := p.peek()
+			lexeme := attrTok.Lexeme
+			if seen[lexeme] {
+				p.error(attrTok.Pos, msgDuplicateAttr(lexeme))
+				break
+			}
+			p.advance() // ключевое слово атрибута
+			p.expect(lexer.COLON, ":")
+			if attrTok.Type == lexer.KW_ASSIGNEE {
+				assignee = p.parseExpression()
+				attrs.AssigneePos = toASTPos(attrTok.Pos)
+			} else {
+				deadline = p.parseExpression()
+				attrs.DeadlinePos = toASTPos(attrTok.Pos)
+			}
+			p.expect(lexer.NEWLINE, "конец строки")
+			seen[lexeme] = true
+		} else if s := p.parseStatement(); s != nil {
+			body = append(body, s)
+		}
+		if p.pos == before {
+			p.advance() // backstop: гарантия прогресса
+		}
+	}
+	p.expect(lexer.DEDENT, "конец блока")
+	return ast.NewStepDecl(toASTPos(stepTok.Pos), *name, after, assignee, deadline, attrs, body)
+}
+
+// parseAfterList разбирает список предшественников после ключевого слова после:
+// Ident ("," Ident)* БЕЗ скобок (отличие от parseParamList — терминатор не RPAREN,
+// а отсутствие COMMA). после без имени → SE-EXPECTED от первого expect, After пуст.
+func (p *Parser) parseAfterList() []ast.Ident {
+	var after []ast.Ident
+	for {
+		nameTok, ok := p.expect(lexer.IDENT, "имя шага")
+		if !ok {
+			break
+		}
+		after = append(after, *p.identFrom(nameTok))
+		if !p.match(lexer.COMMA) {
+			break
+		}
+	}
+	return after
+}
+
 // openAttrBlock потребляет NEWLINE и открывающий INDENT блока атрибутов; при
 // пустом блоке (нет INDENT) эмитит msgEmptyBlock и возвращает false (как parseBlock).
 func (p *Parser) openAttrBlock() bool {
