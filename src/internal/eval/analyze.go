@@ -17,9 +17,10 @@ func (i *Interpreter) Analyze(prog *ast.Program) error {
 	i.analyzed = true
 
 	// Шаг 1 — объединённый упорядоченный проход по top-level декларациям
-	// (FunctionDecl+SourceDecl+MetricDecl) в общем глобальном пространстве имён
-	// (§SM-4). declLine — строка первого объявления имени; declIsFunc — было ли
-	// первое объявление функцией (для различения текста повтора, R5).
+	// (FunctionDecl+SourceDecl+MetricDecl+ProcessDecl) в общем глобальном
+	// пространстве имён (§SM-4, §PM-4/D-5). declLine — строка первого объявления
+	// имени; declIsFunc — было ли первое объявление функцией (для различения
+	// текста повтора, R5).
 	declLine := map[string]int{}
 	declIsFunc := map[string]bool{}
 	for _, item := range prog.Items {
@@ -32,6 +33,8 @@ func (i *Interpreter) Analyze(prog *ast.Program) error {
 		case *ast.SourceDecl:
 			name, pos = d.Name.Name, d.Name.Pos()
 		case *ast.MetricDecl:
+			name, pos = d.Name.Name, d.Name.Pos()
+		case *ast.ProcessDecl:
 			name, pos = d.Name.Name, d.Name.Pos()
 		default:
 			continue
@@ -59,6 +62,11 @@ func (i *Interpreter) Analyze(prog *ast.Program) error {
 			if err := i.checkReservedDeclName(name, d.Pos()); err != nil {
 				return err
 			}
+		case *ast.ProcessDecl:
+			i.processes[name] = d
+			if err := i.checkReservedDeclName(name, d.Pos()); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -71,6 +79,18 @@ func (i *Interpreter) Analyze(prog *ast.Program) error {
 			continue
 		}
 		if err := i.checkMetricDecl(md); err != nil {
+			return err
+		}
+	}
+
+	// Шаг 1c — структурная валидация процессов: уникальность шагов, резолв
+	// 'после' (только строго назад), 'срок' без 'исполнитель' (§PM-4, §PM-6.B).
+	for _, item := range prog.Items {
+		pd, ok := item.(*ast.ProcessDecl)
+		if !ok {
+			continue
+		}
+		if err := i.checkProcessDecl(pd); err != nil {
 			return err
 		}
 	}
@@ -132,6 +152,68 @@ func (i *Interpreter) checkMetricDecl(m *ast.MetricDecl) error {
 	return nil
 }
 
+// checkProcessDecl — статическая валидация одного процесса (Шаг 1c, §PM-4).
+// Порядок (fail-fast): (1) уникальность имён шагов (свой namespace процесса, D-5);
+// (2) резолв 'после' — ссылка только строго назад (j < i), ацикличность по
+// построению, топосорт НЕ делается (D-4, зарезервирован под v2); (3) 'срок' без
+// 'исполнитель' — позиция на строке срок: (DeadlinePos), не на начале шага;
+// (4) анализ тел шагов — analyzeStep (D-12). Тексты §PM-6.B дословно. Выражения
+// атрибутов шага НЕ обходятся (D-11).
+func (i *Interpreter) checkProcessDecl(pd *ast.ProcessDecl) error {
+	// (1) уникальность шагов: имя → индекс первого объявления.
+	stepIdx := map[string]int{}
+	for idx, step := range pd.Steps {
+		name := step.Name.Name
+		if first, ok := stepIdx[name]; ok {
+			return semErr(step.Name.Pos(), fmt.Sprintf("шаг '%s' уже объявлен в строке %d", name, pd.Steps[first].Name.Pos().Line))
+		}
+		stepIdx[name] = idx
+	}
+	// (2) резолв 'после': каждый X шага S обязан быть объявлен строго раньше.
+	for idx, step := range pd.Steps {
+		for _, x := range step.After {
+			j, ok := stepIdx[x.Name]
+			if !ok {
+				return semErr(x.Pos(), fmt.Sprintf("шаг '%s' после '%s', но шаг '%s' не объявлен", step.Name.Name, x.Name, x.Name))
+			}
+			if j >= idx {
+				return semErr(x.Pos(), fmt.Sprintf("шаг '%s' после '%s', но '%s' объявлен позже", step.Name.Name, x.Name, x.Name))
+			}
+		}
+	}
+	// (3) 'срок' без 'исполнитель' не имеет эффекта (§11.4).
+	for _, step := range pd.Steps {
+		if step.Attrs.DeadlinePos.Line != 0 && step.Attrs.AssigneePos.Line == 0 {
+			return semErr(step.Attrs.DeadlinePos, fmt.Sprintf("шаг '%s': срок без исполнитель не имеет эффекта", step.Name.Name))
+		}
+	}
+	// (4) анализ тел шагов (D-12).
+	for _, step := range pd.Steps {
+		if err := i.analyzeStep(step, pd.Params); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// analyzeStep анализирует тело одного шага как императивную область (D-12, §PM-4):
+// inStep=true, inFunction=false, loopDepth=0. Отличия от analyzeArea: vars
+// засевается параметрами процесса (чтение/вызов параметра → рантайм, не
+// «не объявлено»), letLine параметрами НЕ засевается — 'пусть' с именем параметра
+// в шаге разрешён (теняет, §6.4 — отличие от тела функции). collectVars ловит
+// дубль шаг-локальных 'пусть'/'для' общим текстом.
+func (i *Interpreter) analyzeStep(step *ast.StepDecl, params []ast.Ident) error {
+	letLine := map[string]int{}
+	vars := map[string]bool{}
+	for _, p := range params {
+		vars[p.Name] = true
+	}
+	if err := collectVars(step.Body, letLine, vars); err != nil {
+		return err
+	}
+	return i.checkStmts(step.Body, vars, false, true, 0)
+}
+
 // checkReservedDeclName запрещает имени источника/метрики совпадать с
 // зарезервированным (§SM-4, §SM-9.A, ревью №1 C1-1): встроенной функцией (активной
 // или deferred — туда же входят 5 агрегатов сумма/количество/среднее/мин/макс) либо
@@ -163,7 +245,7 @@ func (i *Interpreter) analyzeArea(stmts []ast.Statement, params []ast.Ident, inF
 	if err := collectVars(stmts, letLine, vars); err != nil {
 		return err
 	}
-	return i.checkStmts(stmts, vars, inFunction, loopDepth)
+	return i.checkStmts(stmts, vars, inFunction, false, loopDepth)
 }
 
 // collectVars рекурсивно собирает переменные области (нисходя в блоки, но не
@@ -219,16 +301,16 @@ func collectVarsElse(e *ast.ElseClause, letLine map[string]int, vars map[string]
 }
 
 // checkStmts — второй подпроход: контексты сигналов, вызовы, deferred-узлы.
-func (i *Interpreter) checkStmts(stmts []ast.Statement, vars map[string]bool, inFunction bool, loopDepth int) error {
+func (i *Interpreter) checkStmts(stmts []ast.Statement, vars map[string]bool, inFunction bool, inStep bool, loopDepth int) error {
 	for _, s := range stmts {
-		if err := i.checkStmt(s, vars, inFunction, loopDepth); err != nil {
+		if err := i.checkStmt(s, vars, inFunction, inStep, loopDepth); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunction bool, loopDepth int) error {
+func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunction bool, inStep bool, loopDepth int) error {
 	switch st := s.(type) {
 	case *ast.LetStmt:
 		return i.checkExpr(st.Value, vars)
@@ -238,7 +320,13 @@ func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunctio
 		return i.checkExpr(st.Expr, vars)
 	case *ast.ReturnStmt:
 		if !inFunction {
-			return semErr(st.Pos(), "'вернуть' допустимо только внутри функции")
+			// §7.3 / §PM-6.B: в шаге процесса — двухконтекстный текст (базовый
+			// 003 + суффикс-подсказка); вне шага — только базовый текст 003.
+			msg := "'вернуть' допустимо только внутри функции"
+			if inStep {
+				msg += "; в шаге процесса используйте 'присвоить'"
+			}
+			return semErr(st.Pos(), msg)
 		}
 		if st.Value != nil {
 			return i.checkExpr(st.Value, vars)
@@ -258,45 +346,52 @@ func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunctio
 		if err := i.checkExpr(st.Cond, vars); err != nil {
 			return err
 		}
-		if err := i.checkStmts(st.Then.Stmts, vars, inFunction, loopDepth); err != nil {
+		if err := i.checkStmts(st.Then.Stmts, vars, inFunction, inStep, loopDepth); err != nil {
 			return err
 		}
-		return i.checkElse(st.Else, vars, inFunction, loopDepth)
+		return i.checkElse(st.Else, vars, inFunction, inStep, loopDepth)
 	case *ast.WhileStmt:
 		if err := i.checkExpr(st.Cond, vars); err != nil {
 			return err
 		}
-		return i.checkStmts(st.Body.Stmts, vars, inFunction, loopDepth+1)
+		return i.checkStmts(st.Body.Stmts, vars, inFunction, inStep, loopDepth+1)
 	case *ast.ForStmt:
 		if err := i.checkExpr(st.Iterable, vars); err != nil {
 			return err
 		}
-		return i.checkStmts(st.Body.Stmts, vars, inFunction, loopDepth+1)
+		return i.checkStmts(st.Body.Stmts, vars, inFunction, inStep, loopDepth+1)
 	case *ast.AssignAction, *ast.CallAction, *ast.NotifyAction:
-		return i.deferredConstruct(st)
+		// Контекст-гард действий (§PM-4, D-11): вне шага — СемантическаяОшибка
+		// §PM-6.B; в шаге валидно, payload (Args/Value) НЕ обходится (резолв/
+		// арность/deferred аргументов — рантайму 006); рантайм-deferred
+		// (stmt.go:64) в 005 недостижим — тело шага не исполняется (§PM-5).
+		if !inStep {
+			return semErr(st.Pos(), fmt.Sprintf("действие '%s' допустимо только в шаге процесса", constructName(st)))
+		}
+		return nil
 	}
 	return nil
 }
 
-func (i *Interpreter) checkElse(e *ast.ElseClause, vars map[string]bool, inFunction bool, loopDepth int) error {
+func (i *Interpreter) checkElse(e *ast.ElseClause, vars map[string]bool, inFunction bool, inStep bool, loopDepth int) error {
 	if e == nil {
 		return nil
 	}
 	if e.IsFinal() {
-		return i.checkStmts(e.Body.Stmts, vars, inFunction, loopDepth)
+		return i.checkStmts(e.Body.Stmts, vars, inFunction, inStep, loopDepth)
 	}
 	if err := i.checkExpr(e.Cond, vars); err != nil {
 		return err
 	}
-	if err := i.checkStmts(e.Then.Stmts, vars, inFunction, loopDepth); err != nil {
+	if err := i.checkStmts(e.Then.Stmts, vars, inFunction, inStep, loopDepth); err != nil {
 		return err
 	}
-	return i.checkElse(e.Else, vars, inFunction, loopDepth)
+	return i.checkElse(e.Else, vars, inFunction, inStep, loopDepth)
 }
 
-// checkExpr рекурсивно ищет deferred-узлы (RunProcessExpr/DurationLit) и проверяет
-// резолв CallExpr + фикс. арность. Плоский Ident НЕ проверяется (declaredness —
-// рантайму).
+// checkExpr рекурсивно ищет deferred-узлы (DurationLit) и проверяет резолв
+// CallExpr + фикс. арность и RunProcessExpr (checkRunProcess, §PM-4). Плоский
+// Ident НЕ проверяется (declaredness — рантайму).
 func (i *Interpreter) checkExpr(e ast.Expression, vars map[string]bool) error {
 	switch ex := e.(type) {
 	case *ast.BinaryExpr:
@@ -328,7 +423,7 @@ func (i *Interpreter) checkExpr(e ast.Expression, vars map[string]bool) error {
 		}
 		return nil
 	case *ast.RunProcessExpr:
-		return i.deferredConstruct(ex)
+		return i.checkRunProcess(ex, vars)
 	case *ast.DurationLit:
 		return i.deferredConstruct(ex)
 	}
@@ -363,4 +458,36 @@ func (i *Interpreter) checkCall(c *ast.CallExpr, vars map[string]bool) error {
 		return nil // вариативная/перегруженная — арность в рантайме
 	}
 	return semErr(c.Pos(), fmt.Sprintf("функция '%s' не объявлена", name))
+}
+
+// checkRunProcess резолвит 'запустить процесс' на семпроходе (§PM-4, D-10):
+// аргументы — args-first, fail-fast (как checkCall); имя — ТОЛЬКО против реестра
+// процессов i.processes (НЕ vars, НЕ builtins — синтаксис фиксирован 'запустить
+// процесс Ident'; имя встроенной падает в общий «не объявлен», осознанно);
+// найден → фикс. арность. Тексты §PM-6.C; позиция — токен запустить (r.Pos()).
+// Реестр готов с Шага 1 → работает в любой области (глобаль/функция/шаг).
+// Исполнение запуска остаётся рантайм-deferred (expr.go:49, §PM-5).
+func (i *Interpreter) checkRunProcess(r *ast.RunProcessExpr, vars map[string]bool) error {
+	for _, a := range r.Args {
+		if err := i.checkExpr(a, vars); err != nil {
+			return err
+		}
+	}
+	name := r.Process.Name
+	if pd, ok := i.processes[name]; ok {
+		if len(r.Args) != len(pd.Params) {
+			return semErr(r.Pos(), fmt.Sprintf("'%s' принимает %d аргументов, передано %d", name, len(pd.Params), len(r.Args)))
+		}
+		return nil
+	}
+	if _, ok := i.funcs[name]; ok {
+		return semErr(r.Pos(), fmt.Sprintf("'%s' — функция, не процесс", name))
+	}
+	if _, ok := i.metrics[name]; ok {
+		return semErr(r.Pos(), fmt.Sprintf("'%s' — не процесс", name))
+	}
+	if _, ok := i.sources[name]; ok {
+		return semErr(r.Pos(), fmt.Sprintf("'%s' — не процесс", name))
+	}
+	return semErr(r.Pos(), fmt.Sprintf("процесс '%s' не объявлен", name))
 }
