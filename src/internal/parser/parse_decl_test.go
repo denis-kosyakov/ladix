@@ -844,6 +844,118 @@ func TestProcessBlockNonStepUnexpected(t *testing.T) {
 	}
 }
 
+// Ревью №1 (M-1/m-2/m-3, §PM-3): восстановление парсера процессов.
+// M-1 (п.6): не-шаг строка НЕ обрывает цикл блока процесса — error без break,
+// прогресс гарантирует backstop, последующие шаги собираются. m-2 (доктрина
+// recover.go): suppress сбрасывается на границе строки блока процесса и
+// StepLine — ошибка в теле не глушит последующие диагностики, фантомов
+// «конец блока» нет. m-3 (п.3): висящая запятая в 'после' — best-effort стоп
+// без ошибки, собранный список остаётся.
+func TestProcessRecoveryReviewFixes(t *testing.T) {
+	cases := []struct {
+		name      string
+		src       string
+		wantMsgs  []string // exact-match, по порядку; пусто → parse-clean
+		wantLines []int    // строка i-й ошибки (параллельно wantMsgs)
+		check     func(t *testing.T, prog *ast.Program)
+	}{
+		{
+			name:      "M-1: шаги после ошибочной строки собираются",
+			src:       "процесс P:\n    мусор\n    шаг A:\n        печать(1)\n",
+			wantMsgs:  []string{"неожиданный токен 'мусор'"},
+			wantLines: []int{2},
+			check: func(t *testing.T, prog *ast.Program) {
+				pd, ok := prog.Items[0].(*ast.ProcessDecl)
+				if !ok {
+					t.Fatalf("Items[0] = %T, хотим *ProcessDecl", prog.Items[0])
+				}
+				if len(pd.Steps) != 1 {
+					t.Fatalf("шагов %d, хотим 1 (цикл продолжился после ошибки)", len(pd.Steps))
+				}
+				sd := pd.Steps[0]
+				if sd.Name.Name != "A" {
+					t.Errorf("Name = %q, хотим \"A\"", sd.Name.Name)
+				}
+				if len(sd.Body) != 1 {
+					t.Errorf("Body: %d операторов, хотим 1", len(sd.Body))
+				}
+			},
+		},
+		{
+			name: "m-2: ошибка в теле не глушит дубль атрибута",
+			src: "процесс P:\n    шаг A:\n" +
+				"        пусть x = )\n" +
+				"        исполнитель: \"и\"\n" +
+				"        исполнитель: \"й\"\n",
+			wantMsgs: []string{
+				"неожиданный токен ')'",
+				"атрибут 'исполнитель' уже задан",
+			},
+			wantLines: []int{3, 5},
+		},
+		{
+			name: "m-2: подряд не-шаг строки — каждая со своей диагностикой",
+			src:  "процесс P:\n    мусор\n    хлам\n    шаг A:\n        печать(1)\n",
+			wantMsgs: []string{
+				"неожиданный токен 'мусор'",
+				"неожиданный токен 'хлам'",
+			},
+			wantLines: []int{2, 3},
+			check: func(t *testing.T, prog *ast.Program) {
+				pd, ok := prog.Items[0].(*ast.ProcessDecl)
+				if !ok {
+					t.Fatalf("Items[0] = %T, хотим *ProcessDecl", prog.Items[0])
+				}
+				if len(pd.Steps) != 1 || pd.Steps[0].Name.Name != "A" {
+					t.Fatalf("шагов %d, хотим 1 (A)", len(pd.Steps))
+				}
+			},
+		},
+		{
+			name: "m-3: висящая запятая в после",
+			src: "процесс P:\n" +
+				"    шаг A:\n        печать(1)\n" +
+				"    шаг B после A, :\n        печать(2)\n",
+			check: func(t *testing.T, prog *ast.Program) {
+				pd, ok := prog.Items[0].(*ast.ProcessDecl)
+				if !ok {
+					t.Fatalf("Items[0] = %T, хотим *ProcessDecl", prog.Items[0])
+				}
+				if len(pd.Steps) != 2 {
+					t.Fatalf("шагов %d, хотим 2", len(pd.Steps))
+				}
+				b := pd.Steps[1]
+				if len(b.After) != 1 || b.After[0].Name != "A" {
+					t.Errorf("After = %v, хотим [A]", b.After)
+				}
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prog, el := parseProgramSrc(t, c.src)
+			if el.Len() != len(c.wantMsgs) {
+				t.Fatalf("ошибок %d, хотим %d: %v", el.Len(), len(c.wantMsgs), el.Error())
+			}
+			for i, want := range c.wantMsgs {
+				pe, ok := el.Errors()[i].(errors.ParseError)
+				if !ok {
+					t.Fatalf("ошибка[%d] не ParseError: %T", i, el.Errors()[i])
+				}
+				if pe.Msg != want {
+					t.Errorf("Msg[%d] = %q, хотим %q", i, pe.Msg, want)
+				}
+				if pe.Pos.Line != c.wantLines[i] {
+					t.Errorf("строка[%d] = %d, хотим %d", i, pe.Pos.Line, c.wantLines[i])
+				}
+			}
+			if c.check != nil {
+				c.check(t, prog)
+			}
+		})
+	}
+}
+
 // T007 (§PM-3 шаг 3, CP-5.2 N4): после без имени → SE-EXPECTED от
 // expect(IDENT, "имя шага") — общий текст msgExpected реестра 002 (НЕ новый текст
 // слоя процессов); After пуст, восстановление штатное (шаг и тело построены).

@@ -163,8 +163,9 @@ func (p *Parser) parseMetricDecl() *ast.MetricDecl {
 // parseProcessDecl: процесс Ident ("(" ParamList? ")")? ":" NEWLINE INDENT
 // StepDecl+ DEDENT (§PM-3). Параметры опциональны (без скобок → Params=nil).
 // В блоке допустимы только шаги: не-шаг → SE-UNEXPECTED на ведущем токене
-// строки; пустой блок → msgEmptyBlock и ProcessDecl с пустыми Steps.
-// Pos() = токен процесс.
+// строки, цикл ПРОДОЛЖАЕТСЯ (§PM-3 п.6) — последующие шаги собираются, прогресс
+// гарантирует backstop; пустой блок → msgEmptyBlock и ProcessDecl с пустыми
+// Steps. Pos() = токен процесс.
 func (p *Parser) parseProcessDecl() *ast.ProcessDecl {
 	procTok := p.advance() // процесс
 	nameTok, _ := p.expect(lexer.IDENT, "имя процесса")
@@ -181,6 +182,7 @@ func (p *Parser) parseProcessDecl() *ast.ProcessDecl {
 	}
 	var steps []*ast.StepDecl
 	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
+		p.suppress = false // граница строки блока процесса (доктрина recover.go)
 		before := p.pos
 		if p.check(lexer.KW_STEP) {
 			if sd := p.parseStepDecl(); sd != nil {
@@ -188,7 +190,6 @@ func (p *Parser) parseProcessDecl() *ast.ProcessDecl {
 			}
 		} else {
 			p.error(p.peek().Pos, msgUnexpected(p.peek()))
-			break
 		}
 		if p.pos == before {
 			p.advance() // backstop: гарантия прогресса
@@ -224,6 +225,7 @@ func (p *Parser) parseStepDecl() *ast.StepDecl {
 	}
 	seen := make(map[string]bool, 2)
 	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
+		p.suppress = false // граница StepLine (доктрина recover.go)
 		before := p.pos
 		if p.check(lexer.KW_ASSIGNEE) || p.check(lexer.KW_DEADLINE) {
 			attrTok := p.peek()
@@ -256,7 +258,9 @@ func (p *Parser) parseStepDecl() *ast.StepDecl {
 
 // parseAfterList разбирает список предшественников после ключевого слова после:
 // Ident ("," Ident)* БЕЗ скобок (отличие от parseParamList — терминатор не RPAREN,
-// а отсутствие COMMA). после без имени → SE-EXPECTED от первого expect, After пуст.
+// а отсутствие COMMA). Висящая запятая допускается best-effort (§PM-3 п.3, как
+// parseParamList): после ',' не-IDENT → стоп без ошибки, собранный список
+// остаётся. после без имени → SE-EXPECTED от первого expect, After пуст.
 func (p *Parser) parseAfterList() []ast.Ident {
 	var after []ast.Ident
 	for {
@@ -267,6 +271,9 @@ func (p *Parser) parseAfterList() []ast.Ident {
 		after = append(after, *p.identFrom(nameTok))
 		if !p.match(lexer.COMMA) {
 			break
+		}
+		if !p.check(lexer.IDENT) {
+			break // висящая запятая: best-effort, без ошибки
 		}
 	}
 	return after
