@@ -177,14 +177,16 @@ type Program struct {
 |---|---|
 | `FunctionDecl` | `Name Ident; Params []Ident; Body *Block` (позиционные параметры; вложенных функций нет) |
 | `SourceDecl` | `Name Ident; File string` (v1: единственный атрибут `файл`) |
-| `MetricDecl` | `Name Ident; Attrs []MetricAttr` |
-| `MetricAttr` | `Kind MetricAttrKind (источник/где/агрегат/период/по_дате); Value Expression` |
-| `ProcessDecl` | `Name Ident; Params []Ident (опц.); Steps []StepDecl` |
-| `StepDecl` | `Name Ident; After []Ident; Lines []StepLine` |
-| `StepAttr` | `Kind StepAttrKind (исполнитель/срок); Value Expression` |
-| `TriggerDecl` | `Spec TriggerSpec; Body *Block` |
+| `MetricDecl` | `Name Ident; Source Ident; Where/Aggregate/Period/ByDate Expression; Attrs MetricAttrPos` (плоский — фактический код 004; канон форм — `docs/source-metric-model.md §SM-2`) |
+| `MetricAttrPos` | `SourcePos/WherePos/AggregatePos/PeriodPos/ByDatePos Position` (позиции присутствующих атрибутов; вспом., не `Node`) |
+| `ProcessDecl` | `Name Ident; Params []Ident (опц.); Steps []*StepDecl` (канон форм процесса/шага — `docs/process-model.md §PM-2`) |
+| `StepDecl` | `Name Ident; After []Ident; Assignee Expression; Deadline Expression; Attrs StepAttrPos; Body []Statement` (плоский, как `MetricDecl`; **не** top-level — реализует только `Pos()`) |
+| `StepAttrPos` | `AssigneePos/DeadlinePos Position` (позиции присутствующих атрибутов шага; вспом., не `Node`) |
+| `TriggerDecl` | `Spec TriggerSpec; Body *Block` (вводится в 007) |
 
-`StepLine` — union-интерфейс: `StepAttr` или `Statement`.
+**Узлов `StepLine`/`StepAttr` нет** (D-1, `docs/process-model.md §PM-2`): тело шага плоско —
+атрибуты в `Assignee`/`Deadline`+`StepAttrPos`, операторы в `Body []Statement`; парсер разводит
+attr/statement при разборе блока (`§PM-3`). Аналогично `MetricDecl` (плоский, без узлов `MetricAttr`).
 
 Семантика валидируется в `eval` (стадия 3), не в типах: `метрика` требует `источник`+`агрегат`, `период`⟺`по_дате`, каждый атрибут ≤1 раза; `срок` без `исполнитель` → ошибка; `StepAfter` ссылается на шаги того же процесса. (Голые имена в `где`/`агрегат` — поля источника, резолв отложен до вычисления метрики, см. §3.)
 
@@ -243,7 +245,7 @@ type Block struct {
 }
 ```
 
-> **Блок-формы определений — отдельные узлы, не `Block`.** `Block` (≥1 statement) — это тело `если`/`пока`/`для`/функции/триггера. Тела `шаг`/`источник`/`метрика`/`процесс` имеют свои наполнители (`[]StepLine`, `File string`, `[]MetricAttr`, `[]StepDecl`) и **не** являются `Block`. Это уже отражено в полях `StepDecl`/`MetricDecl`/`ProcessDecl`/`SourceDecl` выше — не вводить общий `Block` для них.
+> **Блок-формы определений — отдельные узлы, не `Block`.** `Block` (≥1 statement) — это тело `если`/`пока`/`для`/функции/триггера. Тела `шаг`/`источник`/`метрика`/`процесс` имеют свои наполнители (шаг: `Body []Statement` + плоские `Assignee`/`Deadline`; источник: `File StringLit`; метрика: плоские `Source`/`Where`/`Aggregate`/`Period`/`ByDate`; процесс: `[]*StepDecl`) и **не** являются `Block`. Это уже отражено в полях `StepDecl`/`MetricDecl`/`ProcessDecl`/`SourceDecl` выше — не вводить общий `Block` для них.
 
 > Полный указатель нетерминалов и терминалов лексера — `docs/grammar.md`.
 
