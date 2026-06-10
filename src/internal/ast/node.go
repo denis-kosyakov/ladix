@@ -20,7 +20,7 @@ type Statement interface {
 	stmtNode()
 }
 
-// Decl — маркер-интерфейс деклараций. В подмножестве B единственная — FunctionDecl.
+// Decl — маркер-интерфейс деклараций. union: FunctionDecl | SourceDecl | MetricDecl | ProcessDecl.
 type Decl interface {
 	TopLevelItem
 	declNode()
