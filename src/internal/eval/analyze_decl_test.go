@@ -1,6 +1,10 @@
 package eval
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // Шаг 1 — объединённый упорядоченный проход: повтор имени в общем глобальном
 // пространстве (функция/источник/метрика). Различение текста: функция↔функция —
@@ -793,6 +797,20 @@ func TestAnalyzeDeferredBoundaryUnchanged(t *testing.T) {
 				t.Errorf("категория не СемантическаяОшибка")
 			}
 		})
+	}
+}
+
+// Семантическая чистота флагман-демо (005, D-9, §PM-7/CP-4, SC-004 частично):
+// examples/онбординг.ladix парсится с нулём ошибок И Analyze → nil. Вызова
+// deferred-builtin статус_процесса в файле нет (D-9) — иначе семантика не была
+// бы чистой; исполнение — рантайм-deferred до 006 (top-level 'запустить процесс').
+func TestAnalyzeOnboardingExampleClean(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "examples", "онбординг.ladix"))
+	if err != nil {
+		t.Fatalf("чтение онбординг.ladix: %v", err)
+	}
+	if err := analyzeSrc(t, string(data)); err != nil {
+		t.Errorf("семантика онбординг.ladix должна быть чистой: %v", err)
 	}
 }
 
