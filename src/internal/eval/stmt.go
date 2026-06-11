@@ -75,7 +75,8 @@ func (i *Interpreter) evalStmt(env *Environment, s ast.Statement) (Signal, error
 // evalAssignAction активирует «присвоить x = E» (006, §EN-5): вычислить E в текущем
 // env → i.procEnv.Define(x, v) (создаёт ИЛИ обновляет переменную процесса, мимо тени
 // пусть-локали шага, §6.4) → хук AssignProcessVar (персист). nil-runtime → §EN-8.A;
-// ошибка хука → ОшибкаВыполнения «сбой хранилища: <причина>» (поз. присвоить).
+// ошибка хука → ОшибкаВыполнения с позицией присвоить; текст «сбой хранилища: <причина>»
+// несёт сам StoreError движка — НЕ дублируем префикс (ср. builtins_process.go), §EN-8.A.
 func (i *Interpreter) evalAssignAction(env *Environment, a *ast.AssignAction) (Signal, error) {
 	if i.runtime == nil || i.procEnv == nil {
 		return Signal{}, runtimeErr(a.Pos(), "внутренняя ошибка: движок процессов не подключён")
@@ -86,7 +87,7 @@ func (i *Interpreter) evalAssignAction(env *Environment, a *ast.AssignAction) (S
 	}
 	i.procEnv.Define(a.Name.Name, v)
 	if err := i.runtime.AssignProcessVar(a.Name.Name, v); err != nil {
-		return Signal{}, runtimeErr(a.Pos(), fmt.Sprintf("сбой хранилища: %s", err.Error()))
+		return Signal{}, runtimeErr(a.Pos(), err.Error())
 	}
 	return Signal{Kind: SigNormal}, nil
 }
@@ -103,7 +104,7 @@ func (i *Interpreter) evalCallAction(env *Environment, c *ast.CallAction) (Signa
 		return Signal{}, err
 	}
 	if err := i.runtime.CallExternal(c.Name.Name, args); err != nil {
-		return Signal{}, runtimeErr(c.Pos(), fmt.Sprintf("сбой хранилища: %s", err.Error()))
+		return Signal{}, runtimeErr(c.Pos(), err.Error())
 	}
 	return Signal{Kind: SigNormal}, nil
 }
@@ -119,7 +120,7 @@ func (i *Interpreter) evalNotifyAction(env *Environment, n *ast.NotifyAction) (S
 		return Signal{}, err
 	}
 	if err := i.runtime.Notify(n.Name.Name, args); err != nil {
-		return Signal{}, runtimeErr(n.Pos(), fmt.Sprintf("сбой хранилища: %s", err.Error()))
+		return Signal{}, runtimeErr(n.Pos(), err.Error())
 	}
 	return Signal{Kind: SigNormal}, nil
 }

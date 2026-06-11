@@ -1,6 +1,7 @@
 package eval
 
 import (
+	stderrors "errors"
 	"strings"
 	"testing"
 
@@ -19,6 +20,7 @@ type fakeRuntime struct {
 	calls      []callRec
 	startID    string
 	startErr   error
+	assignErr  error // ошибка хука AssignProcessVar (имитация StoreError движка)
 	// process-builtins (D-15): сценарные ответы для InstanceStatus/InstanceVariables/UserTasks.
 	statusByID map[string]string // id → статус (отсутствует → ok=false)
 	varsByID   map[string]value.Запись
@@ -47,7 +49,7 @@ func (f *fakeRuntime) StartProcess(name string, args []value.Value) (string, err
 }
 func (f *fakeRuntime) AssignProcessVar(name string, v value.Value) error {
 	f.assigns = append(f.assigns, assignRec{name, v})
-	return nil
+	return f.assignErr
 }
 func (f *fakeRuntime) CallExternal(target string, args []value.Value) error {
 	f.calls = append(f.calls, callRec{target, args})
@@ -140,6 +142,31 @@ func TestExecStepBodyThreeLayerFrame(t *testing.T) {
 	}
 	if value.String(rt.assigns[0].v) != "Петров" {
 		t.Errorf("хук получил %q, хотим Петров", value.String(rt.assigns[0].v))
+	}
+}
+
+// TestAssignActionStorageFailureSinglePrefix — регресс §EN-8.A: ошибка хука присвоить
+// НЕ дублирует префикс «сбой хранилища:». Движок отдаёт уже обёрнутую StoreError
+// («сбой хранилища: <причина>»), eval добавляет лишь позицию узла (§13), не повторяя
+// префикс (как builtins_process.go). До фикса Msg удваивался.
+func TestAssignActionStorageFailureSinglePrefix(t *testing.T) {
+	rt := &fakeRuntime{assignErr: stderrors.New("сбой хранилища: диск переполнен")}
+	interp, steps := parseSteps(t, procWithAssign, rt)
+
+	processEnv := NewEnvironment(interp.GlobalEnv())
+	processEnv.Define("сотрудник", value.Строка{V: "Петров"})
+	stepEnv := NewEnvironment(processEnv)
+
+	_, err := interp.ExecStepBody(processEnv, stepEnv, steps[0].Body)
+	if !isRuntime(err) {
+		t.Fatalf("категория ошибки = %T, хотим ОшибкаВыполнения", err)
+	}
+	line, _, msg := evalErr(t, err)
+	if msg != "сбой хранилища: диск переполнен" {
+		t.Errorf("Msg = %q, хотим единичный префикс «сбой хранилища: диск переполнен» (§EN-8.A)", msg)
+	}
+	if line != 3 {
+		t.Errorf("строка позиции = %d, хотим 3 (узел присвоить)", line)
 	}
 }
 
