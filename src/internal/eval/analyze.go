@@ -391,9 +391,10 @@ func (i *Interpreter) checkElse(e *ast.ElseClause, vars map[string]bool, inFunct
 	return i.checkElse(e.Else, vars, inFunction, inStep, loopDepth)
 }
 
-// checkExpr рекурсивно ищет deferred-узлы (DurationLit) и проверяет резолв
-// CallExpr + фикс. арность и RunProcessExpr (checkRunProcess, §PM-4). Плоский
-// Ident НЕ проверяется (declaredness — рантайму).
+// checkExpr рекурсивно проверяет резолв CallExpr + фикс. арность и RunProcessExpr
+// (checkRunProcess, §PM-4). DurationLit семантически чист (006/D-7: литерал валиден
+// в любой позиции, значение даёт рантайм). Плоский Ident НЕ проверяется
+// (declaredness — рантайму).
 func (i *Interpreter) checkExpr(e ast.Expression, vars map[string]bool) error {
 	switch ex := e.(type) {
 	case *ast.BinaryExpr:
@@ -426,8 +427,6 @@ func (i *Interpreter) checkExpr(e ast.Expression, vars map[string]bool) error {
 		return nil
 	case *ast.RunProcessExpr:
 		return i.checkRunProcess(ex, vars)
-	case *ast.DurationLit:
-		return i.deferredConstruct(ex)
 	}
 	return nil
 }

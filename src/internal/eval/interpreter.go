@@ -1,7 +1,6 @@
 package eval
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
@@ -17,7 +16,7 @@ const DefaultMaxDepth = 10000
 type Interpreter struct {
 	global    *Environment
 	funcs     map[string]*ast.FunctionDecl // пользовательские функции (из Analyze)
-	builtins  map[string]Builtin           // 23 активных + 12 deferred-заглушек
+	builtins  map[string]Builtin           // 28 активных + 7 deferred-заглушек
 	maxDepth  int                          // из флага --max-depth
 	depth     int                          // текущая глубина пользовательских вызовов
 	out       io.Writer                    // канал печать()
@@ -149,12 +148,10 @@ func runtimeErr(p ast.Position, msg string) error {
 	return errors.ОшибкаВыполнения{Pos: toErrPos(p), Msg: msg}
 }
 
-// deferredConstruct — SEM-DEFERRED-CONSTRUCT для reserved-узлов/декларатива/
-// литерала длительности (§9, FR-036). <X> — человекочитаемое имя конструкции.
-func (i *Interpreter) deferredConstruct(node ast.Node) error {
-	return semErr(node.Pos(), fmt.Sprintf("конструкция %s не поддерживается в этой версии", constructName(node)))
-}
-
+// constructName — человекочитаемое имя AST-конструкции (живой вызов у контекст-
+// гарда действий, analyze.go). Бывший deferredConstruct удалён в 006 после
+// активации всех ранее отложенных узлов (§EN-5: expr.go DurationLit/RunProcessExpr,
+// stmt.go действия) — заглушка осталась бы мёртвой (staticcheck U1000).
 func constructName(node ast.Node) string {
 	switch node.(type) {
 	case *ast.RunProcessExpr:

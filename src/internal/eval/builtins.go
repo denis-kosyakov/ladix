@@ -44,15 +44,14 @@ func deferredBuiltin(name string) Builtin {
 	return Builtin{Name: name, Deferred: true}
 }
 
-// deferredNames — 10 отложенных встроенных (дата/время 7 + процессные 3, B-3).
-// 004 активировал дата/сегодня (§SM-6), убрав их отсюда.
+// deferredNames — 7 отложенных встроенных дата/времени (B-3). 004 активировал
+// дата/сегодня (§SM-6), 006 — 3 процессных (§EN-0/D-15), убрав их отсюда.
 var deferredNames = []string{
 	"вчера", "завтра",
 	"длительность", "в_секундах", "в_минутах", "в_часах", "в_днях",
-	"статус_процесса", "состояние_процесса", "задачи_пользователя",
 }
 
-// registerBuiltins строит закрытый реестр: РОВНО 25 активных + 10 deferred = 35
+// registerBuiltins строит закрытый реестр: РОВНО 28 активных + 7 deferred = 35
 // (D6, расширять/сокращать ЗАПРЕЩЕНО; длина в счёте ×1).
 func registerBuiltins() map[string]Builtin {
 	m := map[string]Builtin{}
@@ -89,8 +88,12 @@ func registerBuiltins() map[string]Builtin {
 	// дата/время (2, активированы 004 — §SM-6)
 	add(fixed("сегодня", 0, builtinSegodnya))
 	add(overloaded("дата", builtinData))
+	// процессные (3, активированы 006 — §EN-5/D-15; через i.runtime)
+	add(fixed("статус_процесса", 1, builtinStatusProtsessa))
+	add(fixed("состояние_процесса", 1, builtinSostoyanieProtsessa))
+	add(fixed("задачи_пользователя", 1, builtinZadachiPolzovatelya))
 
-	// deferred-заглушки (10)
+	// deferred-заглушки (7)
 	for _, name := range deferredNames {
 		add(deferredBuiltin(name))
 	}

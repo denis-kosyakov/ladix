@@ -19,6 +19,10 @@ type fakeRuntime struct {
 	calls      []callRec
 	startID    string
 	startErr   error
+	// process-builtins (D-15): сценарные ответы для InstanceStatus/InstanceVariables/UserTasks.
+	statusByID map[string]string // id → статус (отсутствует → ok=false)
+	varsByID   map[string]value.Запись
+	userTasks  []value.Запись
 }
 
 type assignRec struct {
@@ -53,11 +57,17 @@ func (f *fakeRuntime) Notify(target string, args []value.Value) error {
 	f.notifies = append(f.notifies, callRec{target, args})
 	return nil
 }
-func (f *fakeRuntime) InstanceStatus(id string) (string, bool, error) { return "", false, nil }
-func (f *fakeRuntime) InstanceVariables(id string) (value.Запись, bool, error) {
-	return value.Запись{}, false, nil
+func (f *fakeRuntime) InstanceStatus(id string) (string, bool, error) {
+	s, ok := f.statusByID[id]
+	return s, ok, nil
 }
-func (f *fakeRuntime) UserTasks(assignee string) ([]value.Запись, error) { return nil, nil }
+func (f *fakeRuntime) InstanceVariables(id string) (value.Запись, bool, error) {
+	v, ok := f.varsByID[id]
+	return v, ok, nil
+}
+func (f *fakeRuntime) UserTasks(assignee string) ([]value.Запись, error) {
+	return f.userTasks, nil
+}
 
 // parseSteps парсит процесс и возвращает интерпретатор (после Analyze) и шаги.
 func parseSteps(t *testing.T, src string, rt ProcessRuntime) (*Interpreter, []*ast.StepDecl) {

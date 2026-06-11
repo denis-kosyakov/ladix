@@ -14,7 +14,9 @@ type Clock interface {
 }
 
 // SystemClock — продовый Clock: time.Now() в локальной зоне, усечённый до Y/M/D.
-// Это ЕДИНСТВЕННЫЙ легальный вызов time.Now() во всей цепочке eval/движка (SC-006).
+// Это ЕДИНСТВЕННЫЙ легальный вызов time.Now() в пакете eval (SC-006/D-2): даёт
+// value.Дата для метрик. У движка процессов своя вторая легальная реализация
+// Clock-интерфейса — engine.SystemClock (time.Time для lifecycle, D-2/§SM-7).
 // Таймзоны — v2 (SPEC §12); для v1 «сегодня» = календарная дата time.Now() в Local.
 type SystemClock struct{}
 

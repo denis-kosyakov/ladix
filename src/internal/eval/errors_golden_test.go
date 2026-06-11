@@ -3,8 +3,9 @@ package eval
 import "testing"
 
 // Исчерпывающее exact-match покрытие реестра §8.3 (contracts/runtime-errors.md
-// RE-1): по одному golden-кейсу на каждый из 30 кодов — категория (тип Go-ошибки),
-// позиция (строка + колонка в РУНАХ) и ДОСЛОВНЫЙ текст (SC-003).
+// RE-1): по одному golden-кейсу на каждый из 29 кодов — категория (тип Go-ошибки),
+// позиция (строка + колонка в РУНАХ) и ДОСЛОВНЫЙ текст (SC-003). SEM-DEFERRED-
+// CONSTRUCT снят в 006 (все deferred-узлы активированы, §EN-5/D-7).
 // Вариант «значение — не функция …» (не-Ident callee, тот же код RT-NOT-FUNC, но
 // субъект — «значение») покрыт отдельно в TestNonIdentCalleeNotFunc.
 func TestErrorsRegistryExactMatch(t *testing.T) {
@@ -161,10 +162,9 @@ func TestErrorsRegistryExactMatch(t *testing.T) {
     добавить(s, x)`,
 			line: 3, col: 5, cat: rt, msg: "список изменён во время итерации",
 		},
-		{
-			code: "SEM-DEFERRED-CONSTRUCT", src: `пусть x = 3дн`,
-			line: 1, col: 11, cat: sem, msg: "конструкция литерал длительности не поддерживается в этой версии",
-		},
+		// SEM-DEFERRED-CONSTRUCT retired in 006: all deferred AST nodes activated
+		// (DurationLit/RunProcessExpr/действия — §EN-5/D-7), deferredConstruct
+		// removed. No code path emits «конструкция … не поддерживается» anymore.
 		{
 			code: "SEM-DEFERRED-BUILTIN", src: `печать(вчера())`,
 			line: 1, col: 8, cat: sem, msg: "функция 'вчера' не поддерживается в этой версии",
@@ -203,8 +203,8 @@ func TestErrorsRegistryExactMatch(t *testing.T) {
 			}
 		})
 	}
-	if len(seen) != 30 {
-		t.Errorf("покрыто кодов = %d, хотим 30", len(seen))
+	if len(seen) != 29 {
+		t.Errorf("покрыто кодов = %d, хотим 29", len(seen))
 	}
 }
 
