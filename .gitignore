@@ -35,6 +35,9 @@ bin/
 *.out
 vendor/
 
+# ladix runtime
+ladix.db
+
 # Rust
 target/
 
