@@ -346,23 +346,36 @@ func completeTask(path, taskID, dbPath string, maxDepth int, stdout, stderr io.W
 	})
 }
 
-// completeError транслирует ошибку eng.Complete в CLI-вывод и exit-код. Сентинелы
-// Store → CLI-тексты §EN-8.B (exit 2, инстанс не тронут — базовый путь US2);
-// прочие (runtime-ошибки тела/атрибута из advance, D-14) — канонический §13 Error()
-// в stderr, exit 1. taskID известен CLI-слою — подставляется в текст напрямую.
-// Полный маппинг дрейф-гардов Q3 / D-8 / гард-догона D-4 (включая id инстанса) — US3.
+// completeError транслирует ошибку eng.Complete в CLI-вывод и exit-код (§EN-8.B, D-20,
+// FR-018). Маршрутизация по типу/сентинелу:
+//   - *engine.GuardError — нарушение гарда (дрейф Q3 / D-8 / «уже завершена» / инстанс
+//     не найден): текст УЖЕ совпадает с §EN-8.B минус префикс → «ladix: <текст>», exit 2.
+//   - *engine.StoreError — сбой Store на CLI-пути complete (B9): «ladix: <текст>»
+//     (= «ladix: сбой хранилища: <причина>»), exit 2.
+//   - сентинелы Store ErrTaskNotFound/ErrTaskAlreadyCompleted (B1/B2): taskID известен
+//     CLI → формируем текст здесь, exit 2.
+//   - прочее (ОшибкаТипа/ОшибкаВыполнения тела/атрибута из advance, D-14): канон §13,
+//     двухстрочный Error(), exit 1.
+//
+// GuardError/StoreError проверяются errors.As ПЕРЕД сентинелами: StoreError.Unwrap
+// возвращает причину, которая сентинелом Store не является (сбой — не «не найдена»).
 func completeError(err error, taskID string, stderr io.Writer) int {
+	var ge *engine.GuardError
+	if errors.As(err, &ge) {
+		fmt.Fprintln(stderr, "ladix: "+ge.Error())
+		return 2
+	}
+	var se *engine.StoreError
+	if errors.As(err, &se) {
+		fmt.Fprintln(stderr, "ladix: "+se.Error())
+		return 2
+	}
 	switch {
 	case errors.Is(err, store.ErrTaskNotFound):
 		fmt.Fprintf(stderr, "ladix: задача '%s' не найдена\n", taskID)
 		return 2
 	case errors.Is(err, store.ErrTaskAlreadyCompleted):
 		fmt.Fprintf(stderr, "ladix: задача '%s' уже завершена\n", taskID)
-		return 2
-	case errors.Is(err, store.ErrInstanceNotFound):
-		// id инстанса из чужой/битой БД печатает US3 (типизированный гард); в US2
-		// базовый путь предполагает корректный вход — ветка недостижима в сценарии Б.
-		fmt.Fprintln(stderr, "ladix: сбой хранилища: "+err.Error())
 		return 2
 	default:
 		// Runtime-ошибка продвижения (D-14): канон §13, двухстрочный Error(), exit 1.

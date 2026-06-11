@@ -9,6 +9,7 @@
 package engine
 
 import (
+	stderrors "errors"
 	"fmt"
 	"io"
 
@@ -59,7 +60,7 @@ func (e *Engine) Start(name string, args []value.Value) (string, error) {
 	}
 	id, err := e.st.NextInstanceID()
 	if err != nil {
-		return "", fmt.Errorf("сбой хранилища: %w", err)
+		return "", NewStoreError(err)
 	}
 	now := e.clock.Now()
 	inst := &store.ProcessInstance{
@@ -86,48 +87,114 @@ type CompleteResult struct {
 	CaughtUp bool                   // true = гард-догон D-4 (US3); в US2 всегда false
 }
 
-// Complete завершает задачу человека-в-цикле и продвигает инстанс (§EN-3, машина
-// состояний Complete). US2 — БАЗОВЫЙ ПУТЬ без полного набора гардов (полный порядок
-// дрейф-гардов Q3 / гардов D-8 / гард-догона D-4 / разбора гонки D-12 — US3):
-// LoadTask → LoadInstance → MarkTaskCompleted → печать строки 7 → продвижение
-// (next==∅ → выполнен + строка 10; иначе advance + строка 9). Владелец печати строк
-// 7/9/10 — сам Complete (пишет в e.out). Ошибки Store/продвижения всплывают наверх:
-// CLI печатает их по §EN-8 и подбирает exit-код.
+// Complete завершает задачу человека-в-цикле и продвигает инстанс — ПОЛНАЯ машина
+// состояний §EN-3 с порядком гардов (US3):
+//
+//	LoadTask → LoadInstance → дрейф-гарды Q3 (процесс/шаг в определении) →
+//	гард-догон D-4 (задача завершена) → гарды D-8 (статус/шаг) →
+//	MarkTaskCompleted (проигравший гонку D-12 → ветка догона) →
+//	печать строки 7 → продвижение (next==∅ → выполнен + строка 10; иначе advance +
+//	строка 9).
+//
+// Любое нарушение гарда → типизированная ошибка (*GuardError, тексты §EN-8.B минус
+// префикс) И инстанс НЕ тронут (до мутаций). Сбой Store на этом CLI-пути → *StoreError
+// (CLI → B9, exit 2). Runtime-ошибка тела/атрибута из advance — как есть (канон §13,
+// exit 1, D-14). Владелец печати строк 7-10 (§EN-7) — сам Complete (пишет в e.out).
 func (e *Engine) Complete(taskID string) (CompleteResult, error) {
 	t, err := e.st.LoadTask(taskID)
 	if err != nil {
-		return CompleteResult{}, err // ErrTaskNotFound и пр. — CLI → §EN-8.B exit 2
+		return CompleteResult{}, err // ErrTaskNotFound — CLI → §EN-8.B B1; иначе сбой Store
 	}
 	inst, err := e.st.LoadInstance(t.InstanceID)
 	if err != nil {
-		return CompleteResult{}, err // ErrInstanceNotFound — CLI → §EN-8.B exit 2
+		if stderrors.Is(err, store.ErrInstanceNotFound) {
+			// Битая/чужая БД: задача есть, инстанса нет (B3). Несём id для CLI.
+			return CompleteResult{}, GuardInstanceNotFound(t.InstanceID)
+		}
+		return CompleteResult{}, NewStoreError(err)
 	}
-	// US3-заглушка: дрейф-гарды Q3 (процесс/шаг в определении), гарды D-8 (статус
-	// ожидает, соответствие текущему шагу), гард-догон D-4 (уже-завершённая задача),
-	// разбор гонки D-12 (ErrTaskAlreadyCompleted после MarkTaskCompleted) идут ИМЕННО
-	// здесь и до мутаций — в US2 базовый путь предполагает корректный вход.
+
+	// Дрейф-гарды Q3 (ДО любых мутаций): процесс инстанса есть в файле; CurrentStep ∈
+	// pd.Steps. Идут раньше гарда «уже завершена» (§EN-9 негатив (4)).
+	pd, ok := e.interp.Process(inst.ProcessName)
+	if !ok {
+		return CompleteResult{}, &GuardError{Kind: GuardProcessNotInDefKind, ProcName: inst.ProcessName}
+	}
+	if !stepInDef(pd, inst.CurrentStep) {
+		return CompleteResult{}, &GuardError{
+			Kind: GuardStepNotInDefKind, StepName: inst.CurrentStep, ProcName: inst.ProcessName,
+		}
+	}
+
+	// Гард-догон D-4: задача УЖЕ завершена. Если инстанс ожидает на том же шаге —
+	// хвост сбойного окна: идемпотентное до-продвижение БЕЗ MarkTaskCompleted, строка 8.
+	if t.Status == store.TaskCompleted {
+		return e.catchUp(inst, t)
+	}
+
+	// Гарды D-8 (открытая задача): статус ожидает; соответствие текущему шагу.
+	if inst.Status != store.StatusWaiting {
+		return CompleteResult{}, &GuardError{
+			Kind: GuardInstanceNotWaitingKind, InstanceID: inst.ID, Status: string(inst.Status),
+		}
+	}
+	if inst.CurrentStep != t.StepName {
+		return CompleteResult{}, &GuardError{
+			Kind: GuardStepMismatchKind, TaskID: t.ID, InstanceID: inst.ID,
+		}
+	}
+
+	// Завершение задачи (D-12: проигравший гонку получит ErrTaskAlreadyCompleted и
+	// уходит в ветку догона — инстанс перечитываем).
 	if err := e.st.MarkTaskCompleted(taskID, e.clock.Now()); err != nil {
-		return CompleteResult{}, err // ErrTaskAlreadyCompleted и пр. — CLI → §EN-8.B
+		if stderrors.Is(err, store.ErrTaskAlreadyCompleted) {
+			fresh, lerr := e.st.LoadInstance(t.InstanceID)
+			if lerr != nil {
+				return CompleteResult{}, NewStoreError(lerr)
+			}
+			t.Status = store.TaskCompleted
+			return e.catchUp(fresh, t)
+		}
+		return CompleteResult{}, NewStoreError(err)
 	}
 	// Печать строки 7 ДО продвижения: задача уже завершена фактом (§EN-7 строка 7).
 	fmt.Fprintf(e.out, "задача %s завершена\n", taskID)
+	return e.advanceAfterComplete(inst, false)
+}
 
+// catchUp — ветка гард-догона D-4: задача УЖЕ была завершена. Применима, только если
+// инстанс ожидает на том же шаге (хвост сбойного окна «MarkTaskCompleted прошёл,
+// advance не успел»); иначе → «уже завершена», exit 2. Печатает строку 8 §EN-7 ВМЕСТО
+// строки 7, далее до-продвигает БЕЗ повторного MarkTaskCompleted (CaughtUp=true).
+func (e *Engine) catchUp(inst *store.ProcessInstance, t *store.Task) (CompleteResult, error) {
+	if inst.Status != store.StatusWaiting || inst.CurrentStep != t.StepName {
+		return CompleteResult{}, &GuardError{Kind: GuardAlreadyCompletedKind, TaskID: t.ID}
+	}
+	// Строка 8 §EN-7 (вместо строки 7).
+	fmt.Fprintf(e.out, "задача %s уже была завершена, инстанс до-продвинут\n", t.ID)
+	return e.advanceAfterComplete(inst, true)
+}
+
+// advanceAfterComplete продвигает инстанс после (до-)завершения задачи и печатает
+// итоговую строку §EN-7 (9 или 10). next==∅ → выполнен (строка 10); иначе advance
+// (может снова заснуть → строка 9, или провалиться → D-14, итоговой строки НЕТ).
+func (e *Engine) advanceAfterComplete(inst *store.ProcessInstance, caughtUp bool) (CompleteResult, error) {
 	next, ok := e.nextStep(inst.ProcessName, inst.CurrentStep)
 	if !ok {
 		// Терминал: следующего шага нет → выполнен (§EN-7 строка 10).
 		inst.Status = store.StatusDone
 		if serr := e.save(inst); serr != nil {
-			return CompleteResult{}, serr
+			return CompleteResult{CaughtUp: caughtUp}, serr
 		}
 		fmt.Fprintf(e.out, "инстанс %s: выполнен\n", inst.ID)
-		return CompleteResult{Instance: inst}, nil
+		return CompleteResult{Instance: inst, CaughtUp: caughtUp}, nil
 	}
 	// Есть следующий шаг: продвигаемся (advance может снова заснуть или провалиться).
 	inst.CurrentStep = next
 	if err := e.advance(inst); err != nil {
 		// Провал продвижения (D-14): инстанс уже провален внутри advance; итоговой
-		// строки 9/10 НЕТ. Ошибка всплывает — CLI печатает канон §13, exit 1.
-		return CompleteResult{Instance: inst}, err
+		// строки 9/10 НЕТ. Сбой Store → *StoreError (CLI → B9); runtime → канон §13.
+		return CompleteResult{Instance: inst, CaughtUp: caughtUp}, err
 	}
 	// Итог: инстанс либо снова ожидает (строка 9), либо выполнен (строка 10).
 	if inst.Status == store.StatusDone {
@@ -135,7 +202,17 @@ func (e *Engine) Complete(taskID string) (CompleteResult, error) {
 	} else {
 		fmt.Fprintf(e.out, "инстанс %s: %s, шаг '%s'\n", inst.ID, inst.Status, inst.CurrentStep)
 	}
-	return CompleteResult{Instance: inst}, nil
+	return CompleteResult{Instance: inst, CaughtUp: caughtUp}, nil
+}
+
+// stepInDef сообщает, есть ли шаг с именем stepName в определении процесса (дрейф Q3).
+func stepInDef(pd *ast.ProcessDecl, stepName string) bool {
+	for _, s := range pd.Steps {
+		if s.Name.Name == stepName {
+			return true
+		}
+	}
+	return false
 }
 
 // bindParams связывает параметры процесса с позиционными аргументами (§EN-3).
@@ -196,7 +273,7 @@ func (e *Engine) advance(inst *store.ProcessInstance) error {
 			now := e.clock.Now()
 			tid, err := e.st.NextTaskID()
 			if err != nil {
-				return fmt.Errorf("сбой хранилища: %w", err)
+				return NewStoreError(err)
 			}
 			task := &store.Task{
 				ID:         tid,
@@ -211,7 +288,7 @@ func (e *Engine) advance(inst *store.ProcessInstance) error {
 				task.Deadline = &dl
 			}
 			if err := e.st.SaveTask(task); err != nil {
-				return fmt.Errorf("сбой хранилища: %w", err)
+				return NewStoreError(err)
 			}
 			e.printTaskCreated(task)
 			inst.Status = store.StatusWaiting
@@ -279,11 +356,13 @@ func (e *Engine) fail(inst *store.ProcessInstance, cause error) error {
 	return cause
 }
 
-// save выставляет UpdatedAt = clock.Now() и персистит инстанс (▼, EM-9).
+// save выставляет UpdatedAt = clock.Now() и персистит инстанс (▼, EM-9). Сбой Store
+// заворачивается в *StoreError (§EN-8/FR-018: на путях Ladix-узла — §EN-8.A exit 1,
+// на CLI-путях complete — §EN-8.B B9 exit 2; различие — по инициатору, в вызывающем).
 func (e *Engine) save(inst *store.ProcessInstance) error {
 	inst.UpdatedAt = e.clock.Now()
 	if err := e.st.SaveInstance(inst); err != nil {
-		return fmt.Errorf("сбой хранилища: %w", err)
+		return NewStoreError(err)
 	}
 	return nil
 }

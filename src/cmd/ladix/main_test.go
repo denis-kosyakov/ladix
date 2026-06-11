@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/denis-kosyakov/ladix/internal/engine"
+	"github.com/denis-kosyakov/ladix/internal/store"
 )
 
 func examplePath(name string) string {
@@ -240,6 +244,233 @@ func TestScenarioBSQLiteChain(t *testing.T) {
 			}
 		})
 	}
+}
+
+// testdataPath — путь к фикстуре impl-чата (src/cmd/ladix/testdata).
+func testdataPath(name string) string {
+	return filepath.Join("testdata", name)
+}
+
+// drainScenarioB прогоняет сценарий Б (§EN-9) до шага 5 на свежей БД в t.TempDir():
+// run → complete t-000001 → complete t-000002. На выходе: инстанс p-000001 'выполнен',
+// задача t-000001 'завершена', задача t-000002 'завершена'. Возвращает путь к БД.
+func drainScenarioB(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	file := examplePath("онбординг.ladix")
+	steps := [][]string{
+		{"run", file, "--db", db},
+		{"complete", file, "t-000001", "--db", db},
+		{"complete", file, "t-000002", "--db", db},
+	}
+	for _, args := range steps {
+		var out, errBuf bytes.Buffer
+		if code := realMain(args, &out, &errBuf); code != 0 {
+			t.Fatalf("подготовка БД (%v): код=%d, stderr=%q", args, code, errBuf.String())
+		}
+	}
+	return db
+}
+
+// TestCompleteNegatives — 6 негативов §EN-9 (после шага 5 сценария Б): дословный
+// stderr (для (1)-(5) маска не нужна — id детерминированы, текстов времени нет; для
+// (6) — канон §13). Коды 2 (CLI-ошибки §EN-8.B) / 1 (компиляция §13).
+func TestCompleteNegatives(t *testing.T) {
+	file := examplePath("онбординг.ladix")
+
+	// (1) несуществующая задача → §EN-8.B B1, exit 2.
+	t.Run("1: задача не найдена", func(t *testing.T) {
+		db := drainScenarioB(t)
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"complete", file, "t-999999", "--db", db}, &out, &errBuf)
+		if code != 2 {
+			t.Fatalf("код=%d, хотим 2; stderr=%q", code, errBuf.String())
+		}
+		if errBuf.String() != "ladix: задача 't-999999' не найдена\n" {
+			t.Errorf("stderr=%q", errBuf.String())
+		}
+	})
+
+	// (2) повтор при инстансе 'выполнен' (догон неприменим) → §EN-8.B B2, exit 2.
+	t.Run("2: задача уже завершена", func(t *testing.T) {
+		db := drainScenarioB(t)
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"complete", file, "t-000001", "--db", db}, &out, &errBuf)
+		if code != 2 {
+			t.Fatalf("код=%d, хотим 2; stderr=%q", code, errBuf.String())
+		}
+		if errBuf.String() != "ladix: задача 't-000001' уже завершена\n" {
+			t.Errorf("stderr=%q", errBuf.String())
+		}
+	})
+
+	// (3) файл без процесса 'онбординг' (компилируется чисто) → §EN-8.B B6, exit 2.
+	t.Run("3: процесс не найден в определении", func(t *testing.T) {
+		db := drainScenarioB(t)
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"complete", examplePath("hello.ladix"), "t-000001", "--db", db}, &out, &errBuf)
+		if code != 2 {
+			t.Fatalf("код=%d, хотим 2; stderr=%q", code, errBuf.String())
+		}
+		if errBuf.String() != "ladix: процесс 'онбординг' не найден в определении\n" {
+			t.Errorf("stderr=%q", errBuf.String())
+		}
+	})
+
+	// (4) дрейф шага (онбординг есть, закрыть_адаптацию переименован) → §EN-8.B B7,
+	// exit 2. После шага 5 inst.CurrentStep == 'закрыть_адаптацию'; дрейф-гарды Q3
+	// идут ДО гарда «уже завершена» (§EN-3) → ловится шаг, а не «уже завершена».
+	t.Run("4: шаг не найден в определении", func(t *testing.T) {
+		db := drainScenarioB(t)
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"complete", testdataPath("онбординг-дрейф.ladix"), "t-000001", "--db", db}, &out, &errBuf)
+		if code != 2 {
+			t.Fatalf("код=%d, хотим 2; stderr=%q", code, errBuf.String())
+		}
+		if errBuf.String() != "ladix: шаг 'закрыть_адаптацию' не найден в определении процесса 'онбординг'\n" {
+			t.Errorf("stderr=%q", errBuf.String())
+		}
+	})
+
+	// (5) неоткрываемый путь БД → §EN-8.B B8, exit 2. Текст причины маскируем
+	// (зависит от драйвера SQLite) — проверяем префикс дословно.
+	t.Run("5: не удалось открыть хранилище", func(t *testing.T) {
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"complete", file, "t-000001", "--db", "нет/такого/каталога.db"}, &out, &errBuf)
+		if code != 2 {
+			t.Fatalf("код=%d, хотим 2; stderr=%q", code, errBuf.String())
+		}
+		if !strings.HasPrefix(errBuf.String(), "ladix: не удалось открыть хранилище 'нет/такого/каталога.db': ") {
+			t.Errorf("stderr=%q, хотим префикс «ladix: не удалось открыть хранилище 'нет/такого/каталога.db': <причина>»", errBuf.String())
+		}
+	})
+
+	// (6) парс-ошибка фикстуры (complete компилирует файл → канон §13) → exit 1.
+	t.Run("6: парс-ошибка → канон §13", func(t *testing.T) {
+		db := drainScenarioB(t)
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"complete", testdataPath("сломанный.ladix"), "t-000001", "--db", db}, &out, &errBuf)
+		if code != 1 {
+			t.Fatalf("код=%d, хотим 1; stderr=%q", code, errBuf.String())
+		}
+		// Канон §13: двухстрочный «Ошибка в строке N, колонка M:\n<описание>».
+		if !strings.HasPrefix(errBuf.String(), "Ошибка в строке ") {
+			t.Errorf("stderr=%q, хотим канон §13", errBuf.String())
+		}
+		if strings.Contains(errBuf.String(), "ladix:") {
+			t.Errorf("канон §13 не должен нести префикс ladix:: %q", errBuf.String())
+		}
+		if strings.Contains(errBuf.String(), ".go:") || strings.Contains(errBuf.String(), "goroutine") {
+			t.Errorf("в stderr просочился Go stack trace: %q", errBuf.String())
+		}
+	})
+}
+
+// TestCLIDiagnosticsEN8B — exact-match текстов §EN-8.B (одна строка «ladix: <текст>»,
+// exit 2). Покрывает B4/B5 через CLI-цепочку невозможно (один активный шаг = одна
+// задача) — поэтому фабрикуются прямой записью в SQLite через ту же подкоманду
+// complete над специально подготовленным состоянием. Остальные тексты (B1/B2/B6/B7/
+// B8/B10) покрыты TestCompleteNegatives и здесь не дублируются; B3/B9 — отдельно.
+func TestCLIDiagnosticsEN8B(t *testing.T) {
+	file := examplePath("онбординг.ladix")
+
+	// B10: флаг --db без значения → §EN-8.B B10, exit 2 (вне guard, разбор флага).
+	t.Run("B10: флаг --db требует значение", func(t *testing.T) {
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"complete", file, "t-000001", "--db"}, &out, &errBuf)
+		if code != 2 {
+			t.Fatalf("код=%d, хотим 2", code)
+		}
+		if errBuf.String() != "ladix: флаг --db требует значение\n" {
+			t.Errorf("stderr=%q", errBuf.String())
+		}
+	})
+
+	// B3 (инстанс не найден) проверяется на уровне engine/CLI-маппинга в
+	// TestCLIErrInstanceNotFound — SQLite FK (tasks.instance_id REFERENCES instances)
+	// делает «осиротевшую задачу» недостижимой через Store API.
+
+	// B4: инстанс не ожидает (статус 'выполняется') → exit 2 (гард D-8).
+	t.Run("B4: инстанс не ожидает", func(t *testing.T) {
+		db := newDBWithGuardState(t, "выполняется", "провести_встречу")
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"complete", file, "t-000001", "--db", db}, &out, &errBuf)
+		if code != 2 {
+			t.Fatalf("код=%d, хотим 2; stderr=%q", code, errBuf.String())
+		}
+		if errBuf.String() != "ladix: инстанс 'p-000001' не ожидает (статус 'выполняется')\n" {
+			t.Errorf("stderr=%q", errBuf.String())
+		}
+	})
+
+	// B5: задача не соответствует текущему шагу инстанса → exit 2 (гард D-8).
+	t.Run("B5: задача не соответствует шагу", func(t *testing.T) {
+		db := newDBWithGuardState(t, "ожидает", "закрыть_адаптацию")
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"complete", file, "t-000001", "--db", db}, &out, &errBuf)
+		if code != 2 {
+			t.Fatalf("код=%d, хотим 2; stderr=%q", code, errBuf.String())
+		}
+		if errBuf.String() != "ladix: задача 't-000001' не соответствует текущему шагу инстанса 'p-000001'\n" {
+			t.Errorf("stderr=%q", errBuf.String())
+		}
+	})
+}
+
+// TestCLIErrInstanceNotFound — §EN-8.B B3 exact-match: задача загрузилась, но её
+// инстанс не найден (битая/чужая БД). SQLite FK не даёт осиротить задачу, поэтому
+// маппинг проверяется напрямую: engine возвращает типизированный GuardError с id
+// инстанса, completeError формирует CLI-текст.
+func TestCLIErrInstanceNotFound(t *testing.T) {
+	var errBuf bytes.Buffer
+	code := completeError(engine.GuardInstanceNotFound("p-bad"), "t-000001", &errBuf)
+	if code != 2 {
+		t.Fatalf("код=%d, хотим 2", code)
+	}
+	if errBuf.String() != "ladix: инстанс 'p-bad' не найден\n" {
+		t.Errorf("stderr=%q", errBuf.String())
+	}
+}
+
+// TestCLIStorageFailureB9 — §EN-8.B B9 exact-match: не-сентинельная ошибка Store на
+// CLI-пути complete → «ladix: сбой хранилища: <причина>», exit 2 (FR-018). Проверяется
+// через completeError напрямую (битую БД из теста надёжно не воспроизвести). На
+// CLI-пути engine оборачивает сбой Store в *engine.StoreError.
+func TestCLIStorageFailureB9(t *testing.T) {
+	var errBuf bytes.Buffer
+	code := completeError(engine.NewStoreError(errors.New("ошибка декода кодека")), "t-000001", &errBuf)
+	if code != 2 {
+		t.Fatalf("код=%d, хотим 2", code)
+	}
+	if errBuf.String() != "ladix: сбой хранилища: ошибка декода кодека\n" {
+		t.Errorf("stderr=%q", errBuf.String())
+	}
+}
+
+// newDBWithGuardState создаёт свежую SQLite-БД с инстансом p-000001 (status/step
+// заданы) и открытой задачей t-000001 на шаге 'провести_встречу' — фабрикует
+// состояния гардов D-8 (B4/B5), недостижимые штатной CLI-цепочкой (§EN-9).
+func newDBWithGuardState(t *testing.T, status store.Status, currentStep string) string {
+	t.Helper()
+	db := filepath.Join(t.TempDir(), "test.db")
+	sq, err := store.NewSQLiteStore(db)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer sq.Close()
+	if err := sq.SaveInstance(&store.ProcessInstance{
+		ID: "p-000001", ProcessName: "онбординг", Status: status, CurrentStep: currentStep,
+	}); err != nil {
+		t.Fatalf("SaveInstance: %v", err)
+	}
+	if err := sq.SaveTask(&store.Task{
+		ID: "t-000001", InstanceID: "p-000001", StepName: "провести_встречу",
+		Assignee: "руководитель", Status: store.TaskPending,
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	return db
 }
 
 // T047/SC-008: recover-барьер ловит непредвиденную Go-панику → дженерик, код 1.

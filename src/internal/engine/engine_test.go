@@ -48,6 +48,25 @@ func buildStack(t *testing.T, src string, now time.Time) (*eval.Interpreter, sto
 	return interp, st, eng, &out
 }
 
+// buildStackStore собирает стек interp+Engine поверх произвольного Store (для
+// фабрикованных/сбойных реализаций); out — внутренний буфер (не возвращается).
+func buildStackStore(t *testing.T, src string, now time.Time, st store.Store) *engine.Engine {
+	t.Helper()
+	tokens, errList := lexer.New(src).Tokenize()
+	prog := parser.New(tokens, errList).Parse()
+	if !errList.Empty() {
+		t.Fatalf("неожиданные лекс/синт ошибки: %s", errList.Error())
+	}
+	var out bytes.Buffer
+	interp := eval.NewInterpreter(&out, 0, eval.SystemClock{})
+	eng := engine.NewEngine(st, interp, &out, engine.WithClock(fixedClock{now}))
+	interp.SetProcessRuntime(eng)
+	if err := interp.Analyze(prog); err != nil {
+		t.Fatalf("неожиданная семантическая ошибка: %s", err.Error())
+	}
+	return eng
+}
+
 const onboardingSrc = `процесс онбординг(сотрудник):
     шаг завести_доступы:
         присвоить имя = сотрудник
@@ -175,6 +194,34 @@ func TestBodyDivisionByZero(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "деление на ноль") {
 		t.Errorf("текст = %q, хотим содержащий 'деление на ноль'", err.Error())
+	}
+	inst, lerr := st.LoadInstance("p-000001")
+	if lerr != nil {
+		t.Fatalf("LoadInstance: %v", lerr)
+	}
+	if inst.Status != store.StatusFailed {
+		t.Errorf("статус = %q, хотим %q", inst.Status, store.StatusFailed)
+	}
+}
+
+// TestDeadlineTypeGuard — фаза атрибутов: срок не Длительность → ОшибкаТипа §EN-8.A #6,
+// инстанс провален (D-18/D-14). Exact-match текста §EN-8.A.
+func TestDeadlineTypeGuard(t *testing.T) {
+	src := `процесс p(x):
+    шаг s:
+        исполнитель: "Иванов"
+        срок:        "скоро"
+
+пусть id = запустить процесс p(1)
+`
+	_, st, eng, _ := buildStack(t, src, goldenMoment())
+	_, err := eng.Start("p", argsInt(1))
+	if err == nil {
+		t.Fatalf("ожидали ОшибкуТипа на срок, получили nil")
+	}
+	want := "шаг 's': срок должен быть Длительность, получено Строка"
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("текст = %q, хотим содержащий %q (§EN-8.A #6)", err.Error(), want)
 	}
 	inst, lerr := st.LoadInstance("p-000001")
 	if lerr != nil {

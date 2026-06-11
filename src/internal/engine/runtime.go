@@ -72,7 +72,7 @@ func (e *Engine) InstanceStatus(id string) (string, bool, error) {
 		if stderrors.Is(err, store.ErrInstanceNotFound) {
 			return "", false, nil
 		}
-		return "", false, fmt.Errorf("сбой хранилища: %w", err)
+		return "", false, NewStoreError(err)
 	}
 	return string(inst.Status), true, nil
 }
@@ -84,7 +84,7 @@ func (e *Engine) InstanceVariables(id string) (value.Запись, bool, error) 
 		if stderrors.Is(err, store.ErrInstanceNotFound) {
 			return value.Запись{}, false, nil
 		}
-		return value.Запись{}, false, fmt.Errorf("сбой хранилища: %w", err)
+		return value.Запись{}, false, NewStoreError(err)
 	}
 	keys := make([]string, 0, len(inst.Variables))
 	for k := range inst.Variables {
@@ -104,7 +104,7 @@ func (e *Engine) InstanceVariables(id string) (value.Запись, bool, error) 
 func (e *Engine) UserTasks(assignee string) ([]value.Запись, error) {
 	tasks, err := e.st.ListPendingTasks(assignee)
 	if err != nil {
-		return nil, fmt.Errorf("сбой хранилища: %w", err)
+		return nil, NewStoreError(err)
 	}
 	now := e.clock.Now()
 	out := make([]value.Запись, 0, len(tasks))
