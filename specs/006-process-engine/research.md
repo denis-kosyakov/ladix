@@ -93,7 +93,7 @@
 - **Decision**: цикл `eval↔engine` разрывается **интерфейсом `ProcessRuntime`, объявленным в
   `internal/eval`** и инжектируемым сеттером; **`engine` его реализует**. `eval` **НЕ** импортирует ни
   `store`, ни `engine`; `engine → eval, store, ast, value, errors`.
-  - `ProcessRuntime` (8 методов): `StartProcess`, `AssignProcessVar` (хук персиста `присвоить`),
+  - `ProcessRuntime` (7 методов): `StartProcess`, `AssignProcessVar` (хук персиста `присвоить`),
     `CallExternal`/`Notify` (стабы действий), `InstanceStatus`/`InstanceVariables`/`UserTasks`
     (process-builtins).
   - экспорт `eval` (новые методы): `SetProcessRuntime(rt ProcessRuntime)` (инъекция до Run; результата
