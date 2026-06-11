@@ -2,6 +2,7 @@ package eval
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
@@ -46,9 +47,9 @@ func (i *Interpreter) evalExpr(env *Environment, e ast.Expression) (value.Value,
 	case *ast.FieldExpr:
 		return i.evalField(env, ex)
 	case *ast.RunProcessExpr:
-		return nil, i.deferredConstruct(ex)
+		return i.evalRunProcess(env, ex)
 	case *ast.DurationLit:
-		return nil, i.deferredConstruct(ex)
+		return i.evalDurationLit(ex)
 	}
 	return nil, runtimeErr(e.Pos(), "внутренняя ошибка: неизвестный узел выражения")
 }
@@ -150,4 +151,39 @@ func (i *Interpreter) evalField(env *Environment, fe *ast.FieldExpr) (value.Valu
 		return rec.Get(fe.Field.Name), nil
 	}
 	return nil, typeErr(fe.Pos(), fmt.Sprintf("значение типа %s не имеет полей", target.TypeName()))
+}
+
+// evalRunProcess активирует «запустить процесс P(args)» (006, §EN-5): вычисляет
+// аргументы слева направо → runtime.StartProcess(P, args) → value.Строка{V: id}.
+// Работает top-level, в функции, в теле шага (вложенный запуск — синхронно до
+// первого ожидания/терминала вложенного). nil-runtime → §EN-8.A.
+func (i *Interpreter) evalRunProcess(env *Environment, r *ast.RunProcessExpr) (value.Value, error) {
+	if i.runtime == nil {
+		return nil, runtimeErr(r.Pos(), "внутренняя ошибка: движок процессов не подключён")
+	}
+	args := make([]value.Value, len(r.Args))
+	for k, a := range r.Args {
+		v, err := i.evalExpr(env, a)
+		if err != nil {
+			return nil, err
+		}
+		args[k] = v
+	}
+	id, err := i.runtime.StartProcess(r.Process.Name, args)
+	if err != nil {
+		return nil, err
+	}
+	return value.Строка{V: id}, nil
+}
+
+// evalDurationLit активирует литерал длительности (006, §EN-5, D-7/D-16): парсит
+// нормализованную лексему Amount в int64 → value.Длительность{Amount, Unit}. Вне
+// диапазона int64 → ОшибкаВыполнения «литерал длительности вне диапазона типа Целое»
+// (§EN-8.A, позиция литерала).
+func (i *Interpreter) evalDurationLit(d *ast.DurationLit) (value.Value, error) {
+	n, err := strconv.ParseInt(d.Amount, 10, 64)
+	if err != nil {
+		return nil, runtimeErr(d.Pos(), "литерал длительности вне диапазона типа Целое")
+	}
+	return value.Длительность{Amount: n, Unit: d.Unit}, nil
 }

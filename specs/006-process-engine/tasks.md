@@ -36,11 +36,11 @@ story независимо реализуема и проверяема как M
 
 **Purpose**: первая внешняя зависимость проекта + игнор файла БД; отдельным коммитом (FR-041).
 
-- [ ] T001 Подключить `modernc.org/sqlite` (чистый Go без CGO, первая внешняя зависимость): из `src/`
+- [X] T001 Подключить `modernc.org/sqlite` (чистый Go без CGO, первая внешняя зависимость): из `src/`
   выполнить `go get modernc.org/sqlite@latest` + `go mod tidy`, зафиксировать правку `src/go.mod`
   (`require modernc.org/sqlite`) и новый `src/go.sum` **отдельным коммитом** (FR-041). Проверить
   `go build ./...` собирается с новой зависимостью.
-- [ ] T002 [P] Добавить `ladix.db` в `.gitignore` на корне репозитория (FR-040, GAP-9).
+- [X] T002 [P] Добавить `ladix.db` в `.gitignore` на корне репозитория (FR-040, GAP-9).
 
 **Checkpoint**: зависимость подключена отдельным коммитом, `ladix.db` игнорируется — фундамент готов.
 
@@ -55,38 +55,38 @@ story независимо реализуема и проверяема как M
 
 ### Тесты Foundational (tests-first — написать и убедиться, что падают) ⚠️
 
-- [ ] T003 [P] Написать `src/internal/store/codec_test.go` — round-trip кодека type-tagged JSON для всех
+- [X] T003 [P] Написать `src/internal/store/codec_test.go` — round-trip кодека type-tagged JSON для всех
   10 типов значений (Целое/Дробное/Строка/Булево/Пусто/Длительность/Период/Дата/Список/Запись) через
   `SaveInstance`/`LoadInstance`; включить D-5 (`NaN`/`+Inf`/`-Inf` строками), D-6 (Запись массивом пар,
   порядок `Keys()`), D-21 (ключи верхнего уровня по возрастанию), вложенность Список/Запись; убедиться
   что падает (FR-006, §EN-2).
-- [ ] T004 [P] Написать `src/internal/store/memory_test.go` — lifecycle `MemoryStore`, **без алиасинга**
+- [X] T004 [P] Написать `src/internal/store/memory_test.go` — lifecycle `MemoryStore`, **без алиасинга**
   (мутация загруженного инстанса/карты/задачи не видна в Store до `Save`), mint `p-000001`/`t-000001`,
   `MarkTaskCompleted` атомарность (повтор → `ErrTaskAlreadyCompleted`), `ListPendingTasks` фильтр и
   порядок по возрастанию id, сентинелы через `errors.Is`; убедиться что падает (FR-007, FR-001…004).
-- [ ] T005 [P] Написать `src/internal/store/sqlite_test.go` — round-trip `SQLiteStore` (10 типов),
+- [X] T005 [P] Написать `src/internal/store/sqlite_test.go` — round-trip `SQLiteStore` (10 типов),
   персист счётчика через `Close`+переоткрытие (продолжение нумерации, D-10), идемпотентность схемы
   (повторное открытие безвредно), `MarkTaskCompleted` атомарность, `ListPendingTasks` порядок; времена
   `time.RFC3339` (не Nano); убедиться что падает (FR-002, FR-005, FR-006).
 
 ### Имплементация Foundational
 
-- [ ] T006 [P] Создать `src/internal/store/types.go` — `ProcessInstance` (7 полей), `Status` (6 констант
+- [X] T006 [P] Создать `src/internal/store/types.go` — `ProcessInstance` (7 полей), `Status` (6 констант
   `создан`/`выполняется`/`ожидает`/`выполнен`/`провален`/`отменён`), `Task` (8 полей), `TaskStatus`
   (`открыта`/`завершена`), 3 сентинела (`ErrInstanceNotFound`/`ErrTaskNotFound`/`ErrTaskAlreadyCompleted`,
   английские) — дословно §EN-2 (FR-001…004).
-- [ ] T007 Создать `src/internal/store/store.go` — интерфейс `Store` ровно из 8 методов (D-3):
+- [X] T007 Создать `src/internal/store/store.go` — интерфейс `Store` ровно из 8 методов (D-3):
   `SaveInstance`/`LoadInstance`/`SaveTask`/`LoadTask`/`ListPendingTasks`/`MarkTaskCompleted`/
   `NextInstanceID`/`NextTaskID`; листингов инстансов и триггерных методов НЕ объявлять (зависит от T006).
-- [ ] T008 Создать `src/internal/store/codec.go` — кодек type-tagged JSON (10 типов; `NaN`/`±Inf`
+- [X] T008 Создать `src/internal/store/codec.go` — кодек type-tagged JSON (10 типов; `NaN`/`±Inf`
   строками D-5; Запись массивом пар, порядок `Keys()` D-6; верхний уровень `Variables` по возрастанию
   ключей D-21; round-trip честный) — внутреннее дело `SQLiteStore`; зелёный `codec_test.go` (FR-006,
   зависит от T006).
-- [ ] T009 Создать `src/internal/store/memory.go` — `MemoryStore` + `NewMemoryStore()`; карты
+- [X] T009 Создать `src/internal/store/memory.go` — `MemoryStore` + `NewMemoryStore()`; карты
   инстансов/задач + счётчики под одним `sync.Mutex`; **без алиасинга** (`Save`/`Load` копируют инстанс,
   карту `Variables` и задачу; значения разделяются); `MarkTaskCompleted` под mutex; mint
   `p-%06d`/`t-%06d`; зелёный `memory_test.go` (FR-007, зависит от T006/T007).
-- [ ] T010 Создать `src/internal/store/sqlite.go` — `SQLiteStore` + `NewSQLiteStore(path)`/`Close()`
+- [X] T010 Создать `src/internal/store/sqlite.go` — `SQLiteStore` + `NewSQLiteStore(path)`/`Close()`
   (`modernc.org/sqlite`); явный `Exec` DDL §EN-2 (`instances`/`tasks`/`counters` + индекс
   `idx_tasks_pending` + сид `counters` `INSERT OR IGNORE`); PRAGMA EM-7 (`journal_mode=WAL`,
   `busy_timeout=5000`, `foreign_keys=ON`); mint в одной транзакции (D-10); времена `time.RFC3339`;
@@ -112,13 +112,13 @@ story независимо реализуема и проверяема как M
 
 ### Тесты US1 (tests-first — написать и убедиться, что падают) ⚠️
 
-- [ ] T011 [P] [US1] Написать `src/internal/engine/engine_test.go` — сценарий А байт-точный (5 строк,
+- [X] T011 [P] [US1] Написать `src/internal/engine/engine_test.go` — сценарий А байт-точный (5 строк,
   `WithClock(2026-05-31 00:00:00 Local)`, `out` = `bytes.Buffer`) + проверка состояния Store на выходе;
   фаза атрибутов: `исполнитель: 42` → ОшибкаТипа §EN-8.A `шаг '<имя>': исполнитель должен быть Строка,
   получено Целое`, инстанс `провален`; тело `присвоить x = 1/0` → `деление на ноль`, инстанс
   `провален`; абсолютизация дедлайна D-19 (множители единиц, `мес` календарно); убедиться что падает
   (SC-001, FR-008…014, FR-017).
-- [ ] T012 [P] [US1] Написать тесты границы `eval↔engine` в `src/internal/eval/` (новый
+- [X] T012 [P] [US1] Написать тесты границы `eval↔engine` в `src/internal/eval/` (новый
   `runtime_test.go` или в существующем `stmt_test.go`/`expr_test.go`): `ExecStepBody` трёхслойный кадр
   `global→processEnv→stepEnv`; `присвоить` пишет в `procEnv` (виден в `Locals()`) + дёргает хук;
   `x = E` мутирует слой без хука; пусть-локаль шага в `procEnv` не утекает; `RunProcessExpr` →
@@ -127,42 +127,42 @@ story независимо реализуема и проверяема как M
 
 ### Имплементация US1
 
-- [ ] T013 [US1] Создать `src/internal/engine/clock.go` — интерфейс `Clock`, `SystemClock` (единственное
+- [X] T013 [US1] Создать `src/internal/engine/clock.go` — интерфейс `Clock`, `SystemClock` (единственное
   `time.Now()` движка, D-2), `WithClock(c Clock) Option`; `time.Now()` только здесь (FR-017, зависит
   от T010).
-- [ ] T014 [P] [US1] Создать `src/internal/engine/deadline.go` — абсолютизация срока D-19: множители
+- [X] T014 [P] [US1] Создать `src/internal/engine/deadline.go` — абсолютизация срока D-19: множители
   `сек`/`мин`/`час`/`дн`(24ч)/`нед`(168ч), `мес` через `CreatedAt.AddDate(0,n,0)`; шаг без срока →
   `Deadline==nil` (FR-012).
-- [ ] T015 [P] [US1] Создать `src/internal/engine/format.go` — `FormatTaskLine(t,now)` (единый источник
+- [X] T015 [P] [US1] Создать `src/internal/engine/format.go` — `FormatTaskLine(t,now)` (единый источник
   формата строки задачи, D-22, §EN-7 строка 6: поля через 2 пробела, хвост `срок до <время>` только при
   дедлайне, `ПРОСРОЧЕНА` только при просрочке) и `Overdue(t,now)` (`now.After(*Deadline)`; nil →
   false, EM-13) (FR-017, FR-035).
-- [ ] T016 [US1] Объявить интерфейс `ProcessRuntime` в `src/internal/eval/` (новый файл, напр.
+- [X] T016 [US1] Объявить интерфейс `ProcessRuntime` в `src/internal/eval/` (новый файл, напр.
   `runtime.go`): 7 методов `StartProcess`/`AssignProcessVar`/`CallExternal`/`Notify`/`InstanceStatus`/
   `InstanceVariables`/`UserTasks` — дословно §EN-4 (D-1; eval НЕ импортирует store/engine).
-- [ ] T017 [US1] Добавить экспорт `eval` в `src/internal/eval/`: `SetProcessRuntime(rt)` (поле
+- [X] T017 [US1] Добавить экспорт `eval` в `src/internal/eval/`: `SetProcessRuntime(rt)` (поле
   `i.runtime`, защитный nil → §EN-8.A `внутренняя ошибка: движок процессов не подключён`), `Process(name)`,
   `GlobalEnv()`, `EvalExpr(env,e)`, `ExecStepBody(processEnv,stepEnv,body)` (поле `i.procEnv`,
   save/restore реентерабельно), `Locals()` на `Environment` (снапшот локального слоя) — §EN-4
   (FR-019, FR-023, зависит от T016).
-- [ ] T018 [US1] Активировать `RunProcessExpr` в `src/internal/eval/expr.go:48-49` (заменить
+- [X] T018 [US1] Активировать `RunProcessExpr` в `src/internal/eval/expr.go:48-49` (заменить
   `deferredConstruct` на: вычислить аргументы → `i.runtime.StartProcess(P,args)` → `value.Строка{V:id}`);
   активировать `AssignAction`/`CallAction`/`NotifyAction` в `src/internal/eval/stmt.go:63-64`
   (запись в `procEnv` + хук `AssignProcessVar`; стабы `CallExternal`/`Notify`) — §EN-5 (FR-020…022,
   зависит от T017).
-- [ ] T019 [US1] Создать `src/internal/engine/engine.go` — `Engine`, `NewEngine(st,interp,out,opts...)`,
+- [X] T019 [US1] Создать `src/internal/engine/engine.go` — `Engine`, `NewEngine(st,interp,out,opts...)`,
   поле `active []*activeFrame` (стек инстансов для атрибуции хука `присвоить`), `Start(name,args)`
   (mint id, bind params, `создан` ▼, `advance`, тихий запуск D-13), приватный `advance` (машина
   состояний §EN-3: `выполняется` ▼, кадр `processEnv` один на прогон, фаза атрибутов до тела D-9,
   тип-гарды D-18, тело `ExecStepBody`, развилка задача/продвижение/терминал, провал D-14,
   гранулярность персиста EM-9, `UpdatedAt=clock.Now()` перед каждым ▼) (FR-008…014, FR-017…019,
   зависит от T013/T014/T015/T017).
-- [ ] T020 [US1] Создать `src/internal/engine/runtime.go` — реализация `eval.ProcessRuntime`:
+- [X] T020 [US1] Создать `src/internal/engine/runtime.go` — реализация `eval.ProcessRuntime`:
   `StartProcess`→`Start`; `AssignProcessVar` (обновить `Variables` вершины стека `active` + ▼SaveInstance);
   `CallExternal`/`Notify` (печать строк §EN-7.2 / 1–1а в `e.out`, всегда nil); `InstanceStatus`/
   `InstanceVariables`/`UserTasks` (для US4-builtins; реализовать сейчас, активация builtins — фаза E)
   (FR-018, FR-020…022, FR-026, зависит от T019).
-- [ ] T021 [US1] Связать `MemoryStore`-путь `run` без `--db` в `src/cmd/ladix/main.go`: собрать стек
+- [X] T021 [US1] Связать `MemoryStore`-путь `run` без `--db` в `src/cmd/ladix/main.go`: собрать стек
   `interp`+`MemoryStore`+`engine.NewEngine`+`interp.SetProcessRuntime(eng)` для существующей команды
   `run` (без флага `--db` пока), чтобы `run examples/онбординг.ladix` исполнял процесс (§EN-6; полный
   CLI-разрез — US2; зависит от T019/T020).

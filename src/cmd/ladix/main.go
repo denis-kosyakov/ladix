@@ -18,9 +18,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/denis-kosyakov/ladix/internal/engine"
 	"github.com/denis-kosyakov/ladix/internal/eval"
 	"github.com/denis-kosyakov/ladix/internal/lexer"
 	"github.com/denis-kosyakov/ladix/internal/parser"
+	"github.com/denis-kosyakov/ladix/internal/store"
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
@@ -151,10 +153,28 @@ func runFile(path string, maxDepth int, stdout, stderr io.Writer) int {
 	}
 	return guard(stderr, func() int {
 		interp := eval.NewInterpreter(stdout, maxDepth, eval.SystemClock{})
+		// Стек движка процессов (006, §EN-6): MemoryStore (без --db, эфемерно) +
+		// Engine + инъекция ProcessRuntime, чтобы «запустить процесс» исполнялся.
+		st := store.NewMemoryStore()
+		eng := engine.NewEngine(st, interp, stdout)
+		interp.SetProcessRuntime(eng)
 		if err := interp.Run(prog); err != nil {
 			// Все типы eval/lexer/parser реализуют канонический двухстрочный Error() (§8.1).
 			fmt.Fprintln(stderr, err.Error())
 			return 1
+		}
+		// Сводка висящих задач (§EN-6 шаг 4, §EN-7 строки 5/6): только при N ≥ 1.
+		pending, perr := st.ListPendingTasks("")
+		if perr != nil {
+			fmt.Fprintf(stderr, "ladix: сбой хранилища: %s\n", perr.Error())
+			return 2
+		}
+		if len(pending) > 0 {
+			now := engine.SystemClock{}.Now()
+			fmt.Fprintf(stdout, "открытых задач: %d\n", len(pending))
+			for _, t := range pending {
+				fmt.Fprintln(stdout, engine.FormatTaskLine(t, now))
+			}
 		}
 		return 0
 	})

@@ -33,6 +33,12 @@ type Interpreter struct {
 	recordCache map[string][]value.Запись   // лень + кеш загрузки источника на запуск (§9.6)
 	metricStack []string                    // стек активных метрик для детекта цикла (D-8)
 	recordCtx   *recordContext              // контекст полей текущей записи (per-record, движок метрики, §SM-8)
+	// Интеграция с движком процессов (006, §EN-4). runtime инжектируется
+	// сеттером SetProcessRuntime (engine реализует ProcessRuntime, D-1). procEnv —
+	// приёмник «присвоить» на время исполнения тела шага (ExecStepBody save/restore
+	// реентерабельно, зеркало recordCtx).
+	runtime ProcessRuntime
+	procEnv *Environment
 }
 
 // recordContext — контекст вычисления выражений метрики per-record (§SM-8, D-9).
