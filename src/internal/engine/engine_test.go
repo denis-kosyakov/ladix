@@ -151,6 +151,51 @@ func TestScenarioA(t *testing.T) {
 	}
 }
 
+// TestNotifyCallFormats — §EN-7 строки 1/1а/2: байт-точная печать стабов действий
+// «уведомить»/«вызвать» движком (CallExternal/Notify — реализация
+// eval.ProcessRuntime). Покрывает форматы, недостижимые golden-сценарием онбординга
+// (он печатает только строку 1): 1а — уведомить БЕЗ аргументов (без двоеточия и
+// хвостовых пробелов); 2 — вызвать (разделитель ", "; без аргументов «<имя>()»).
+func TestNotifyCallFormats(t *testing.T) {
+	_, _, eng, out := buildStack(t, onboardingSrc, goldenMoment())
+
+	// 1. уведомить с ≥1 аргументом (разделитель аргументов — один пробел).
+	out.Reset()
+	if err := eng.Notify("ИТ", []value.Value{value.Строка{V: "создать учётку для Петров"}}); err != nil {
+		t.Fatalf("Notify(1): %v", err)
+	}
+	if got, want := out.String(), "[уведомление] ИТ: создать учётку для Петров\n"; got != want {
+		t.Errorf("формат 1: got %q, want %q", got, want)
+	}
+
+	// 1а. уведомить БЕЗ аргументов — без двоеточия и хвостовых пробелов.
+	out.Reset()
+	if err := eng.Notify("дежурный", nil); err != nil {
+		t.Fatalf("Notify(1а): %v", err)
+	}
+	if got, want := out.String(), "[уведомление] дежурный\n"; got != want {
+		t.Errorf("формат 1а: got %q, want %q", got, want)
+	}
+
+	// 2. вызвать с аргументами — разделитель ", ".
+	out.Reset()
+	if err := eng.CallExternal("отправить", []value.Value{value.Строка{V: "адрес"}, value.Целое{V: 7}}); err != nil {
+		t.Fatalf("CallExternal(2): %v", err)
+	}
+	if got, want := out.String(), "[вызов] отправить(адрес, 7)\n"; got != want {
+		t.Errorf("формат 2: got %q, want %q", got, want)
+	}
+
+	// 2. вызвать без аргументов — «[вызов] <имя>()».
+	out.Reset()
+	if err := eng.CallExternal("пинг", nil); err != nil {
+		t.Fatalf("CallExternal(2 пусто): %v", err)
+	}
+	if got, want := out.String(), "[вызов] пинг()\n"; got != want {
+		t.Errorf("формат 2 (без аргументов): got %q, want %q", got, want)
+	}
+}
+
 // TestAttributeTypeGuard — фаза атрибутов: исполнитель не Строка → ОшибкаТипа §EN-8.A,
 // инстанс провален (D-18/D-14).
 func TestAttributeTypeGuard(t *testing.T) {
@@ -252,5 +297,54 @@ func TestDeadlineAbsolutization(t *testing.T) {
 		if !got.Equal(c.want) {
 			t.Errorf("%d%s: получено %v, хотим %v", c.amount, c.unit, got, c.want)
 		}
+	}
+}
+
+// TestEN7FormatRegistry — консолидированная карта покрытия реестра §EN-7 (docs/
+// engine-model.md, строки 647–660): ровно 11 stdout-форматов, у каждого ≥1 байт-
+// точная (exact-match) проверка. Этот тест НЕ проверяет печать сам по себе — он
+// ДОКУМЕНТИРУЕТ «формат № → покрывающий тест» и страхует от выпадения форматов из
+// покрытия (как TestErrorsRegistryExactMatch для §8.3). Имена тестов — ссылки на
+// фактические exact-match-ассерции (engine_test.go / complete_test.go / main_test.go).
+func TestEN7FormatRegistry(t *testing.T) {
+	registry := []struct {
+		num     string // номер формата §EN-7
+		desc    string // дословный шаблон строки
+		coverBy string // тест(ы) с exact-match на этот формат
+	}{
+		{"1", "[уведомление] <получатель>: <арг1 арг2 …>", "engine.TestNotifyCallFormats, engine.TestScenarioA, main.TestRunOnboardingProcessDeferred"},
+		{"1а", "[уведомление] <получатель>", "engine.TestNotifyCallFormats"},
+		{"2", "[вызов] <имя>(<арг1, арг2, …>)", "engine.TestNotifyCallFormats"},
+		{"3", "[задача] <t-id> → <исполнитель>, шаг '<шаг>', срок до <время>", "engine.TestScenarioA, main.TestRunOnboardingProcessDeferred"},
+		{"4", "[задача] <t-id> → <исполнитель>, шаг '<шаг>'", "engine.TestCompleteChain, engine.TestCompleteCatchUp"},
+		{"5", "открытых задач: <N>", "engine.TestScenarioA, main.TestRunOnboardingProcessDeferred"},
+		{"6", "<t-id>  <p-id>  '<шаг>'  <исполнитель>  срок до <время>  ПРОСРОЧЕНА", "engine.TestScenarioA, main.TestScenarioBSQLiteChain"},
+		{"7", "задача <t-id> завершена", "engine.TestCompleteChain, engine.TestCompleteTerminalDirect"},
+		{"8", "задача <t-id> уже была завершена, инстанс до-продвинут", "engine.TestCompleteCatchUp"},
+		{"9", "инстанс <p-id>: ожидает, шаг '<имя>'", "engine.TestCompleteChain, engine.TestCompleteCatchUp"},
+		{"10", "инстанс <p-id>: выполнен", "engine.TestCompleteChain, engine.TestCompleteTerminalDirect"},
+		{"11", "открытых задач нет", "main.TestScenarioBSQLiteChain"},
+	}
+
+	// Канон §EN-7 — 11 НУМЕРОВАННЫХ форматов (1..11); «1а» — помеченный вариант
+	// формата №1 (уведомить без аргументов), а не отдельный номер. Считаем по
+	// базовому номеру: 12 строк реестра (с «1а») ⇒ ровно 11 уникальных форматов.
+	seen := map[string]bool{} // полные метки строк реестра (включая «1а»)
+	base := map[string]bool{} // базовые номера 1..11 (без литеры варианта)
+	for _, r := range registry {
+		if seen[r.num] {
+			t.Errorf("строка реестра №%s продублирована", r.num)
+		}
+		seen[r.num] = true
+		base[strings.TrimRight(r.num, "абвг")] = true
+		if r.coverBy == "" {
+			t.Errorf("формат №%s (%q) не имеет покрывающего теста", r.num, r.desc)
+		}
+	}
+	if len(seen) != 12 {
+		t.Errorf("строк реестра §EN-7 = %d, хотим 12 (форматы 1..11 + вариант 1а)", len(seen))
+	}
+	if len(base) != 11 {
+		t.Errorf("уникальных форматов §EN-7 = %d, хотим ровно 11", len(base))
 	}
 }
