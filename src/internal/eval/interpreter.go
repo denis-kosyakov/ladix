@@ -27,11 +27,12 @@ type Interpreter struct {
 	today     *value.Дата                  // дата запуска, зафиксированная на первый вызов now() (§SM-7/§10.6)
 	// Реестры декларативного слоя (§SM-4, data-model §3). Заполнение — фаза D
 	// (Analyze регистрирует источники/метрики); здесь только заводятся пустыми.
-	sources     map[string]*ast.SourceDecl // реестр источников (Шаг 1 Analyze)
-	metrics     map[string]*ast.MetricDecl // реестр метрик (Шаг 1 Analyze)
-	recordCache map[string][]value.Запись  // лень + кеш загрузки источника на запуск (§9.6)
-	metricStack []string                   // стек активных метрик для детекта цикла (D-8)
-	recordCtx   *recordContext             // контекст полей текущей записи (per-record, движок метрики, §SM-8)
+	sources     map[string]*ast.SourceDecl  // реестр источников (Шаг 1 Analyze)
+	metrics     map[string]*ast.MetricDecl  // реестр метрик (Шаг 1 Analyze)
+	processes   map[string]*ast.ProcessDecl // реестр процессов (Шаг 1 Analyze, §PM-4; исполнение — 006)
+	recordCache map[string][]value.Запись   // лень + кеш загрузки источника на запуск (§9.6)
+	metricStack []string                    // стек активных метрик для детекта цикла (D-8)
+	recordCtx   *recordContext              // контекст полей текущей записи (per-record, движок метрики, §SM-8)
 }
 
 // recordContext — контекст вычисления выражений метрики per-record (§SM-8, D-9).
@@ -64,6 +65,7 @@ func NewInterpreter(out io.Writer, maxDepth int, clock Clock) *Interpreter {
 		clock:       clock,
 		sources:     make(map[string]*ast.SourceDecl),
 		metrics:     make(map[string]*ast.MetricDecl),
+		processes:   make(map[string]*ast.ProcessDecl),
 		recordCache: make(map[string][]value.Запись),
 	}
 	for _, name := range value.PeriodNames {

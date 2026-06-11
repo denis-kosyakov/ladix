@@ -5,10 +5,10 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/lexer"
 )
 
-// parseTopLevelItem разбирает один элемент верхнего уровня: функция →
-// FunctionDecl; отложенные декларации/значение/{ } → SE-UNEXPECTED; иначе —
-// statement. nil-результат (поглощённая ошибочная конструкция) вызывающий
-// пропускает.
+// parseTopLevelItem разбирает один элемент верхнего уровня: функция/источник/
+// метрика/процесс → декларация; отложенные триггеры (когда)/значение/{ } →
+// SE-UNEXPECTED; иначе — statement. nil-результат (поглощённая ошибочная
+// конструкция) вызывающий пропускает.
 func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
 	if p.check(lexer.KW_FUNC) {
 		return p.parseFunctionDecl()
@@ -18,6 +18,9 @@ func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
 	}
 	if p.check(lexer.KW_METRIC) {
 		return p.parseMetricDecl()
+	}
+	if p.check(lexer.KW_PROCESS) {
+		return p.parseProcessDecl()
 	}
 	if isUnexpectedTopLevel(p.peek().Type) {
 		bad := p.advance() // потребляем ведущий токен (прогресс), затем синхронизация
@@ -31,13 +34,13 @@ func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
 }
 
 // isUnexpectedTopLevel — ведущие токены, недопустимые на верхнем уровне: отложенные
-// декларации процессов/триггеров (процесс/когда), значение, фигурные скобки. Все
-// дают SE-UNEXPECTED (FR-017, guardrail 12). источник/метрика теперь парсятся
-// (004, §SM-3) — здесь их нет.
+// триггеры (когда), значение, фигурные скобки. Все дают SE-UNEXPECTED (FR-017,
+// guardrail 12). источник/метрика парсятся с 004 (§SM-3), процесс — с 005
+// (§PM-3, D-6) — здесь их нет.
 func isUnexpectedTopLevel(t lexer.TokenType) bool {
 	switch t {
-	case lexer.KW_PROCESS, lexer.KW_WHEN,
-		lexer.KW_VALUE, lexer.LBRACE, lexer.RBRACE:
+	case lexer.KW_WHEN, lexer.KW_VALUE,
+		lexer.LBRACE, lexer.RBRACE:
 		return true
 	default:
 		return false
