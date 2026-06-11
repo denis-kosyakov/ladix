@@ -79,6 +79,65 @@ func (e *Engine) Start(name string, args []value.Value) (string, error) {
 	return id, nil
 }
 
+// CompleteResult — итог Complete для CLI (маппинг exit-кодов и тесты). Печать строк
+// 7-10 (§EN-7) делает САМ Complete в e.out; CLI по этой структуре ничего не печатает.
+type CompleteResult struct {
+	Instance *store.ProcessInstance // состояние инстанса после продвижения
+	CaughtUp bool                   // true = гард-догон D-4 (US3); в US2 всегда false
+}
+
+// Complete завершает задачу человека-в-цикле и продвигает инстанс (§EN-3, машина
+// состояний Complete). US2 — БАЗОВЫЙ ПУТЬ без полного набора гардов (полный порядок
+// дрейф-гардов Q3 / гардов D-8 / гард-догона D-4 / разбора гонки D-12 — US3):
+// LoadTask → LoadInstance → MarkTaskCompleted → печать строки 7 → продвижение
+// (next==∅ → выполнен + строка 10; иначе advance + строка 9). Владелец печати строк
+// 7/9/10 — сам Complete (пишет в e.out). Ошибки Store/продвижения всплывают наверх:
+// CLI печатает их по §EN-8 и подбирает exit-код.
+func (e *Engine) Complete(taskID string) (CompleteResult, error) {
+	t, err := e.st.LoadTask(taskID)
+	if err != nil {
+		return CompleteResult{}, err // ErrTaskNotFound и пр. — CLI → §EN-8.B exit 2
+	}
+	inst, err := e.st.LoadInstance(t.InstanceID)
+	if err != nil {
+		return CompleteResult{}, err // ErrInstanceNotFound — CLI → §EN-8.B exit 2
+	}
+	// US3-заглушка: дрейф-гарды Q3 (процесс/шаг в определении), гарды D-8 (статус
+	// ожидает, соответствие текущему шагу), гард-догон D-4 (уже-завершённая задача),
+	// разбор гонки D-12 (ErrTaskAlreadyCompleted после MarkTaskCompleted) идут ИМЕННО
+	// здесь и до мутаций — в US2 базовый путь предполагает корректный вход.
+	if err := e.st.MarkTaskCompleted(taskID, e.clock.Now()); err != nil {
+		return CompleteResult{}, err // ErrTaskAlreadyCompleted и пр. — CLI → §EN-8.B
+	}
+	// Печать строки 7 ДО продвижения: задача уже завершена фактом (§EN-7 строка 7).
+	fmt.Fprintf(e.out, "задача %s завершена\n", taskID)
+
+	next, ok := e.nextStep(inst.ProcessName, inst.CurrentStep)
+	if !ok {
+		// Терминал: следующего шага нет → выполнен (§EN-7 строка 10).
+		inst.Status = store.StatusDone
+		if serr := e.save(inst); serr != nil {
+			return CompleteResult{}, serr
+		}
+		fmt.Fprintf(e.out, "инстанс %s: выполнен\n", inst.ID)
+		return CompleteResult{Instance: inst}, nil
+	}
+	// Есть следующий шаг: продвигаемся (advance может снова заснуть или провалиться).
+	inst.CurrentStep = next
+	if err := e.advance(inst); err != nil {
+		// Провал продвижения (D-14): инстанс уже провален внутри advance; итоговой
+		// строки 9/10 НЕТ. Ошибка всплывает — CLI печатает канон §13, exit 1.
+		return CompleteResult{Instance: inst}, err
+	}
+	// Итог: инстанс либо снова ожидает (строка 9), либо выполнен (строка 10).
+	if inst.Status == store.StatusDone {
+		fmt.Fprintf(e.out, "инстанс %s: выполнен\n", inst.ID)
+	} else {
+		fmt.Fprintf(e.out, "инстанс %s: %s, шаг '%s'\n", inst.ID, inst.Status, inst.CurrentStep)
+	}
+	return CompleteResult{Instance: inst}, nil
+}
+
 // bindParams связывает параметры процесса с позиционными аргументами (§EN-3).
 // Лишние параметры без аргумента остаются неопределёнными (семпроход гарантирует
 // совпадение арности, checkRunProcess).

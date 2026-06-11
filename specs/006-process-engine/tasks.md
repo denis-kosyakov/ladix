@@ -185,44 +185,44 @@ exit 0; повтор → `p-000002`/`t-000003`; состояние только 
 
 ### Тесты US2 (tests-first — написать и убедиться, что падают) ⚠️
 
-- [ ] T022 [US2] Перевернуть замок в `src/cmd/ladix/main_test.go:91 TestRunOnboardingProcessDeferred`:
+- [X] T022 [US2] Перевернуть замок в `src/cmd/ladix/main_test.go:91 TestRunOnboardingProcessDeferred`:
   было «код 1, рантайм-граница 005» → стало **код 0 + golden сценария А** (5 строк, маска только
   `<время>` дедлайнов; id детерминированы); поправить стейл-докстринг теста; убедиться что падает до
   имплементации CLI (SC-002, FR-028).
-- [ ] T023 [US2] Написать сценарий Б в `src/cmd/ladix/main_test.go` — цепочка из 6 команд на свежей БД
+- [X] T023 [US2] Написать сценарий Б в `src/cmd/ladix/main_test.go` — цепочка из 6 команд на свежей БД
   (`run --db` → `tasks` → `tasks Петров` → `complete t-000001` → `complete t-000002` → повторный
   `run --db`); каждый шаг — ожидаемый stdout (маска только `<время>`) + exit 0; повтор даёт
   `p-000002`/`t-000003`; состояние между командами — только в файле БД; убедиться что падает
   (SC-002, FR-029…034).
-- [ ] T024 [P] [US2] Написать `src/internal/engine/complete_test.go` — цепочка `Complete`:
+- [X] T024 [P] [US2] Написать `src/internal/engine/complete_test.go` — цепочка `Complete`:
   пробуждение → следующая задача → терминал (`выполнен`); проверить переход `ожидает`→`выполнен`
   напрямую при отсутствии следующего шага и через `выполняется` при наличии; убедиться что падает
   (FR-009, FR-013, FR-015, SC-002).
 
 ### Имплементация US2
 
-- [ ] T025 [US2] Добавить `Complete(taskID)` + `CompleteResult{Instance,CaughtUp}` в
+- [X] T025 [US2] Добавить `Complete(taskID)` + `CompleteResult{Instance,CaughtUp}` в
   `src/internal/engine/engine.go` (basic-путь без полного набора гардов — гарды/догон оформляются в US3):
   `LoadTask`/`LoadInstance` → `MarkTaskCompleted` → печать строки 7 → продвижение (`next==∅`→`выполнен`;
   иначе `advance`) → печать строк 9/10 (владелец печати — сам `Complete`, §EN-3); зависит от T019.
-- [ ] T026 [US2] Обновить usage-строку в `src/cmd/ladix/main.go:31` до 4 команд (дословно cli.md):
+- [X] T026 [US2] Обновить usage-строку в `src/cmd/ladix/main.go:31` до 4 команд (дословно cli.md):
   `использование: ladix run [--max-depth N] [--db путь] <файл> | ladix metric [--max-depth N] <файл>
   <имя> | ladix complete [--db путь] [--max-depth N] <файл> <task-id> | ladix tasks [--db путь]
   [исполнитель]`; ручной разбор флага `--db` (`--db значение` и `--db=значение`); существующие
   CLI-тексты без изменений + общий разбор флагов обеих форм (`--флаг значение` и `--флаг=значение`) и
   отказ на неизвестный флаг (CLI-ошибка `ladix: …`, §EN-8.B, exit 2) (FR-032).
-- [ ] T027 [US2] Реализовать `run --db` в `src/cmd/ladix/main.go`: без `--db` — `MemoryStore` (как
+- [X] T027 [US2] Реализовать `run --db` в `src/cmd/ladix/main.go`: без `--db` — `MemoryStore` (как
   US1); с `--db` — `SQLiteStore` (`defer Close()` после успешного открытия; ошибка открытия →
   `ladix: не удалось открыть хранилище '<путь>': <причина>`, exit 2); сводка висящих задач
   `ListPendingTasks("")` → строки 5–6 §EN-7 **только при N≥1**, exit 0; повторный `run --db` создаёт
   новые инстансы (FR-029, FR-034, зависит от T021/T025).
-- [ ] T028 [US2] Реализовать подкоманду `complete <file.ladix> <task-id> [--db] [--max-depth]` в
+- [X] T028 [US2] Реализовать подкоманду `complete <file.ladix> <task-id> [--db] [--max-depth]` в
   `src/cmd/ladix/main.go` (Q3): ровно 2 позиционных (иначе usage exit 2); компиляция файла чисто
   (лексер→парсер→`Analyze`; ошибка → канон §13 exit 1), **`interp.Run` НЕ вызывается** (top-level не
   исполняется); `SQLiteStore` дефолт `ladix.db`; собрать стек + `eng.Complete(taskID)`; печать строк
   7–10 делает сам `Complete`; провал продвижения → канон §13 exit 1; обернуть подкоманду в
   guard/recover-барьер (конституция III) (FR-030, зависит от T025/T026).
-- [ ] T029 [US2] Реализовать подкоманду `tasks [исполнитель] [--db]` в `src/cmd/ladix/main.go`
+- [X] T029 [US2] Реализовать подкоманду `tasks [исполнитель] [--db]` в `src/cmd/ladix/main.go`
   (FR-031): файл НЕ принимать (всё из БД, движок/интерпретатор НЕ строятся); `SQLiteStore` дефолт
   `ladix.db`; `ListPendingTasks(фильтр)` → `engine.FormatTaskLine(t, engine.SystemClock{}.Now())` на
   задачу (строка 6 §EN-7), пусто → `открытых задач нет` (строка 11); exit 0 в обоих случаях; экспорт

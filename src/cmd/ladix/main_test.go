@@ -4,12 +4,24 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
 
 func examplePath(name string) string {
 	return filepath.Join("..", "..", "..", "examples", name)
+}
+
+// deadlineMaskRE — маска времени дедлайна (§EN-9): CLI-тесты не фиксируют абсолютный
+// момент (SystemClock), маскируют только «срок до <время>». Формат времени —
+// "2006-01-02 15:04" (engine.deadlineLayout).
+var deadlineMaskRE = regexp.MustCompile(`срок до \d{4}-\d{2}-\d{2} \d{2}:\d{2}`)
+
+// maskDeadlines заменяет «срок до <время>» на «срок до <DT>» — id детерминированы,
+// маскируется только время (§EN-9).
+func maskDeadlines(s string) string {
+	return deadlineMaskRE.ReplaceAllString(s, "срок до <DT>")
 }
 
 // T044/T045: успешный прогон → stdout, код 0.
@@ -83,29 +95,28 @@ func TestMaxDepthFlag(t *testing.T) {
 	}
 }
 
-// 005/SC-004 (CP-5.2 N15, CP-5.4): онбординг.ladix проходит парс+семантику чисто
-// и падает в РАНТАЙМЕ на top-level 'запустить процесс' — единственная наблюдаемая
-// рантайм-граница 005 (§PM-5, FR-025) → код 1, двухстрочная ошибка с payload §DP-4.
-// stdout пуст: 'пусть id = запустить процесс …' — первый top-level оператор,
-// до 'печать' исполнение не доходит.
+// 006/US1 (§EN-9 Сценарий А): онбординг.ladix исполняется через MemoryStore (run
+// без --db) — 'запустить процесс' активирован движком. Exit 0, байт-точный golden
+// 5 строк. id детерминированы (свежий Store → p-000001/t-000001); маскируется только
+// <время> дедлайна (deadlineMaskRE). Сменился вердикт фичи 006 относительно 005,
+// где это была рантайм-граница (код 1, §DP-4).
 func TestRunOnboardingProcessDeferred(t *testing.T) {
 	var out, errBuf bytes.Buffer
 	code := realMain([]string{"run", examplePath("онбординг.ladix")}, &out, &errBuf)
-	if code != 1 {
-		t.Fatalf("код = %d, хотим 1; stderr=%q", code, errBuf.String())
+	if code != 0 {
+		t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
 	}
-	stderr := errBuf.String()
-	if !strings.HasPrefix(stderr, "Ошибка в строке ") {
-		t.Errorf("stderr не начинается с заголовка двухстрочной ошибки: %q", stderr)
+	if errBuf.Len() != 0 {
+		t.Errorf("непустой stderr: %q", errBuf.String())
 	}
-	if !strings.Contains(stderr, ":\nконструкция запустить процесс не поддерживается в этой версии\n") {
-		t.Errorf("в stderr нет payload §DP-4 второй строкой: %q", stderr)
-	}
-	if out.Len() != 0 {
-		t.Errorf("непустой stdout: %q", out.String())
-	}
-	if strings.Contains(stderr, ".go:") || strings.Contains(stderr, "goroutine") {
-		t.Errorf("в stderr просочился Go stack trace: %q", stderr)
+	want := "" +
+		"[уведомление] ИТ: создать учётку для Петров\n" +
+		"[задача] t-000001 → руководитель, шаг 'провести_встречу', срок до <DT>\n" +
+		"запущен онбординг, id: p-000001\n" +
+		"открытых задач: 1\n" +
+		"t-000001  p-000001  'провести_встречу'  руководитель  срок до <DT>\n"
+	if got := maskDeadlines(out.String()); got != want {
+		t.Errorf("stdout (с маской <DT>) байт-не-точен:\n--- получено ---\n%s\n--- ожидание ---\n%s", got, want)
 	}
 }
 
@@ -150,6 +161,84 @@ func TestRunProcessDeclOnly(t *testing.T) {
 	}
 	if errBuf.Len() != 0 {
 		t.Errorf("непустой stderr: %q", errBuf.String())
+	}
+}
+
+// T023/§EN-9 Сценарий Б — мост SQLite: цепочка из 6 команд на свежей БД. Состояние
+// между командами живёт ТОЛЬКО в файле test.db (каждая команда открывает Store
+// заново). id детерминированы (свежий Store → p-000001/t-000001…), маска — только
+// <время> дедлайнов. Повтор run (шаг 6) даёт p-000002/t-000003 (счётчик персистентен).
+func TestScenarioBSQLiteChain(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	file := examplePath("онбординг.ladix")
+
+	type step struct {
+		name string
+		args []string
+		want string
+	}
+	steps := []step{
+		{
+			name: "1: run --db",
+			args: []string{"run", file, "--db", db},
+			want: "" +
+				"[уведомление] ИТ: создать учётку для Петров\n" +
+				"[задача] t-000001 → руководитель, шаг 'провести_встречу', срок до <DT>\n" +
+				"запущен онбординг, id: p-000001\n" +
+				"открытых задач: 1\n" +
+				"t-000001  p-000001  'провести_встречу'  руководитель  срок до <DT>\n",
+		},
+		{
+			name: "2: tasks --db",
+			args: []string{"tasks", "--db", db},
+			want: "t-000001  p-000001  'провести_встречу'  руководитель  срок до <DT>\n",
+		},
+		{
+			name: "3: tasks Петров --db",
+			args: []string{"tasks", "Петров", "--db", db},
+			want: "открытых задач нет\n",
+		},
+		{
+			name: "4: complete t-000001",
+			args: []string{"complete", file, "t-000001", "--db", db},
+			want: "" +
+				"задача t-000001 завершена\n" +
+				"[задача] t-000002 → HR, шаг 'закрыть_адаптацию', срок до <DT>\n" +
+				"инстанс p-000001: ожидает, шаг 'закрыть_адаптацию'\n",
+		},
+		{
+			name: "5: complete t-000002",
+			args: []string{"complete", file, "t-000002", "--db", db},
+			want: "" +
+				"задача t-000002 завершена\n" +
+				"инстанс p-000001: выполнен\n",
+		},
+		{
+			name: "6: run --db (повтор → p-000002/t-000003)",
+			args: []string{"run", file, "--db", db},
+			want: "" +
+				"[уведомление] ИТ: создать учётку для Петров\n" +
+				"[задача] t-000003 → руководитель, шаг 'провести_встречу', срок до <DT>\n" +
+				"запущен онбординг, id: p-000002\n" +
+				"открытых задач: 1\n" +
+				"t-000003  p-000002  'провести_встречу'  руководитель  срок до <DT>\n",
+		},
+	}
+	for _, s := range steps {
+		t.Run(s.name, func(t *testing.T) {
+			var out, errBuf bytes.Buffer
+			code := realMain(s.args, &out, &errBuf)
+			if code != 0 {
+				t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+			}
+			if errBuf.Len() != 0 {
+				t.Errorf("непустой stderr: %q", errBuf.String())
+			}
+			if got := maskDeadlines(out.String()); got != s.want {
+				t.Errorf("stdout (с маской <DT>) байт-не-точен:\n--- получено ---\n%s\n--- ожидание ---\n%s", got, s.want)
+			}
+		})
 	}
 }
 
