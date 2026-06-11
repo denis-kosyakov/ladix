@@ -19,8 +19,9 @@ import "github.com/denis-kosyakov/ladix/internal/lexer"
 // isSyncLead сообщает, является ли вид токена ВЕДУЩИМ синхро-токеном. На таких
 // токенах synchronize ОСТАНАВЛИВАЕТСЯ, НЕ потребляя их (разбор начнётся с них):
 // ведущие statements, функция, step-action, верхнеуровневые декларации. После 004
-// источник/метрика — полноценные декларации (§SM-3), парсятся штатно; SE-UNEXPECTED
-// дают лишь ещё отложенные процесс/когда/значение (contracts/syntax-errors.md).
+// источник/метрика, а после 005 процесс — полноценные декларации (§SM-3, §PM-3),
+// парсятся штатно; SE-UNEXPECTED дают лишь ещё отложенные когда/значение
+// (и { }) — contracts/syntax-errors.md.
 func isSyncLead(t lexer.TokenType) bool {
 	switch t {
 	case lexer.KW_LET, lexer.KW_IF, lexer.KW_WHILE, lexer.KW_FOR,

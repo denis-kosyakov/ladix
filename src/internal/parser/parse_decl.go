@@ -203,8 +203,10 @@ func (p *Parser) parseProcessDecl() *ast.ProcessDecl {
 // StepLine ::= StepAttr | Statement, StepAttr ::= ("исполнитель" | "срок") ":"
 // Expression NEWLINE (§PM-3). Атрибуты и операторы чередуются свободно;
 // «неизвестного атрибута» НЕТ (в отличие от metric) — любая не-исполнитель/срок
-// строка разбирается как Statement. Повтор атрибута → msgDuplicateAttr + break
-// (D-8, как parseMetricDecl); пустой блок → msgEmptyBlock. Pos() = токен шаг.
+// строка разбирается как Statement. Повтор атрибута → msgDuplicateAttr + continue
+// (D-8, пересмотр ревью №2: строка дубля съедена synchronize, цикл StepLine
+// продолжается — break терял следующий шаг из AST); пустой блок → msgEmptyBlock.
+// Pos() = токен шаг.
 func (p *Parser) parseStepDecl() *ast.StepDecl {
 	stepTok := p.advance() // шаг
 	nameTok, _ := p.expect(lexer.IDENT, "имя шага")
@@ -232,7 +234,7 @@ func (p *Parser) parseStepDecl() *ast.StepDecl {
 			lexeme := attrTok.Lexeme
 			if seen[lexeme] {
 				p.error(attrTok.Pos, msgDuplicateAttr(lexeme))
-				break
+				continue // D-8 ревью №2: исполнитель/срок не sync-lead → synchronize съел ≥1 токен, прогресс без backstop
 			}
 			p.advance() // ключевое слово атрибута
 			p.expect(lexer.COLON, ":")

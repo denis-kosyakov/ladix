@@ -851,6 +851,10 @@ func TestProcessBlockNonStepUnexpected(t *testing.T) {
 // StepLine — ошибка в теле не глушит последующие диагностики, фантомов
 // «конец блока» нет. m-3 (п.3): висящая запятая в 'после' — best-effort стоп
 // без ошибки, собранный список остаётся.
+// Ревью №2 (пересмотр D-8, §PM-3 п.6): дубль атрибута шага — p.error+continue;
+// строка дубля съедена synchronize, следующие строки тела и шаги разбираются
+// штатно, первое значение атрибута сохраняется. Кейс — мутационный лок: возврат
+// break роняет его (терял следующий шаг из AST).
 func TestProcessRecoveryReviewFixes(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -908,6 +912,36 @@ func TestProcessRecoveryReviewFixes(t *testing.T) {
 				}
 				if len(pd.Steps) != 1 || pd.Steps[0].Name.Name != "A" {
 					t.Fatalf("шагов %d, хотим 1 (A)", len(pd.Steps))
+				}
+			},
+		},
+		{
+			name: "D-8 ревью №2: дубль атрибута не теряет следующий шаг",
+			src: "процесс P:\n    шаг A:\n" +
+				"        исполнитель: \"x\"\n" +
+				"        исполнитель: \"y\"\n" +
+				"        печать(1)\n" +
+				"    шаг B:\n        печать(2)\n",
+			wantMsgs:  []string{"атрибут 'исполнитель' уже задан"},
+			wantLines: []int{4},
+			check: func(t *testing.T, prog *ast.Program) {
+				pd, ok := prog.Items[0].(*ast.ProcessDecl)
+				if !ok {
+					t.Fatalf("Items[0] = %T, хотим *ProcessDecl", prog.Items[0])
+				}
+				if len(pd.Steps) != 2 || pd.Steps[0].Name.Name != "A" || pd.Steps[1].Name.Name != "B" {
+					t.Fatalf("шаги = %v, хотим [A, B] (break терял B)", pd.Steps)
+				}
+				a := pd.Steps[0]
+				if len(a.Body) != 1 {
+					t.Fatalf("A.Body: %d операторов, хотим 1 (печать(1) после строки дубля)", len(a.Body))
+				}
+				sl, ok := a.Assignee.(*ast.StringLit)
+				if !ok {
+					t.Fatalf("A.Assignee = %T, хотим *ast.StringLit", a.Assignee)
+				}
+				if sl.Value != "x" {
+					t.Errorf("A.Assignee.Value = %q, хотим %q (первое значение не перезаписано)", sl.Value, "x")
 				}
 			},
 		},
