@@ -1,7 +1,6 @@
 package eval
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
@@ -17,7 +16,7 @@ const DefaultMaxDepth = 10000
 type Interpreter struct {
 	global    *Environment
 	funcs     map[string]*ast.FunctionDecl // пользовательские функции (из Analyze)
-	builtins  map[string]Builtin           // 23 активных + 12 deferred-заглушек
+	builtins  map[string]Builtin           // 28 активных + 7 deferred-заглушек
 	maxDepth  int                          // из флага --max-depth
 	depth     int                          // текущая глубина пользовательских вызовов
 	out       io.Writer                    // канал печать()
@@ -33,6 +32,12 @@ type Interpreter struct {
 	recordCache map[string][]value.Запись   // лень + кеш загрузки источника на запуск (§9.6)
 	metricStack []string                    // стек активных метрик для детекта цикла (D-8)
 	recordCtx   *recordContext              // контекст полей текущей записи (per-record, движок метрики, §SM-8)
+	// Интеграция с движком процессов (006, §EN-4). runtime инжектируется
+	// сеттером SetProcessRuntime (engine реализует ProcessRuntime, D-1). procEnv —
+	// приёмник «присвоить» на время исполнения тела шага (ExecStepBody save/restore
+	// реентерабельно, зеркало recordCtx).
+	runtime ProcessRuntime
+	procEnv *Environment
 }
 
 // recordContext — контекст вычисления выражений метрики per-record (§SM-8, D-9).
@@ -143,12 +148,19 @@ func runtimeErr(p ast.Position, msg string) error {
 	return errors.ОшибкаВыполнения{Pos: toErrPos(p), Msg: msg}
 }
 
-// deferredConstruct — SEM-DEFERRED-CONSTRUCT для reserved-узлов/декларатива/
-// литерала длительности (§9, FR-036). <X> — человекочитаемое имя конструкции.
-func (i *Interpreter) deferredConstruct(node ast.Node) error {
-	return semErr(node.Pos(), fmt.Sprintf("конструкция %s не поддерживается в этой версии", constructName(node)))
+// runtimeErrWrap — ОшибкаВыполнения, СОХРАНЯЮЩАЯ причину через Unwrap (§EN-8.A #8,
+// «обёртка %w»): текст = cause.Error() (тот же двухстрочный канон с позицией узла-
+// инициатора), а errors.As/Is видят исходный *engine.StoreError ниже по цепочке →
+// completeError классифицирует §EN-8.B B9 (exit 2). cause — любой error; eval про
+// тип engine не знает (D-1, граница eval↔engine).
+func runtimeErrWrap(p ast.Position, cause error) error {
+	return errors.ОшибкаВыполнения{Pos: toErrPos(p), Msg: cause.Error(), Cause: cause}
 }
 
+// constructName — человекочитаемое имя AST-конструкции (живой вызов у контекст-
+// гарда действий, analyze.go). Бывший deferredConstruct удалён в 006 после
+// активации всех ранее отложенных узлов (§EN-5: expr.go DurationLit/RunProcessExpr,
+// stmt.go действия) — заглушка осталась бы мёртвой (staticcheck U1000).
 func constructName(node ast.Node) string {
 	switch node.(type) {
 	case *ast.RunProcessExpr:

@@ -24,3 +24,6 @@ type СемантическаяОшибка struct {
 func (e СемантическаяОшибка) Error() string {
 	return fmt.Sprintf("Ошибка в строке %d, колонка %d:\n%s", e.Pos.Line, e.Pos.Col, e.Msg)
 }
+
+// Позиция реализует Расположенная: ошибка уже несёт позицию (§13).
+func (e СемантическаяОшибка) Позиция() Position { return e.Pos }

@@ -13,9 +13,23 @@ import "fmt"
 type ОшибкаВыполнения struct {
 	Pos Position
 	Msg string
+	// Cause — опциональная нижележащая причина для errors.Is/As (§EN-8.A #8,
+	// «обёртка %w»). Для существующих конструкций nil — Error() и поведение не
+	// меняются; задаётся только обёрткой Store-сбоя (eval.runtimeErrWrap), чтобы
+	// CLI-классификатор complete нашёл *engine.StoreError ниже по цепочке (§EN-8.B B9).
+	Cause error
 }
 
 // Error возвращает канонический двухстрочный вид (§8.1).
 func (e ОшибкаВыполнения) Error() string {
 	return fmt.Sprintf("Ошибка в строке %d, колонка %d:\n%s", e.Pos.Line, e.Pos.Col, e.Msg)
 }
+
+// Позиция реализует Расположенная: ошибка уже несёт позицию (§13).
+func (e ОшибкаВыполнения) Позиция() Position { return e.Pos }
+
+// Unwrap раскрывает Cause для errors.Is/As (§EN-8.A #8). Метод-ЗНАЧЕНИЕ, как
+// Error()/Позиция(): errors.As по значению ОшибкаВыполнения остаётся рабочим
+// (pointer-receiver сломал бы существующую классификацию). Cause==nil → обход
+// просто останавливается здесь, поведение не-обёрнутых ошибок неизменно.
+func (e ОшибкаВыполнения) Unwrap() error { return e.Cause }

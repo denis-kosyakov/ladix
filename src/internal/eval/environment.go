@@ -49,3 +49,15 @@ func (e *Environment) hasLocal(name string) bool {
 	_, ok := e.vars[name]
 	return ok
 }
+
+// Locals — снапшот ЛОКАЛЬНОГО слоя области (копия карты; значения разделяются —
+// ссылочность Список/Запись сохраняется). ТОЛЬКО для тестов/сверки Variables
+// движком (§EN-4): в алгоритмах §EN-3 движок его НЕ зовёт — канал персиста
+// processEnv только хук AssignProcessVar.
+func (e *Environment) Locals() map[string]value.Value {
+	m := make(map[string]value.Value, len(e.vars))
+	for k, v := range e.vars {
+		m[k] = v
+	}
+	return m
+}

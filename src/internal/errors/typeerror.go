@@ -18,3 +18,6 @@ type ОшибкаТипа struct {
 func (e ОшибкаТипа) Error() string {
 	return fmt.Sprintf("Ошибка в строке %d, колонка %d:\n%s", e.Pos.Line, e.Pos.Col, e.Msg)
 }
+
+// Позиция реализует Расположенная: ошибка уже несёт позицию (§13).
+func (e ОшибкаТипа) Позиция() Position { return e.Pos }

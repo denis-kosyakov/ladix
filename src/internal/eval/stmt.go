@@ -60,10 +60,82 @@ func (i *Interpreter) evalStmt(env *Environment, s ast.Statement) (Signal, error
 	case *ast.ContinueStmt:
 		return Signal{Kind: SigContinue}, nil
 
-	case *ast.AssignAction, *ast.CallAction, *ast.NotifyAction:
-		return Signal{}, i.deferredConstruct(st)
+	case *ast.AssignAction:
+		return i.evalAssignAction(env, st)
+
+	case *ast.CallAction:
+		return i.evalCallAction(env, st)
+
+	case *ast.NotifyAction:
+		return i.evalNotifyAction(env, st)
 	}
 	return Signal{}, runtimeErr(s.Pos(), "внутренняя ошибка: неизвестный statement")
+}
+
+// evalAssignAction активирует «присвоить x = E» (006, §EN-5): вычислить E в текущем
+// env → i.procEnv.Define(x, v) (создаёт ИЛИ обновляет переменную процесса, мимо тени
+// пусть-локали шага, §6.4) → хук AssignProcessVar (персист). nil-runtime → §EN-8.A;
+// ошибка хука → ОшибкаВыполнения с позицией присвоить; текст «сбой хранилища: <причина>»
+// несёт сам StoreError движка — НЕ дублируем префикс (ср. builtins_process.go), §EN-8.A.
+func (i *Interpreter) evalAssignAction(env *Environment, a *ast.AssignAction) (Signal, error) {
+	if i.runtime == nil || i.procEnv == nil {
+		return Signal{}, runtimeErr(a.Pos(), "внутренняя ошибка: движок процессов не подключён")
+	}
+	v, err := i.evalExpr(env, a.Value)
+	if err != nil {
+		return Signal{}, err
+	}
+	i.procEnv.Define(a.Name.Name, v)
+	if err := i.runtime.AssignProcessVar(a.Name.Name, v); err != nil {
+		return Signal{}, runtimeErrWrap(a.Pos(), err)
+	}
+	return Signal{Kind: SigNormal}, nil
+}
+
+// evalCallAction активирует «вызвать Имя(args)» (006, §EN-5): аргументы слева
+// направо → стаб CallExternal (печать строки §EN-7.2; в v1 всегда успех). Имя цели —
+// Ident как строка, НЕ резолвится как переменная.
+func (i *Interpreter) evalCallAction(env *Environment, c *ast.CallAction) (Signal, error) {
+	if i.runtime == nil {
+		return Signal{}, runtimeErr(c.Pos(), "внутренняя ошибка: движок процессов не подключён")
+	}
+	args, err := i.evalArgs(env, c.Args)
+	if err != nil {
+		return Signal{}, err
+	}
+	if err := i.runtime.CallExternal(c.Name.Name, args); err != nil {
+		return Signal{}, runtimeErr(c.Pos(), err.Error())
+	}
+	return Signal{Kind: SigNormal}, nil
+}
+
+// evalNotifyAction активирует «уведомить Имя(args)» (006, §EN-5): аргументы слева
+// направо → стаб Notify (печать строки §EN-7.1/1а; всегда best-effort nil).
+func (i *Interpreter) evalNotifyAction(env *Environment, n *ast.NotifyAction) (Signal, error) {
+	if i.runtime == nil {
+		return Signal{}, runtimeErr(n.Pos(), "внутренняя ошибка: движок процессов не подключён")
+	}
+	args, err := i.evalArgs(env, n.Args)
+	if err != nil {
+		return Signal{}, err
+	}
+	if err := i.runtime.Notify(n.Name.Name, args); err != nil {
+		return Signal{}, runtimeErr(n.Pos(), err.Error())
+	}
+	return Signal{Kind: SigNormal}, nil
+}
+
+// evalArgs вычисляет список аргументов слева направо.
+func (i *Interpreter) evalArgs(env *Environment, exprs []ast.Expression) ([]value.Value, error) {
+	args := make([]value.Value, len(exprs))
+	for k, a := range exprs {
+		v, err := i.evalExpr(env, a)
+		if err != nil {
+			return nil, err
+		}
+		args[k] = v
+	}
+	return args, nil
 }
 
 // evalBlock исполняет последовательность statements в ТЕКУЩЕЙ области (блок свою
