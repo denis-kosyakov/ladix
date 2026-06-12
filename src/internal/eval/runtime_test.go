@@ -21,6 +21,9 @@ type fakeRuntime struct {
 	startID    string
 	startErr   error
 	assignErr  error // ошибка хука AssignProcessVar (имитация StoreError движка)
+	statusErr  error // ошибка InstanceStatus (имитация StoreError движка)
+	varsErr    error // ошибка InstanceVariables
+	tasksErr   error // ошибка UserTasks
 	// process-builtins (D-15): сценарные ответы для InstanceStatus/InstanceVariables/UserTasks.
 	statusByID map[string]string // id → статус (отсутствует → ok=false)
 	varsByID   map[string]value.Запись
@@ -60,14 +63,23 @@ func (f *fakeRuntime) Notify(target string, args []value.Value) error {
 	return nil
 }
 func (f *fakeRuntime) InstanceStatus(id string) (string, bool, error) {
+	if f.statusErr != nil {
+		return "", false, f.statusErr
+	}
 	s, ok := f.statusByID[id]
 	return s, ok, nil
 }
 func (f *fakeRuntime) InstanceVariables(id string) (value.Запись, bool, error) {
+	if f.varsErr != nil {
+		return value.Запись{}, false, f.varsErr
+	}
 	v, ok := f.varsByID[id]
 	return v, ok, nil
 }
 func (f *fakeRuntime) UserTasks(assignee string) ([]value.Запись, error) {
+	if f.tasksErr != nil {
+		return nil, f.tasksErr
+	}
 	return f.userTasks, nil
 }
 
