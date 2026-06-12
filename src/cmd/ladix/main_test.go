@@ -489,3 +489,38 @@ func TestGuardRecoversPanic(t *testing.T) {
 		t.Errorf("в stderr просочился stack trace")
 	}
 }
+
+// TestMetricWiresEngineF1 — F1 (§EN-6): подкоманда metric СОБИРАЕТ движок процессов
+// (общая сборка для run/complete/metric). Метрика, чья формула достигает process-builtin
+// статус_процесса, идёт через РЕАЛЬНЫЙ движок: инстанс отсутствует → «процесс 'p-999999'
+// не найден» (канон §13, exit 1), а НЕ «движок процессов не подключён» (nil-runtime,
+// §EN-8.A:685 — недостижим для metric). Канал — слот период: формула вычисляется рано,
+// до проверки типа результата, поэтому runtime-ошибка builtin опережает type-mismatch (§EN-6:579).
+func TestMetricWiresEngineF1(t *testing.T) {
+	dir := t.TempDir()
+	dataFile := filepath.Join(dir, "data.json")
+	if err := os.WriteFile(dataFile, []byte(`[{"когда": "2026-05-01"}]`), 0o644); err != nil {
+		t.Fatalf("WriteFile data: %v", err)
+	}
+	srcFile := filepath.Join(dir, "m.ladix")
+	src := "источник данные:\n    файл: \"" + dataFile + "\"\n\n" +
+		"метрика m:\n" +
+		"    источник: данные\n" +
+		"    период: статус_процесса(\"p-999999\")\n" +
+		"    по_дате: сегодня()\n" +
+		"    агрегат: количество(запись)\n"
+	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
+		t.Fatalf("WriteFile src: %v", err)
+	}
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"metric", srcFile, "m"}, &out, &errBuf)
+	if code != 1 {
+		t.Fatalf("код = %d, хотим 1\nstdout=%q\nstderr=%q", code, out.String(), errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "процесс 'p-999999' не найден") {
+		t.Errorf("stderr = %q, хотим содержащий «процесс 'p-999999' не найден» (движок подключён, §EN-6)", errBuf.String())
+	}
+	if strings.Contains(errBuf.String(), "движок процессов не подключён") {
+		t.Errorf("stderr = %q — nil-runtime недостижим для metric (§EN-8.A:685, F1)", errBuf.String())
+	}
+}

@@ -217,9 +217,12 @@ func runFile(path, dbPath string, maxDepth int, stdout, stderr io.Writer) int {
 
 // runMetric вычисляет одну именованную метрику из файла и печатает её значение в
 // stdout (§SM-11 CM-3/CM-5). Конвейер: чтение файла → лексер → парсер → (под guard)
-// Analyze → EvalMetricByName → value.String + '\n'. Clock инжектируется (прод —
-// SystemClock; тест — FixedClock для детерминированного golden, аналог runFile).
-// Коды: чтение файла → 2 (использование); лекс/синт, Analyze, поиск метрики
+// Analyze → сборка стека движка §EN-6 (MemoryStore+Engine, SetProcessRuntime) →
+// EvalMetricByName → value.String + '\n'. Движок собирается ОБЩИМ для run/complete/
+// metric (§EN-6): формула метрики может через функцию дёрнуть process-builtin/
+// «запустить процесс», поэтому runtime обязателен (иначе nil-runtime §EN-8.A:685).
+// Clock инжектируется (прод — SystemClock; тест — FixedClock для детерминированного
+// golden). Коды: чтение файла → 2 (использование); лекс/синт, Analyze, поиск метрики
 // (§SM-9.D), загрузка/вычисление (§SM-9.B/C), Go-паника → 1; успех → 0.
 func runMetric(path, metricName string, maxDepth int, clock eval.Clock, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
@@ -239,6 +242,13 @@ func runMetric(path, metricName string, maxDepth int, clock eval.Clock, stdout, 
 			fmt.Fprintln(stderr, err.Error())
 			return 1 // семпроход (§SM-4/§SM-9.A)
 		}
+		// Стек движка процессов (006, §EN-6): сборка ОБЩАЯ для run/complete/metric.
+		// У metric Store — всегда MemoryStore (флага --db нет). SetProcessRuntime ДО
+		// EvalMetricByName: формула метрики может через функцию дёрнуть process-builtin/
+		// «запустить процесс» (семпроход разрешает) — иначе nil-runtime (§EN-8.A:685).
+		st := store.NewMemoryStore()
+		eng := engine.NewEngine(st, interp, stdout)
+		interp.SetProcessRuntime(eng)
 		v, err := interp.EvalMetricByName(metricName)
 		if err != nil {
 			// §SM-9.D (поиск метрики) / §SM-9.B/C (загрузка/вычисление):

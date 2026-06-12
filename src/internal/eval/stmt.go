@@ -87,7 +87,7 @@ func (i *Interpreter) evalAssignAction(env *Environment, a *ast.AssignAction) (S
 	}
 	i.procEnv.Define(a.Name.Name, v)
 	if err := i.runtime.AssignProcessVar(a.Name.Name, v); err != nil {
-		return Signal{}, runtimeErr(a.Pos(), err.Error())
+		return Signal{}, runtimeErrWrap(a.Pos(), err)
 	}
 	return Signal{Kind: SigNormal}, nil
 }

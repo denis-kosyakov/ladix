@@ -103,7 +103,10 @@ type CompleteResult struct {
 func (e *Engine) Complete(taskID string) (CompleteResult, error) {
 	t, err := e.st.LoadTask(taskID)
 	if err != nil {
-		return CompleteResult{}, err // ErrTaskNotFound — CLI → §EN-8.B B1; иначе сбой Store
+		if stderrors.Is(err, store.ErrTaskNotFound) {
+			return CompleteResult{}, err // B1 «не найдена» — CLI формирует текст по taskID
+		}
+		return CompleteResult{}, NewStoreError(err) // B9 сбой Store, exit 2
 	}
 	inst, err := e.st.LoadInstance(t.InstanceID)
 	if err != nil {

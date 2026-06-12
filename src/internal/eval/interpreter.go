@@ -148,6 +148,15 @@ func runtimeErr(p ast.Position, msg string) error {
 	return errors.ОшибкаВыполнения{Pos: toErrPos(p), Msg: msg}
 }
 
+// runtimeErrWrap — ОшибкаВыполнения, СОХРАНЯЮЩАЯ причину через Unwrap (§EN-8.A #8,
+// «обёртка %w»): текст = cause.Error() (тот же двухстрочный канон с позицией узла-
+// инициатора), а errors.As/Is видят исходный *engine.StoreError ниже по цепочке →
+// completeError классифицирует §EN-8.B B9 (exit 2). cause — любой error; eval про
+// тип engine не знает (D-1, граница eval↔engine).
+func runtimeErrWrap(p ast.Position, cause error) error {
+	return errors.ОшибкаВыполнения{Pos: toErrPos(p), Msg: cause.Error(), Cause: cause}
+}
+
 // constructName — человекочитаемое имя AST-конструкции (живой вызов у контекст-
 // гарда действий, analyze.go). Бывший deferredConstruct удалён в 006 после
 // активации всех ранее отложенных узлов (§EN-5: expr.go DurationLit/RunProcessExpr,

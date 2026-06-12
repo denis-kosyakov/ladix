@@ -1,11 +1,13 @@
 package eval
 
 import (
+	stderrors "errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
+	"github.com/denis-kosyakov/ladix/internal/errors"
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
@@ -171,7 +173,17 @@ func (i *Interpreter) evalRunProcess(env *Environment, r *ast.RunProcessExpr) (v
 	}
 	id, err := i.runtime.StartProcess(r.Process.Name, args)
 	if err != nil {
-		return nil, err
+		// StartProcess исполнил тело шага и фазу атрибутов: ОшибкаВыполнения тела
+		// (§EN-9, поз. ТЕЛА) и ОшибкаТипа атрибута (§EN-8.A #5/#6, поз. выражения
+		// атрибута) УЖЕ позиционированы — пропускаем как есть, позицию НЕ затираем.
+		// Чужую не-позиционированную ошибку (StoreError движка) оборачиваем позицией
+		// узла «запустить процесс» (§EN-8.A #8). Граница D-1: проверяем СВОЙ маркер
+		// errors.Расположенная, не engine-тип (eval не импортирует engine).
+		var loc errors.Расположенная
+		if stderrors.As(err, &loc) {
+			return nil, err
+		}
+		return nil, runtimeErrWrap(r.Pos(), err)
 	}
 	return value.Строка{V: id}, nil
 }

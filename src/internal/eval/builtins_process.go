@@ -31,7 +31,7 @@ func builtinStatusProtsessa(i *Interpreter, args []value.Value, pos ast.Position
 	}
 	status, ok, err := i.runtime.InstanceStatus(id)
 	if err != nil {
-		return nil, runtimeErr(pos, err.Error())
+		return nil, runtimeErrWrap(pos, err)
 	}
 	if !ok {
 		return nil, runtimeErr(pos, "процесс '"+id+"' не найден")
@@ -51,7 +51,7 @@ func builtinSostoyanieProtsessa(i *Interpreter, args []value.Value, pos ast.Posi
 	}
 	vars, ok, err := i.runtime.InstanceVariables(id)
 	if err != nil {
-		return nil, runtimeErr(pos, err.Error())
+		return nil, runtimeErrWrap(pos, err)
 	}
 	if !ok {
 		return nil, runtimeErr(pos, "процесс '"+id+"' не найден")
@@ -71,7 +71,7 @@ func builtinZadachiPolzovatelya(i *Interpreter, args []value.Value, pos ast.Posi
 	}
 	tasks, err := i.runtime.UserTasks(assignee)
 	if err != nil {
-		return nil, runtimeErr(pos, err.Error())
+		return nil, runtimeErrWrap(pos, err)
 	}
 	elems := make([]value.Value, len(tasks))
 	for k, t := range tasks {
