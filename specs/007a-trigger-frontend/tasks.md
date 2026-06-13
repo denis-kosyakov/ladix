@@ -90,10 +90,10 @@ table-driven позитивы/негативы и golden stdout (байт-точ
 
 **Independent Test**: демо-программа, собираемая ИНЛАЙН golden-тестом в `t.TempDir()` (`trigger_golden_test.go`, без testdata-/`examples/`-фикстуры; метрика 2M, порог `< 3_000_000`) → процесс создан, `значение`=2M, задача в сводке; контр-демо (`< 1_000_000`) → молчание, пустая сводка, exit 0.
 
-- [X] T020 [US2] Реализовать `func (i *Interpreter) RunTriggers(w io.Writer) error` в `src/internal/eval/trigger_run.go` (новый): обойти `i.triggers` в порядке объявления; для `*ast.MetricTrigger` — вычислить значение метрики, вычислить порог в `i.global`, сравнить существующим оператором сравнения 003 (`i.compare(ast.BinOp(spec.Op), …)`) → Булево; база ЛОЖЬ эфемерно ⇒ если истинно: новый `env := NewEnvironment(i.global)`, `env.Define("значение", metricVal)` (read-only обеспечено тем, что `значение` — ключевое слово `KW_VALUE`, не присваиваемое в синтаксисе), исполнить тело; `*ast.EventTrigger`/`*ast.ScheduleTrigger` — no-op + строка-заглушка в `w` («…требует serve (фича 007b)»). Зависит от T015, T016
+- [X] T020 [US2] Реализовать `func (i *Interpreter) RunTriggers(w io.Writer) error` в `src/internal/eval/trigger_run.go` (новый): обойти `i.triggers` в порядке объявления; для `*ast.MetricTrigger` — вычислить значение метрики, вычислить порог в `i.global`, сравнить существующим оператором сравнения 003 (`i.compareValues(ast.BinOp(spec.Op), …)`) → Булево; база ЛОЖЬ эфемерно ⇒ если истинно: новый `env := NewEnvironment(i.global)`, `env.Define("значение", metricVal)` (read-only обеспечено тем, что `значение` — ключевое слово `KW_VALUE`, не присваиваемое в синтаксисе), исполнить тело; `*ast.EventTrigger`/`*ast.ScheduleTrigger` — no-op + строка-заглушка в `w` («…требует serve (фича 007b)»). Зависит от T015, T016
 - [X] T021 [US2] Вспомогательные пути исполнения в `src/internal/eval/` (`trigger_run.go`/`interpreter.go`): `evalMetricByName` (или переиспользование пути вычисления метрики) и `evalBlockInTrigger`; обеспечить, что `запустить процесс` в теле доходит до `Engine.StartProcess` (штатный путь 006, id `p-NNNNNN`) и персистится под `--db`. Состояние триггеров НЕ читается/НЕ пишется (нет `trigger_state`). Зависит от T020
 - [X] T022 [US2] Врезка вызова `interp.RunTriggers(stdout)` в `src/cmd/ladix/main.go` между `interp.Run(prog)` и `st.ListPendingTasks("")` (§TR-8.1): при ошибке — печать в stderr, exit 1. Зависит от T020
-- [X] T023 [P] [US2] Golden-тест `run` в `src/cmd/ladix/trigger_golden_test.go`; программа строится ИНЛАЙН в `t.TempDir()` (а не из testdata-фикстур): `триггер_демо.ladix` (истина → процесс + `значение`=2M + задача в сводке); контр-демо (`< 1_000_000` → молчание, пустая сводка, exit 0); повторный `run --db` того же файла идентичен (база-ложь эфемерна, оба прогона срабатывают, id сдвигаются, `trigger_state` отсутствует). Зависит от T022
+- [X] T023 [P] [US2] Golden-тест `run` в `src/cmd/ladix/trigger_golden_test.go`; программа строится ИНЛАЙН в `t.TempDir()` (а не из testdata-фикстур): `демо.ladix` (истина → процесс + `значение`=2M + задача в сводке); контр-демо (`< 1_000_000` → молчание, пустая сводка, exit 0); повторный `run --db` того же файла идентичен (база-ложь эфемерна, оба прогона срабатывают, id сдвигаются, `trigger_state` отсутствует). Зависит от T022
 
 **Checkpoint**: US1 + US2 — P1-набор полон (фронтенд принимает + метрика-триггер запускает процесс).
 
@@ -200,7 +200,7 @@ Task: "T025 Негативные семантические тесты в src/in
 
 1. Phase 1 Setup → Phase 2 Foundational (AST + токены)
 2. **US1** (Phase 3): парсер + инверсия замков T012/T013 + семпроход принимают три формы → ВАЛИДАЦИЯ: `examples/выручка.ladix` exit 0 (T019), `go test ./...` зелёный
-3. **US2** (Phase 4): fire-if-true в `run` → ВАЛИДАЦИЯ: `триггер_демо.ladix` запускает процесс (T023)
+3. **US2** (Phase 4): fire-if-true в `run` → ВАЛИДАЦИЯ: `демо.ladix` запускает процесс (T023)
 4. P1-набор (US1+US2) = поставляемый MVP фичи
 
 ### Incremental Delivery
