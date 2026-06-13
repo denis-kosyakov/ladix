@@ -56,10 +56,37 @@ type Task struct {
 	CompletedAt *time.Time // nil, пока открыта; выставляет MarkTaskCompleted (D-12)
 }
 
+// TriggerState — durable-состояние триггера между тиками и рестартами (EM-17.2,
+// 007b, аддитивно). Указатели = трёхзначность: nil ⇒ «нет значения для этого вида
+// / не праймлен». Читается/пишется только демоном (FR-025). Заводится только для
+// метрика- и расписание-триггеров; событие-триггер строки не имеет (FR-023).
+type TriggerState struct {
+	TriggerID     string     // ключ: "trg-<N>", N 0-based порядок объявления (EM-17.2.1, FR-023)
+	Kind          string     // "metric" | "schedule_every" | "schedule_at"
+	LastBool      *bool      // metric: базовая линия edge-детекта; nil = ещё не праймлен (FR-006/007)
+	LastFire      *time.Time // schedule_every: момент последнего срабатывания (RFC3339); nil = не зарегистрирован (FR-011)
+	LastFiredDate *string    // schedule_at: "YYYY-MM-DD" последнего срабатывания; nil = ещё не срабатывал (FR-013)
+}
+
+// Event — запись внешнего события в очереди доставки (EM-17.3, 007b, аддитивно).
+// Создаётся командой emit (другой процесс ОС), разбирается демоном на тике FIFO,
+// помечается processed ПОСЛЕ исполнения тела (at-least-once, FR-017).
+type Event struct {
+	ID          string    // opaque, "e-NNNNNN" (mint через NextEventID, зеркало p-/t-)
+	Name        string    // имя события — матч с EventTrigger.Event.Name (FR-016)
+	PayloadJSON string    // сырой JSON payload; маппится в value.Запись при обработке (FR-016)
+	CreatedAt   time.Time // FIFO-порядок разбора (FR-016, SC-006)
+	Processed   bool      // false=в очереди; true=обработано/отброшено (FR-017)
+}
+
 // Сентинелы Store (D-3, §EN-2). Английские: наружу не печатаются, транслируются
 // в русские тексты §EN-8.B на CLI-слое.
 var (
 	ErrInstanceNotFound     = errors.New("process instance not found")
 	ErrTaskNotFound         = errors.New("task not found")
 	ErrTaskAlreadyCompleted = errors.New("task already completed")
+	// ErrTriggerStateNotFound — LoadTriggerState не нашёл строку (прайминг/первая
+	// регистрация, EM-17.2, 007b). Зеркало ErrInstanceNotFound/ErrTaskNotFound;
+	// развёртка через errors.Is. Русский текст — наружу не печатается.
+	ErrTriggerStateNotFound = errors.New("состояние триггера не найдено")
 )

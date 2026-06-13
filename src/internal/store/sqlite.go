@@ -46,6 +46,22 @@ CREATE TABLE IF NOT EXISTS counters (
     value INTEGER NOT NULL
 );
 INSERT OR IGNORE INTO counters(name, value) VALUES ('instance', 0), ('task', 0);
+CREATE TABLE IF NOT EXISTS trigger_state (
+    trigger_id      TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,
+    last_bool       INTEGER,        -- 0/1/NULL (NULL = не праймлен)
+    last_fire       TEXT,           -- RFC3339 или NULL
+    last_fired_date TEXT            -- "YYYY-MM-DD" или NULL
+);
+CREATE TABLE IF NOT EXISTS events (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    processed    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_events_pending ON events(processed, created_at);
+INSERT OR IGNORE INTO counters(name, value) VALUES ('event', 0);
 `
 
 // pragmas исполняются при открытии (EM-7).
@@ -331,4 +347,181 @@ func nullableTime(t *time.Time) any {
 		return nil
 	}
 	return t.Format(time.RFC3339)
+}
+
+// --- триггерные методы (007b, аддитивно) ---
+
+func (s *SQLiteStore) LoadTriggerState(triggerID string) (*TriggerState, error) {
+	row := s.db.QueryRow(
+		`SELECT kind, last_bool, last_fire, last_fired_date
+		 FROM trigger_state WHERE trigger_id = ?`, triggerID)
+	var (
+		kind          string
+		lastBool      sql.NullInt64
+		lastFire      sql.NullString
+		lastFiredDate sql.NullString
+	)
+	if err := row.Scan(&kind, &lastBool, &lastFire, &lastFiredDate); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrTriggerStateNotFound
+		}
+		return nil, err
+	}
+	ts := &TriggerState{TriggerID: triggerID, Kind: kind}
+	if lastBool.Valid {
+		b := lastBool.Int64 != 0
+		ts.LastBool = &b
+	}
+	if lastFire.Valid {
+		f, err := parseTime(lastFire.String)
+		if err != nil {
+			return nil, err
+		}
+		ts.LastFire = &f
+	}
+	if lastFiredDate.Valid {
+		d := lastFiredDate.String
+		ts.LastFiredDate = &d
+	}
+	return ts, nil
+}
+
+func (s *SQLiteStore) SaveTriggerState(ts *TriggerState) error {
+	_, err := s.db.Exec(
+		`INSERT INTO trigger_state (trigger_id, kind, last_bool, last_fire, last_fired_date)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(trigger_id) DO UPDATE SET
+		   kind            = excluded.kind,
+		   last_bool       = excluded.last_bool,
+		   last_fire       = excluded.last_fire,
+		   last_fired_date = excluded.last_fired_date`,
+		ts.TriggerID, ts.Kind, nullableBool(ts.LastBool), nullableTime(ts.LastFire), nullableString(ts.LastFiredDate),
+	)
+	return err
+}
+
+func (s *SQLiteStore) NextEventID() (string, error) {
+	n, err := s.nextCounter("event")
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("e-%06d", n), nil
+}
+
+func (s *SQLiteStore) EnqueueEvent(e *Event) error {
+	processed := 0
+	if e.Processed {
+		processed = 1
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO events (id, name, payload_json, created_at, processed)
+		 VALUES (?, ?, ?, ?, ?)`,
+		e.ID, e.Name, e.PayloadJSON, e.CreatedAt.Format(time.RFC3339), processed,
+	)
+	return err
+}
+
+func (s *SQLiteStore) ListUnprocessedEvents() ([]*Event, error) {
+	rows, err := s.db.Query(
+		`SELECT id, name, payload_json, created_at, processed
+		 FROM events WHERE processed = 0 ORDER BY created_at ASC, id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*Event
+	for rows.Next() {
+		var (
+			id, name, payloadJSON, createdAt string
+			processed                        int64
+		)
+		if err := rows.Scan(&id, &name, &payloadJSON, &createdAt, &processed); err != nil {
+			return nil, err
+		}
+		created, err := parseTime(createdAt)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, &Event{
+			ID:          id,
+			Name:        name,
+			PayloadJSON: payloadJSON,
+			CreatedAt:   created,
+			Processed:   processed != 0,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *SQLiteStore) MarkEventProcessed(id string) error {
+	// Идемпотентно: UPDATE без условия на текущее processed; повтор по уже
+	// помеченному событию — no-op (0/1 затронутых строк не различаем, FR-017).
+	_, err := s.db.Exec(`UPDATE events SET processed = 1 WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLiteStore) ListInstancesByStatus(status string) ([]*ProcessInstance, error) {
+	rows, err := s.db.Query(
+		`SELECT id, process_name, status, current_step, variables, created_at, updated_at
+		 FROM instances WHERE status = ? ORDER BY id ASC`, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*ProcessInstance
+	for rows.Next() {
+		var id, processName, st, currentStep, vars, createdAt, updatedAt string
+		if err := rows.Scan(&id, &processName, &st, &currentStep, &vars, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		variables, err := decodeVariables(vars)
+		if err != nil {
+			return nil, err
+		}
+		created, err := parseTime(createdAt)
+		if err != nil {
+			return nil, err
+		}
+		updated, err := parseTime(updatedAt)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, &ProcessInstance{
+			ID:          id,
+			ProcessName: processName,
+			Status:      Status(st),
+			CurrentStep: currentStep,
+			Variables:   variables,
+			CreatedAt:   created,
+			UpdatedAt:   updated,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// nullableBool превращает *bool в sql-аргумент: nil → NULL, иначе 0/1.
+func nullableBool(b *bool) any {
+	if b == nil {
+		return nil
+	}
+	if *b {
+		return 1
+	}
+	return 0
+}
+
+// nullableString превращает *string в sql-аргумент: nil → NULL, иначе значение.
+func nullableString(s *string) any {
+	if s == nil {
+		return nil
+	}
+	return *s
 }
