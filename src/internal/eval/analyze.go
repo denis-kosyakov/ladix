@@ -249,7 +249,44 @@ func (i *Interpreter) checkTrigger(td *ast.TriggerDecl) error {
 	case *ast.EventTrigger:
 		return i.checkTriggerBody(td.Body, false, true)
 	case *ast.ScheduleTrigger:
+		// SE-TIME-FORMAT (007b, R-8/FR-014): формат строки «в "ЧЧ:ММ"» — это точка,
+		// где 007a отложил проверку содержимого строки (→ 007b). Аддитивно: синтаксис/
+		// AST/реестр диагностик 007a не меняются (§TR-11). Подформа «каждые» формат не
+		// несёт. Проверка ДО обхода тела (fail-fast, зеркало резолва метрики выше).
+		if at, ok := spec.Spec.(*ast.AtSchedule); ok {
+			if err := checkTimeFormat(at.At); err != nil {
+				return err
+			}
+		}
 		return i.checkTriggerBody(td.Body, false, false)
+	}
+	return nil
+}
+
+// checkTimeFormat валидирует строку времени суток подформы «в "ЧЧ:ММ"» (SE-TIME-
+// FORMAT, R-8). Правила (FR-014): ровно 5 рун, руна[2]==':', руны [0][1][3][4] —
+// десятичные цифры, часы 00–23, минуты 00–59 (обязательные ведущие нули: «9:05»/
+// «09:5» невалидны как длина≠5). Проверка посимвольная по рунам, БЕЗ regex
+// (Принцип II). Нарушение → СемантическаяОшибка (semErr) с позицией токена строки
+// (Принцип IV), двухстрочный канон §13. Текст — единый для всех нарушений
+// (импл-факт, diagnostics.md): различение причин не несёт пользы, формат целиком.
+func checkTimeFormat(at ast.StringLit) error {
+	r := []rune(at.Value)
+	bad := func() error {
+		return semErr(at.Pos(), fmt.Sprintf("неверный формат времени '%s': ожидается \"ЧЧ:ММ\" (часы 00–23, минуты 00–59)", at.Value))
+	}
+	if len(r) != 5 || r[2] != ':' {
+		return bad()
+	}
+	for _, idx := range [4]int{0, 1, 3, 4} {
+		if r[idx] < '0' || r[idx] > '9' {
+			return bad()
+		}
+	}
+	hh := int(r[0]-'0')*10 + int(r[1]-'0')
+	mm := int(r[3]-'0')*10 + int(r[4]-'0')
+	if hh > 23 || mm > 59 {
+		return bad()
 	}
 	return nil
 }
