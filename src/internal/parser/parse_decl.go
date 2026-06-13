@@ -281,6 +281,92 @@ func (p *Parser) parseAfterList() []ast.Ident {
 	return after
 }
 
+// parseTriggerDecl: когда TriggerSpec ":" Block (§TR-1, шов A). Вид формы — по
+// второму токену (после когда): метрика/событие/расписание; иначе SE-TRIGGER-KIND.
+// Тело — индентный Block (как функция/процесс), НЕ {}-скобки. Контекст-гарды
+// (значение/событие, действия-шага) — целиком на семпроходе. Pos() = токен когда.
+func (p *Parser) parseTriggerDecl() *ast.TriggerDecl {
+	whenTok := p.advance() // когда
+	var spec ast.TriggerSpec
+	switch p.peek().Type {
+	case lexer.KW_METRIC:
+		spec = p.parseMetricTrigger()
+	case lexer.KW_EVENT:
+		spec = p.parseEventTrigger()
+	case lexer.KW_SCHEDULE:
+		spec = p.parseScheduleTrigger()
+	default:
+		p.error(p.peek().Pos, msgExpected(msgTriggerKind, p.peek()))
+		return nil // поглощённая ошибочная конструкция (synchronize в error)
+	}
+	p.expect(lexer.COLON, ":")
+	body := p.parseBlock()
+	return ast.NewTriggerDecl(toASTPos(whenTok.Pos), spec, body)
+}
+
+// parseMetricTrigger: метрика Ident CompOp Expression (§TR-1). Условие — РОВНО
+// одно сравнение (FR-021): разбор плоский (имя → оператор → правая часть), порог
+// читается parseComparison (НЕ parseExpression сверху), поэтому логический и/или
+// НЕ поглощается — `метрика X < Y и Z`: и остаётся, далее ошибка ожидания ':'.
+// Pos() спеки = токен метрика.
+func (p *Parser) parseMetricTrigger() ast.TriggerSpec {
+	metTok := p.advance() // метрика
+	nameTok, _ := p.expect(lexer.IDENT, "имя метрики")
+	op := p.expectCompOp()
+	threshold := p.parseComparison()
+	return ast.NewMetricTrigger(toASTPos(metTok.Pos), *p.identFrom(nameTok), op, threshold)
+}
+
+// expectCompOp потребляет ровно один токен сравнения (== != < <= > >=) через
+// существующий compOpOf; иначе SE-EXPECT-COMPOP и возвращает нулевой CompOp без
+// сдвига курсора (синхронизация — на вышестоящем уровне).
+func (p *Parser) expectCompOp() ast.CompOp {
+	binop, ok := compOpOf(p.peek().Type)
+	if !ok {
+		p.error(p.peek().Pos, msgExpected(msgCompOp, p.peek()))
+		return ast.CompOp(0)
+	}
+	p.advance()
+	return ast.CompOp(binop)
+}
+
+// parseEventTrigger: событие Ident (§TR-1). Pos() спеки = токен событие.
+func (p *Parser) parseEventTrigger() ast.TriggerSpec {
+	evtTok := p.advance() // событие
+	nameTok, _ := p.expect(lexer.IDENT, "имя события")
+	return ast.NewEventTrigger(toASTPos(evtTok.Pos), *p.identFrom(nameTok))
+}
+
+// parseScheduleTrigger: расписание ScheduleSpec (§TR-1). Pos() спеки = токен
+// расписание.
+func (p *Parser) parseScheduleTrigger() ast.TriggerSpec {
+	schTok := p.advance() // расписание
+	spec := p.parseScheduleSpec()
+	if spec == nil {
+		return nil
+	}
+	return ast.NewScheduleTrigger(toASTPos(schTok.Pos), spec)
+}
+
+// parseScheduleSpec: каждые DurationLiteral | в StringLiteral (§TR-1). Все 6
+// единиц каждые принимаются без ограничений; содержимое строки в "…" парсером НЕ
+// валидируется (формат ЧЧ:ММ — граница 007b). Иначе SE-SCHEDULE-SPEC.
+func (p *Parser) parseScheduleSpec() ast.ScheduleSpec {
+	switch p.peek().Type {
+	case lexer.KW_EVERY:
+		everyTok := p.advance() // каждые
+		durTok, _ := p.expect(lexer.DURATION, "длительность")
+		return ast.NewEverySchedule(toASTPos(everyTok.Pos), p.buildDurationLit(durTok))
+	case lexer.KW_IN:
+		inTok := p.advance() // в
+		strTok, _ := p.expect(lexer.STRING, "время в кавычках")
+		return ast.NewAtSchedule(toASTPos(inTok.Pos), *p.buildStringLit(strTok))
+	default:
+		p.error(p.peek().Pos, msgExpected(msgScheduleSpec, p.peek()))
+		return nil
+	}
+}
+
 // openAttrBlock потребляет NEWLINE и открывающий INDENT блока атрибутов; при
 // пустом блоке (нет INDENT) эмитит msgEmptyBlock и возвращает false (как parseBlock).
 func (p *Parser) openAttrBlock() bool {

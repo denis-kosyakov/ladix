@@ -6,7 +6,7 @@ import (
 )
 
 // parseTopLevelItem разбирает один элемент верхнего уровня: функция/источник/
-// метрика/процесс → декларация; отложенные триггеры (когда)/значение/{ } →
+// метрика/процесс/триггер (когда) → декларация; значение/событие/{ } →
 // SE-UNEXPECTED; иначе — statement. nil-результат (поглощённая ошибочная
 // конструкция) вызывающий пропускает.
 func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
@@ -22,6 +22,9 @@ func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
 	if p.check(lexer.KW_PROCESS) {
 		return p.parseProcessDecl()
 	}
+	if p.check(lexer.KW_WHEN) {
+		return p.parseTriggerDecl()
+	}
 	if isUnexpectedTopLevel(p.peek().Type) {
 		bad := p.advance() // потребляем ведущий токен (прогресс), затем синхронизация
 		p.error(bad.Pos, msgUnexpected(bad))
@@ -33,13 +36,16 @@ func (p *Parser) parseTopLevelItem() ast.TopLevelItem {
 	return nil
 }
 
-// isUnexpectedTopLevel — ведущие токены, недопустимые на верхнем уровне: отложенные
-// триггеры (когда), значение, фигурные скобки. Все дают SE-UNEXPECTED (FR-017,
-// guardrail 12). источник/метрика парсятся с 004 (§SM-3), процесс — с 005
-// (§PM-3, D-6) — здесь их нет.
+// isUnexpectedTopLevel — ведущие токены, недопустимые на верхнем уровне: значение,
+// событие, фигурные скобки. Все дают SE-UNEXPECTED (FR-017, guardrail 12).
+// источник/метрика парсятся с 004 (§SM-3), процесс — с 005 (§PM-3, D-6), триггер
+// (когда) — с 007a (шов A: диспетчеризуется в parseTriggerDecl до этой отсечки,
+// §TR-10.5 п.1) — здесь их нет. KW_VALUE и KW_EVENT остаются отвергаемыми:
+// значение/событие — первичные выражения (шов B, parsePrimary), но на top-level
+// недопустимы (симметрия значение≡событие, §TR-7.F / FR-006/FR-020/SC-007).
 func isUnexpectedTopLevel(t lexer.TokenType) bool {
 	switch t {
-	case lexer.KW_WHEN, lexer.KW_VALUE,
+	case lexer.KW_VALUE, lexer.KW_EVENT,
 		lexer.LBRACE, lexer.RBRACE:
 		return true
 	default:

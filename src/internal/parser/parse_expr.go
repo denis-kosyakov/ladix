@@ -18,7 +18,8 @@ func (p *Parser) parseExpression() ast.Expression {
 func startsExpression(t lexer.TokenType) bool {
 	switch t {
 	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BOOL, lexer.NONE, lexer.DURATION,
-		lexer.IDENT, lexer.KW_NOT, lexer.MINUS, lexer.LPAREN, lexer.LBRACKET, lexer.KW_RUN:
+		lexer.IDENT, lexer.KW_NOT, lexer.MINUS, lexer.LPAREN, lexer.LBRACKET, lexer.KW_RUN,
+		lexer.KW_VALUE, lexer.KW_EVENT:
 		return true
 	default:
 		return false
@@ -195,6 +196,12 @@ func (p *Parser) parsePrimary() ast.Expression {
 		return p.parseList(lbracket)
 	case lexer.KW_RUN:
 		return p.parseRunProcess()
+	case lexer.KW_VALUE:
+		p.advance()
+		return ast.NewValueExpr(toASTPos(t.Pos)) // pos = токен значение; контекст-гард — семпроход
+	case lexer.KW_EVENT:
+		p.advance()
+		return ast.NewEventExpr(toASTPos(t.Pos)) // pos = токен событие; событие.поле — постфикс FieldExpr
 	default:
 		// Ведущий токен не начинает выражение → SE-UNEXPECTED; error()
 		// синхронизируется (пропускает junk до точки возобновления). Возвращаем

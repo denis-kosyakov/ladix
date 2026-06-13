@@ -8,7 +8,7 @@ type Node interface {
 
 // TopLevelItem — элемент верхнего уровня Program: Statement или Decl. Маркер
 // topLevelItem() реализуют все Statement и все Decl (FunctionDecl | SourceDecl |
-// MetricDecl | ProcessDecl), что и образует union.
+// MetricDecl | ProcessDecl | TriggerDecl), что и образует union.
 type TopLevelItem interface {
 	Node
 	topLevelItem()
@@ -21,7 +21,7 @@ type Statement interface {
 	stmtNode()
 }
 
-// Decl — маркер-интерфейс деклараций. union: FunctionDecl | SourceDecl | MetricDecl | ProcessDecl.
+// Decl — маркер-интерфейс деклараций. union: FunctionDecl | SourceDecl | MetricDecl | ProcessDecl | TriggerDecl.
 type Decl interface {
 	TopLevelItem
 	declNode()

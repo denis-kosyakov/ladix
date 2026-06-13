@@ -76,3 +76,28 @@ type RunProcessExpr struct {
 func NewRunProcessExpr(pos Position, process Ident, args []Expression) *RunProcessExpr {
 	return &RunProcessExpr{exprBase: exprBase{base{pos}}, Process: process, Args: args}
 }
+
+// ValueExpr — выражение «значение» (предопределённое имя метрика-триггера).
+// Беспараметрическое первичное выражение (зеркало NoneLit). Pos() = токен
+// «значение». Допустимо только в теле метрика-триггера (гард семпрохода).
+type ValueExpr struct {
+	exprBase
+}
+
+// NewValueExpr строит выражение «значение»; pos — позиция токена «значение».
+func NewValueExpr(pos Position) *ValueExpr {
+	return &ValueExpr{exprBase: exprBase{base{pos}}}
+}
+
+// EventExpr — выражение «событие» (предопределённое имя событие-триггера).
+// Беспараметрическое первичное выражение (зеркало NoneLit). Доступ событие.поле
+// навешивает существующий FieldExpr, нового узла не вводится. Pos() = токен
+// «событие». Допустимо только в теле событие-триггера (гард семпрохода).
+type EventExpr struct {
+	exprBase
+}
+
+// NewEventExpr строит выражение «событие»; pos — позиция токена «событие».
+func NewEventExpr(pos Position) *EventExpr {
+	return &EventExpr{exprBase: exprBase{base{pos}}}
+}

@@ -198,6 +198,14 @@ func runFile(path, dbPath string, maxDepth int, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err.Error())
 			return 1
 		}
+		// Проход fire-if-true по триггерам (§TR-6/§TR-8.1, шаг 9): СТРОГО после
+		// interp.Run (глобальные «пусть» связаны) и ДО сводки задач (процессы,
+		// запущенные триггером, ещё попадут в сводку). База ЛОЖЬ эфемерно: trigger_state
+		// не читается/не пишется даже под --db. Ошибка — зеркало обработки interp.Run.
+		if err := interp.RunTriggers(stdout); err != nil {
+			fmt.Fprintln(stderr, err.Error())
+			return 1
+		}
 		// Сводка висящих задач (§EN-6 шаг 4, §EN-7 строки 5/6): только при N ≥ 1.
 		pending, perr := st.ListPendingTasks("")
 		if perr != nil {

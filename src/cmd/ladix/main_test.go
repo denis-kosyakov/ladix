@@ -124,24 +124,34 @@ func TestRunOnboardingProcessDeferred(t *testing.T) {
 	}
 }
 
-// 005/SC-005 (CP-5.3 R1): выручка.ladix остаётся парс-ошибкой код 1, но падение
-// сдвинулось — 'процесс' теперь парсится, отвергается top-level 'когда'
-// (D-6, триггеры — 007).
-func TestRunRevenueUnexpectedWhen(t *testing.T) {
-	var out, errBuf bytes.Buffer
-	code := realMain([]string{"run", examplePath("выручка.ladix")}, &out, &errBuf)
-	if code != 1 {
-		t.Fatalf("код = %d, хотим 1; stderr=%q", code, errBuf.String())
-	}
-	if !strings.Contains(errBuf.String(), "неожиданный токен 'когда'") {
-		t.Errorf("в stderr нет парс-ошибки на 'когда': %q", errBuf.String())
-	}
-	if strings.Contains(errBuf.String(), "неожиданный токен 'процесс'") {
-		t.Errorf("регресс: парсер снова отвергает 'процесс': %q", errBuf.String())
-	}
-	if out.Len() != 0 {
-		t.Errorf("непустой stdout: %q", out.String())
-	}
+// T019/US1 (§TR-9/§TR-10.5 п.4/SC-001): выручка.ladix теперь компилируется ЧИСТО —
+// 'когда метрика …' парсится как объявление триггера (фронтенд триггеров 007a),
+// семпроход резолвит метрику выручка_месяца и процесс разбор_падения. Exit 0, ноль
+// диагностик. Инверсия прежнего негатива (TestRunRevenueUnexpectedWhen, 005/CP-5.3 R1,
+// ждавшего «неожиданный токен 'когда'»).
+//
+// Устойчивость к US2 (T022, врезка fire-if-true): после неё метрика-триггер
+// СРАБАТЫВАЕТ — выручка_месяца вычисляется (метрика с периодом, окно зависит от
+// сегодня()) и дописывает задачу в сводку. Поэтому тест НЕ пинит полный stdout;
+// утверждает только (а) exit 0 и (б) отсутствие маркеров диагностик. Прогон — из
+// корня репо (withRepoRoot, как metric-тесты): относительный путь источника
+// «data/sales.json» в выручка.ladix резолвится только оттуда, иначе сработавший
+// триггер упёрся бы в «файл не найден» (exit 1). Так замок остаётся зелёным и после US2.
+func TestRunRevenueParsesClean(t *testing.T) {
+	withRepoRoot(t, func() {
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"run", filepath.Join("examples", "выручка.ladix")}, &out, &errBuf)
+		if code != 0 {
+			t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+		}
+		// Ноль диагностик: маркеры канона §13 не должны встречаться ни в stdout, ни в stderr.
+		combined := out.String() + errBuf.String()
+		for _, marker := range []string{"Ошибка в строке", "неожиданный токен"} {
+			if strings.Contains(combined, marker) {
+				t.Errorf("в выводе просочилась диагностика %q: %q", marker, combined)
+			}
+		}
+	})
 }
 
 // 005/FR-023 (CP-3): программа, ТОЛЬКО объявляющая процесс (без top-level

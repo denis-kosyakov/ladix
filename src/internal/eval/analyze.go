@@ -97,6 +97,22 @@ func (i *Interpreter) Analyze(prog *ast.Program) error {
 		}
 	}
 
+	// Шаг 1d — семантическая валидация триггеров (зеркало Шага 1b/1c, §TR-4):
+	// резолв метрики (метрики уже зарегистрированы Шагом 1), проверка порога, обход
+	// тела по виду. Регистрация в i.triggers — в порядке prog.Items (детерминизм
+	// fire-if-true-прохода §TR-6, FR-012). У триггера нет имени верхнего уровня —
+	// namespace-проверки Шага 1 его не касаются.
+	for _, item := range prog.Items {
+		td, ok := item.(*ast.TriggerDecl)
+		if !ok {
+			continue
+		}
+		if err := i.checkTrigger(td); err != nil {
+			return err
+		}
+		i.triggers = append(i.triggers, td)
+	}
+
 	// Шаг 2 — обход глобальной области и тел функций (блоки область не открывают).
 	var globalStmts []ast.Statement
 	for _, item := range prog.Items {
@@ -198,6 +214,62 @@ func (i *Interpreter) checkProcessDecl(pd *ast.ProcessDecl) error {
 	return nil
 }
 
+// checkTrigger — диспетчер семантической валидации одного триггера по виду
+// (Шаг 1d, §TR-4). Метрика-триггер: резолв имени метрики против i.metrics
+// (§TR-7.B), проверка порога обычным checkExpr (резолв вызовов/арность; тип-чек
+// «число vs число» — рантайм, FR-022), обход тела с inMetricTrigger=true.
+// Событие-триггер: имя события в 007a НЕ резолвится (реестра событий нет — 007b),
+// тело валидируется полностью с inEventTrigger=true (FR-022). Расписание-триггер:
+// содержимое строки "ЧЧ:ММ" НЕ анализируется (FR-005, → 007b), тело с обоими
+// флагами false. Тексты §TR-7 дословно; fail-fast.
+func (i *Interpreter) checkTrigger(td *ast.TriggerDecl) error {
+	switch spec := td.Spec.(type) {
+	case *ast.MetricTrigger:
+		// (1) резолв метрики: имя обязано быть зарегистрированной метрикой.
+		// Различающий текст: имя занято не-метрикой → TR-MET-NOTMETRIC, иначе
+		// TR-MET-UNDECL (зеркало checkRunProcess/checkMetricDecl).
+		name := spec.Metric.Name
+		if _, ok := i.metrics[name]; !ok {
+			if _, fn := i.funcs[name]; fn {
+				return semErr(spec.Metric.Pos(), fmt.Sprintf("'%s' — не метрика", name))
+			}
+			if _, src := i.sources[name]; src {
+				return semErr(spec.Metric.Pos(), fmt.Sprintf("'%s' — не метрика", name))
+			}
+			if _, pr := i.processes[name]; pr {
+				return semErr(spec.Metric.Pos(), fmt.Sprintf("'%s' — не метрика", name))
+			}
+			return semErr(spec.Metric.Pos(), fmt.Sprintf("метрика '%s' не объявлена", name))
+		}
+		// (8) порог — обычное выражение (значение/событие в нём недопустимы → оба false).
+		if err := i.checkExpr(spec.Threshold, map[string]bool{}, false, false); err != nil {
+			return err
+		}
+		return i.checkTriggerBody(td.Body, true, false)
+	case *ast.EventTrigger:
+		return i.checkTriggerBody(td.Body, false, true)
+	case *ast.ScheduleTrigger:
+		return i.checkTriggerBody(td.Body, false, false)
+	}
+	return nil
+}
+
+// checkTriggerBody обходит тело триггера как императивную область, семантически
+// тождественную top-level (§TR-5): inFunction=false (вернуть вне функции → §TR-7.D),
+// inStep=false (действия-шага запрещены → §TR-7.C, §PM-6.B), loopDepth=0.
+// inMetricTrigger/inEventTrigger включают контекст-гард значение/событие (§TR-7.A).
+// Зеркало analyzeStep: collectVars ловит дубль локальных пусть/для; vars/letLine
+// засеваются пусто (локальные имена тела). Глобальные пусть видны рантайму, но в
+// семпроходе плоский Ident не резолвится (analyze.go: declaredness — рантайму).
+func (i *Interpreter) checkTriggerBody(body *ast.Block, inMetricTrigger bool, inEventTrigger bool) error {
+	letLine := map[string]int{}
+	vars := map[string]bool{}
+	if err := collectVars(body.Stmts, letLine, vars); err != nil {
+		return err
+	}
+	return i.checkStmts(body.Stmts, vars, false, false, 0, inMetricTrigger, inEventTrigger)
+}
+
 // analyzeStep анализирует тело одного шага как императивную область (D-12, §PM-4):
 // inStep=true, inFunction=false, loopDepth=0. Отличия от analyzeArea: vars
 // засевается параметрами процесса (чтение/вызов параметра → рантайм, не
@@ -213,7 +285,7 @@ func (i *Interpreter) analyzeStep(step *ast.StepDecl, params []ast.Ident) error 
 	if err := collectVars(step.Body, letLine, vars); err != nil {
 		return err
 	}
-	return i.checkStmts(step.Body, vars, false, true, 0)
+	return i.checkStmts(step.Body, vars, false, true, 0, false, false)
 }
 
 // checkReservedDeclName запрещает имени источника/метрики/процесса совпадать с
@@ -247,7 +319,7 @@ func (i *Interpreter) analyzeArea(stmts []ast.Statement, params []ast.Ident, inF
 	if err := collectVars(stmts, letLine, vars); err != nil {
 		return err
 	}
-	return i.checkStmts(stmts, vars, inFunction, false, loopDepth)
+	return i.checkStmts(stmts, vars, inFunction, false, loopDepth, false, false)
 }
 
 // collectVars рекурсивно собирает переменные области (нисходя в блоки, но не
@@ -303,27 +375,30 @@ func collectVarsElse(e *ast.ElseClause, letLine map[string]int, vars map[string]
 }
 
 // checkStmts — второй подпроход: контексты сигналов, вызовы, deferred-узлы.
-func (i *Interpreter) checkStmts(stmts []ast.Statement, vars map[string]bool, inFunction bool, inStep bool, loopDepth int) error {
+// inMetricTrigger/inEventTrigger — контекст тела триггера (зеркало inStep, §TR-5):
+// разрешают значение/событие в checkExpr; на top-level/в функции/в шаге оба false.
+func (i *Interpreter) checkStmts(stmts []ast.Statement, vars map[string]bool, inFunction bool, inStep bool, loopDepth int, inMetricTrigger bool, inEventTrigger bool) error {
 	for _, s := range stmts {
-		if err := i.checkStmt(s, vars, inFunction, inStep, loopDepth); err != nil {
+		if err := i.checkStmt(s, vars, inFunction, inStep, loopDepth, inMetricTrigger, inEventTrigger); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunction bool, inStep bool, loopDepth int) error {
+func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunction bool, inStep bool, loopDepth int, inMetricTrigger bool, inEventTrigger bool) error {
 	switch st := s.(type) {
 	case *ast.LetStmt:
-		return i.checkExpr(st.Value, vars)
+		return i.checkExpr(st.Value, vars, inMetricTrigger, inEventTrigger)
 	case *ast.AssignStmt:
-		return i.checkExpr(st.Value, vars)
+		return i.checkExpr(st.Value, vars, inMetricTrigger, inEventTrigger)
 	case *ast.ExpressionStmt:
-		return i.checkExpr(st.Expr, vars)
+		return i.checkExpr(st.Expr, vars, inMetricTrigger, inEventTrigger)
 	case *ast.ReturnStmt:
 		if !inFunction {
 			// §7.3 / §PM-6.B: в шаге процесса — двухконтекстный текст (базовый
-			// 003 + суффикс-подсказка); вне шага — только базовый текст 003.
+			// 003 + суффикс-подсказка); вне шага (в т.ч. тело триггера, §TR-7.D) —
+			// только базовый текст 003.
 			msg := "'вернуть' допустимо только внутри функции"
 			if inStep {
 				msg += "; в шаге процесса используйте 'присвоить'"
@@ -331,7 +406,7 @@ func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunctio
 			return semErr(st.Pos(), msg)
 		}
 		if st.Value != nil {
-			return i.checkExpr(st.Value, vars)
+			return i.checkExpr(st.Value, vars, inMetricTrigger, inEventTrigger)
 		}
 		return nil
 	case *ast.BreakStmt:
@@ -345,23 +420,23 @@ func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunctio
 		}
 		return nil
 	case *ast.IfStmt:
-		if err := i.checkExpr(st.Cond, vars); err != nil {
+		if err := i.checkExpr(st.Cond, vars, inMetricTrigger, inEventTrigger); err != nil {
 			return err
 		}
-		if err := i.checkStmts(st.Then.Stmts, vars, inFunction, inStep, loopDepth); err != nil {
+		if err := i.checkStmts(st.Then.Stmts, vars, inFunction, inStep, loopDepth, inMetricTrigger, inEventTrigger); err != nil {
 			return err
 		}
-		return i.checkElse(st.Else, vars, inFunction, inStep, loopDepth)
+		return i.checkElse(st.Else, vars, inFunction, inStep, loopDepth, inMetricTrigger, inEventTrigger)
 	case *ast.WhileStmt:
-		if err := i.checkExpr(st.Cond, vars); err != nil {
+		if err := i.checkExpr(st.Cond, vars, inMetricTrigger, inEventTrigger); err != nil {
 			return err
 		}
-		return i.checkStmts(st.Body.Stmts, vars, inFunction, inStep, loopDepth+1)
+		return i.checkStmts(st.Body.Stmts, vars, inFunction, inStep, loopDepth+1, inMetricTrigger, inEventTrigger)
 	case *ast.ForStmt:
-		if err := i.checkExpr(st.Iterable, vars); err != nil {
+		if err := i.checkExpr(st.Iterable, vars, inMetricTrigger, inEventTrigger); err != nil {
 			return err
 		}
-		return i.checkStmts(st.Body.Stmts, vars, inFunction, inStep, loopDepth+1)
+		return i.checkStmts(st.Body.Stmts, vars, inFunction, inStep, loopDepth+1, inMetricTrigger, inEventTrigger)
 	case *ast.AssignAction, *ast.CallAction, *ast.NotifyAction:
 		// Контекст-гард действий (§PM-4, D-11): вне шага — СемантическаяОшибка
 		// §PM-6.B; в шаге валидно, payload (Args/Value) НЕ обходится (резолв/
@@ -375,58 +450,72 @@ func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunctio
 	return nil
 }
 
-func (i *Interpreter) checkElse(e *ast.ElseClause, vars map[string]bool, inFunction bool, inStep bool, loopDepth int) error {
+func (i *Interpreter) checkElse(e *ast.ElseClause, vars map[string]bool, inFunction bool, inStep bool, loopDepth int, inMetricTrigger bool, inEventTrigger bool) error {
 	if e == nil {
 		return nil
 	}
 	if e.IsFinal() {
-		return i.checkStmts(e.Body.Stmts, vars, inFunction, inStep, loopDepth)
+		return i.checkStmts(e.Body.Stmts, vars, inFunction, inStep, loopDepth, inMetricTrigger, inEventTrigger)
 	}
-	if err := i.checkExpr(e.Cond, vars); err != nil {
+	if err := i.checkExpr(e.Cond, vars, inMetricTrigger, inEventTrigger); err != nil {
 		return err
 	}
-	if err := i.checkStmts(e.Then.Stmts, vars, inFunction, inStep, loopDepth); err != nil {
+	if err := i.checkStmts(e.Then.Stmts, vars, inFunction, inStep, loopDepth, inMetricTrigger, inEventTrigger); err != nil {
 		return err
 	}
-	return i.checkElse(e.Else, vars, inFunction, inStep, loopDepth)
+	return i.checkElse(e.Else, vars, inFunction, inStep, loopDepth, inMetricTrigger, inEventTrigger)
 }
 
 // checkExpr рекурсивно проверяет резолв CallExpr + фикс. арность и RunProcessExpr
 // (checkRunProcess, §PM-4). DurationLit семантически чист (006/D-7: литерал валиден
 // в любой позиции, значение даёт рантайм). Плоский Ident НЕ проверяется
-// (declaredness — рантайму).
-func (i *Interpreter) checkExpr(e ast.Expression, vars map[string]bool) error {
+// (declaredness — рантайму). inMetricTrigger/inEventTrigger — контекст тела
+// триггера (§TR-5): включают контекст-гард значение/событие (§TR-7.A).
+func (i *Interpreter) checkExpr(e ast.Expression, vars map[string]bool, inMetricTrigger bool, inEventTrigger bool) error {
 	switch ex := e.(type) {
 	case *ast.BinaryExpr:
-		if err := i.checkExpr(ex.Left, vars); err != nil {
+		if err := i.checkExpr(ex.Left, vars, inMetricTrigger, inEventTrigger); err != nil {
 			return err
 		}
-		return i.checkExpr(ex.Right, vars)
+		return i.checkExpr(ex.Right, vars, inMetricTrigger, inEventTrigger)
 	case *ast.UnaryExpr:
-		return i.checkExpr(ex.Operand, vars)
+		return i.checkExpr(ex.Operand, vars, inMetricTrigger, inEventTrigger)
 	case *ast.CallExpr:
 		for _, a := range ex.Args {
-			if err := i.checkExpr(a, vars); err != nil {
+			if err := i.checkExpr(a, vars, inMetricTrigger, inEventTrigger); err != nil {
 				return err
 			}
 		}
-		return i.checkCall(ex, vars)
+		return i.checkCall(ex, vars, inMetricTrigger, inEventTrigger)
 	case *ast.IndexExpr:
-		if err := i.checkExpr(ex.Target, vars); err != nil {
+		if err := i.checkExpr(ex.Target, vars, inMetricTrigger, inEventTrigger); err != nil {
 			return err
 		}
-		return i.checkExpr(ex.Index, vars)
+		return i.checkExpr(ex.Index, vars, inMetricTrigger, inEventTrigger)
 	case *ast.FieldExpr:
-		return i.checkExpr(ex.Target, vars)
+		// событие.поле: FieldExpr.Target = *ast.EventExpr → тот же контекст-гард ниже.
+		return i.checkExpr(ex.Target, vars, inMetricTrigger, inEventTrigger)
 	case *ast.ListLit:
 		for _, el := range ex.Elements {
-			if err := i.checkExpr(el, vars); err != nil {
+			if err := i.checkExpr(el, vars, inMetricTrigger, inEventTrigger); err != nil {
 				return err
 			}
 		}
 		return nil
 	case *ast.RunProcessExpr:
-		return i.checkRunProcess(ex, vars)
+		return i.checkRunProcess(ex, vars, inMetricTrigger, inEventTrigger)
+	case *ast.ValueExpr:
+		// §TR-7.A: 'значение' допустимо ТОЛЬКО в теле метрика-триггера.
+		if !inMetricTrigger {
+			return semErr(ex.Pos(), "выражение 'значение' допустимо только в теле триггера метрики")
+		}
+		return nil
+	case *ast.EventExpr:
+		// §TR-7.A: 'событие' допустимо ТОЛЬКО в теле событие-триггера.
+		if !inEventTrigger {
+			return semErr(ex.Pos(), "выражение 'событие' допустимо только в теле триггера события")
+		}
+		return nil
 	}
 	return nil
 }
@@ -434,10 +523,10 @@ func (i *Interpreter) checkExpr(e ast.Expression, vars map[string]bool) error {
 // checkCall резолвит вызов на семпроходе (§9): имя-переменная области → рантайм;
 // пользовательская/активная встроенная фикс. арности → проверка числа аргументов;
 // deferred-встроенная → SEM-DEFERRED-BUILTIN; иначе → SEM-FN-UNDECLARED.
-func (i *Interpreter) checkCall(c *ast.CallExpr, vars map[string]bool) error {
+func (i *Interpreter) checkCall(c *ast.CallExpr, vars map[string]bool, inMetricTrigger bool, inEventTrigger bool) error {
 	id, ok := c.Callee.(*ast.Ident)
 	if !ok {
-		return i.checkExpr(c.Callee, vars)
+		return i.checkExpr(c.Callee, vars, inMetricTrigger, inEventTrigger)
 	}
 	name := id.Name
 	if vars[name] {
@@ -468,9 +557,9 @@ func (i *Interpreter) checkCall(c *ast.CallExpr, vars map[string]bool) error {
 // найден → фикс. арность. Тексты §PM-6.C; позиция — токен запустить (r.Pos()).
 // Реестр готов с Шага 1 → работает в любой области (глобаль/функция/шаг).
 // Исполнение запуска остаётся рантайм-deferred (expr.go:49, §PM-5).
-func (i *Interpreter) checkRunProcess(r *ast.RunProcessExpr, vars map[string]bool) error {
+func (i *Interpreter) checkRunProcess(r *ast.RunProcessExpr, vars map[string]bool, inMetricTrigger bool, inEventTrigger bool) error {
 	for _, a := range r.Args {
-		if err := i.checkExpr(a, vars); err != nil {
+		if err := i.checkExpr(a, vars, inMetricTrigger, inEventTrigger); err != nil {
 			return err
 		}
 	}

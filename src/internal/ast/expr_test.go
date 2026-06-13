@@ -70,3 +70,29 @@ func TestRunProcessExprPos(t *testing.T) {
 	}
 	var _ Expression = rpe
 }
+
+// T005 (007a §TR-2): ValueExpr/EventExpr — беспараметрические первичные
+// выражения (зеркало NoneLit); Pos() = токен значение/событие; реализуют Expression.
+
+var (
+	_ Expression = (*ValueExpr)(nil)
+	_ Expression = (*EventExpr)(nil)
+)
+
+func TestValueExprPos(t *testing.T) {
+	valPos := Position{Line: 1, Col: 15}
+	ve := NewValueExpr(valPos)
+	if ve.Pos() != valPos {
+		t.Errorf("ValueExpr.Pos() = %+v, хотим токен значение %+v", ve.Pos(), valPos)
+	}
+	var _ Expression = ve
+}
+
+func TestEventExprPos(t *testing.T) {
+	evtPos := Position{Line: 1, Col: 16}
+	ee := NewEventExpr(evtPos)
+	if ee.Pos() != evtPos {
+		t.Errorf("EventExpr.Pos() = %+v, хотим токен событие %+v", ee.Pos(), evtPos)
+	}
+	var _ Expression = ee
+}
