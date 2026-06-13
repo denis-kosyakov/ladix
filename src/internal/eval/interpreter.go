@@ -29,6 +29,7 @@ type Interpreter struct {
 	sources     map[string]*ast.SourceDecl  // реестр источников (Шаг 1 Analyze)
 	metrics     map[string]*ast.MetricDecl  // реестр метрик (Шаг 1 Analyze)
 	processes   map[string]*ast.ProcessDecl // реестр процессов (Шаг 1 Analyze, §PM-4; исполнение — 006)
+	triggers    []*ast.TriggerDecl          // реестр триггеров в порядке объявления (Шаг 1d Analyze, §TR-4; fire-if-true — 007a run, §TR-6)
 	recordCache map[string][]value.Запись   // лень + кеш загрузки источника на запуск (§9.6)
 	metricStack []string                    // стек активных метрик для детекта цикла (D-8)
 	recordCtx   *recordContext              // контекст полей текущей записи (per-record, движок метрики, §SM-8)

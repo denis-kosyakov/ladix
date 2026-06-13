@@ -296,8 +296,9 @@ func TestMetricDeclSourceNotIdent(t *testing.T) {
 
 // --- T003: фронтенд процессов 005 — снятие cut только с KW_PROCESS ---
 
-// T003 (D-6, §PM-3): из top-level-отсечки снят ТОЛЬКО процесс; когда/значение/
-// фигурные скобки остаются отвергаемыми (триггеры — 007).
+// T003 (D-6, §PM-3) + 007a §TR-10.5 п.1: из top-level-отсечки сняты процесс (005)
+// и когда (007a, шов A → parseTriggerDecl); значение/фигурные скобки остаются
+// отвергаемыми (значение — выражение шва B, на top-level недопустимо).
 func TestTopLevelCutOnlyProcessRemoved(t *testing.T) {
 	cases := []struct {
 		name string
@@ -305,7 +306,7 @@ func TestTopLevelCutOnlyProcessRemoved(t *testing.T) {
 		want bool
 	}{
 		{"процесс снят", lexer.KW_PROCESS, false},
-		{"когда остаётся", lexer.KW_WHEN, true},
+		{"когда снят (007a шов A)", lexer.KW_WHEN, false},
 		{"значение остаётся", lexer.KW_VALUE, true},
 		{"LBRACE остаётся", lexer.LBRACE, true},
 		{"RBRACE остаётся", lexer.RBRACE, true},
@@ -319,15 +320,16 @@ func TestTopLevelCutOnlyProcessRemoved(t *testing.T) {
 	}
 }
 
-// T003 (FR-003): top-level когда …/значение … по-прежнему → SE-UNEXPECTED с
-// прежними текстами (инвариант регресса при снятии cut с процесс).
+// T003 (FR-003) + 007a §TR-10.5 п.1: top-level значение … по-прежнему →
+// SE-UNEXPECTED (значение — выражение шва B, на top-level недопустимо). Ведущий
+// когда более НЕ SE-UNEXPECTED — диспетчеризуется в parseTriggerDecl (007a, шов A;
+// негативы форм — TestTriggerKindDiagnostics).
 func TestTopLevelWhenValueStillUnexpected(t *testing.T) {
 	cases := []struct {
 		name     string
 		src      string
 		firstMsg string
 	}{
-		{"когда", "когда x > 1:\n    печать(1)\n", "неожиданный токен 'когда'"},
 		{"значение", "значение 5\n", "неожиданный токен 'значение'"},
 	}
 	for _, c := range cases {
@@ -1102,4 +1104,285 @@ func TestMetricOnlyFixtureParsesClean(t *testing.T) {
 	if _, ok := prog.Items[1].(*ast.MetricDecl); !ok {
 		t.Errorf("Items[1] = %T, хотим *MetricDecl", prog.Items[1])
 	}
+}
+
+// --- 007a: фронтенд триггеров (T011 — позитивы, негативы, шов B) ---
+
+// triggerBody возвращает тело первого TriggerDecl программы (helper позитивов).
+func triggerDecl(t *testing.T, src string) *ast.TriggerDecl {
+	t.Helper()
+	prog, el := parseProgramSrc(t, src)
+	if !el.Empty() {
+		t.Fatalf("ошибки: %v", el.Error())
+	}
+	if len(prog.Items) != 1 {
+		t.Fatalf("Items = %d, хотим 1", len(prog.Items))
+	}
+	td, ok := prog.Items[0].(*ast.TriggerDecl)
+	if !ok {
+		t.Fatalf("Items[0] = %T, хотим *TriggerDecl", prog.Items[0])
+	}
+	return td
+}
+
+// T011 (§TR-1): метрика-триггер парсится — спека MetricTrigger{Metric, Op, Threshold},
+// тело — индентный Block. Pos() = токен когда (1,1).
+func TestTriggerMetricParse(t *testing.T) {
+	td := triggerDecl(t, "когда метрика выручка < 100:\n    печать(1)\n")
+	if td.Pos() != (ast.Position{Line: 1, Col: 1}) {
+		t.Errorf("Pos() = %+v, хотим {1,1} (токен когда)", td.Pos())
+	}
+	mt, ok := td.Spec.(*ast.MetricTrigger)
+	if !ok {
+		t.Fatalf("Spec = %T, хотим *MetricTrigger", td.Spec)
+	}
+	if mt.Metric.Name != "выручка" {
+		t.Errorf("Metric = %q, хотим \"выручка\"", mt.Metric.Name)
+	}
+	if mt.Op != ast.CompLt {
+		t.Errorf("Op = %v, хотим CompLt", mt.Op)
+	}
+	if sexpr(mt.Threshold) != "100" {
+		t.Errorf("Threshold = %s, хотим 100", sexpr(mt.Threshold))
+	}
+	if td.Body == nil || len(td.Body.Stmts) != 1 {
+		t.Fatalf("Body должно содержать 1 оператор: %+v", td.Body)
+	}
+}
+
+// T011 (§TR-1, все 6 CompOp): каждый оператор сравнения принимается expectCompOp.
+func TestTriggerMetricAllCompOps(t *testing.T) {
+	cases := []struct {
+		op   string
+		want ast.CompOp
+	}{
+		{"==", ast.CompEq}, {"!=", ast.CompNeq},
+		{"<", ast.CompLt}, {"<=", ast.CompLe},
+		{">", ast.CompGt}, {">=", ast.CompGe},
+	}
+	for _, c := range cases {
+		t.Run(c.op, func(t *testing.T) {
+			td := triggerDecl(t, "когда метрика m "+c.op+" 1:\n    печать(1)\n")
+			mt := td.Spec.(*ast.MetricTrigger)
+			if mt.Op != c.want {
+				t.Errorf("Op = %v, хотим %v", mt.Op, c.want)
+			}
+		})
+	}
+}
+
+// T011 (§TR-1): событие-триггер — спека EventTrigger{Event}, тело-Block.
+func TestTriggerEventParse(t *testing.T) {
+	td := triggerDecl(t, "когда событие заказ_создан:\n    печать(1)\n")
+	et, ok := td.Spec.(*ast.EventTrigger)
+	if !ok {
+		t.Fatalf("Spec = %T, хотим *EventTrigger", td.Spec)
+	}
+	if et.Event.Name != "заказ_создан" {
+		t.Errorf("Event = %q, хотим \"заказ_создан\"", et.Event.Name)
+	}
+}
+
+// T011 (§TR-1, FR-004): расписание `каждые <D>` — все 6 единиц длительности
+// принимаются без валидации (сек/мин/час/дн/нед/мес).
+func TestTriggerScheduleEveryAllUnits(t *testing.T) {
+	units := []struct {
+		lit, amount, unit string
+	}{
+		{"30сек", "30", "сек"}, {"5мин", "5", "мин"}, {"1час", "1", "час"},
+		{"3дн", "3", "дн"}, {"2нед", "2", "нед"}, {"1мес", "1", "мес"},
+	}
+	for _, u := range units {
+		t.Run(u.lit, func(t *testing.T) {
+			td := triggerDecl(t, "когда расписание каждые "+u.lit+":\n    печать(1)\n")
+			st, ok := td.Spec.(*ast.ScheduleTrigger)
+			if !ok {
+				t.Fatalf("Spec = %T, хотим *ScheduleTrigger", td.Spec)
+			}
+			ev, ok := st.Spec.(*ast.EverySchedule)
+			if !ok {
+				t.Fatalf("Spec.Spec = %T, хотим *EverySchedule", st.Spec)
+			}
+			if ev.Every.Amount != u.amount || ev.Every.Unit != u.unit {
+				t.Errorf("Every = %s%s, хотим %s%s", ev.Every.Amount, ev.Every.Unit, u.amount, u.unit)
+			}
+		})
+	}
+}
+
+// T011 (§TR-1, FR-005): расписание `в "ЧЧ:ММ"` — строка принимается как StringLit,
+// формат содержимого парсером НЕ проверяется.
+func TestTriggerScheduleAtParse(t *testing.T) {
+	td := triggerDecl(t, "когда расписание в \"08:30\":\n    печать(1)\n")
+	st, ok := td.Spec.(*ast.ScheduleTrigger)
+	if !ok {
+		t.Fatalf("Spec = %T, хотим *ScheduleTrigger", td.Spec)
+	}
+	at, ok := st.Spec.(*ast.AtSchedule)
+	if !ok {
+		t.Fatalf("Spec.Spec = %T, хотим *AtSchedule", st.Spec)
+	}
+	if at.At.Value != "08:30" {
+		t.Errorf("At = %q, хотим \"08:30\"", at.At.Value)
+	}
+}
+
+// T011 (§TR-4 п.6, FR-021): условие метрики — РОВНО одно сравнение. Плоский разбор
+// (parseComparison) НЕ поглощает логический `и` → `метрика X < Y и Z` оставляет `и`,
+// далее ошибка ожидания ':'. Это структурная невыразимость составного условия.
+//
+// T027 усиление: payload + ТОЧНАЯ позиция (строка, колонка в рунах) токена `и` —
+// доказывает, что разбор порога остановился ровно на `и` (логика не поглощена), а не
+// где-то дальше. `когда метрика m < Y и Z > W:` — `и` на строке 1, колонка 21
+// («когда метрика m < 1 » = 20 рун, далее `и`).
+func TestTriggerMetricThresholdFlatOneComparison(t *testing.T) {
+	_, el := parseProgramSrc(t, "когда метрика m < 1 и 2 > 0:\n    печать(1)\n")
+	if el.Len() != 1 {
+		t.Fatalf("ошибок %d, хотим 1 (ожидание ':' после порога): %v", el.Len(), el.Error())
+	}
+	pe := firstParseError(t, el)
+	want := "ожидалось ':', получено 'и'"
+	if pe.Msg != want {
+		t.Errorf("Msg = %q, хотим %q (и не поглощён, одно сравнение)", pe.Msg, want)
+	}
+	if pe.Pos.Line != 1 || pe.Pos.Col != 21 {
+		t.Errorf("позиция = %+v, хотим {1,21} (токен 'и', порог остановлен)", pe.Pos)
+	}
+}
+
+// T011 (§TR-7.F): негативы диспетчера форм и спек — exact-match SE-TRIGGER-KIND /
+// SE-EXPECT-COMPOP / SE-SCHEDULE-SPEC через msgExpected.
+func TestTriggerSyntaxDiagnostics(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "SE-TRIGGER-KIND",
+			src:  "когда x > 1:\n    печать(1)\n",
+			want: "ожидалось 'метрика, событие или расписание', получено 'x'",
+		},
+		{
+			name: "SE-EXPECT-COMPOP",
+			src:  "когда метрика m + 1:\n    печать(1)\n",
+			want: "ожидалось 'оператор сравнения', получено '+'",
+		},
+		{
+			name: "SE-SCHEDULE-SPEC",
+			src:  "когда расписание ночью:\n    печать(1)\n",
+			want: "ожидалось 'каждые или в', получено 'ночью'",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, el := parseProgramSrc(t, c.src)
+			if el.Len() == 0 {
+				t.Fatalf("ожидалась ошибка %q, ошибок нет", c.want)
+			}
+			if got := firstParseError(t, el).Msg; got != c.want {
+				t.Errorf("первая ошибка %q, хотим %q", got, c.want)
+			}
+		})
+	}
+}
+
+// T011 (шов B, §TR-10.5 п.3): `значение` — первичное выражение в любой позиции;
+// собирается parsePrimary (синтаксически везде; контекст-гард — семпроход).
+func TestValueExprAsPrimary(t *testing.T) {
+	// аргумент вызова в теле триггера (как в выручка.ladix)
+	td := triggerDecl(t, "когда метрика m < 1:\n    запустить процесс P(значение)\n")
+	es, ok := td.Body.Stmts[0].(*ast.ExpressionStmt)
+	if !ok {
+		t.Fatalf("Body[0] = %T, хотим *ExpressionStmt", td.Body.Stmts[0])
+	}
+	if got := sexpr(es.Expr); got != "(run P значение)" {
+		t.Errorf("Expr = %s, хотим (run P значение)", got)
+	}
+}
+
+// T011 (шов B): `событие.поле` — постфиксный FieldExpr над EventExpr (собирается
+// существующим постфикс-парсером, без правок).
+func TestEventExprFieldAccess(t *testing.T) {
+	td := triggerDecl(t, "когда событие e:\n    печать(событие.клиент)\n")
+	es := td.Body.Stmts[0].(*ast.ExpressionStmt)
+	if got := sexpr(es.Expr); got != "(call печать (field событие клиент))" {
+		t.Errorf("Expr = %s, хотим (call печать (field событие клиент))", got)
+	}
+}
+
+// T024 (§TR-7.F, diagnostics.md, SC-005/SC-006): exact-match негативы трёх
+// СИНТАКСИЧЕСКИХ диагностик форм триггера + переиспользуемого пустого блока —
+// payload БАЙТ-В-БАЙТ из contracts/diagnostics.md и точная позиция (строка,
+// колонка в рунах) ведущего токена-нарушителя. Дополняет TestTriggerSyntaxDiagnostics
+// (только payload): здесь фиксируется И позиция, И ровно-одна-ошибка.
+//
+//   - SE-TRIGGER-KIND  — нет вида после `когда`: позиция = токен после `когда`.
+//   - SE-EXPECT-COMPOP — нет CompOp после `метрика Ident`: позиция = не-CompOp токен.
+//   - SE-SCHEDULE-SPEC — нет `каждые`/`в` после `расписание`: позиция = токен после.
+//   - msgEmptyBlock    — тело триггера после `:` пусто (переиспользование §PM-6.A).
+func TestTriggerNegativesExactPos(t *testing.T) {
+	cases := []struct {
+		name      string
+		src       string
+		want      string
+		line, col int
+	}{
+		{
+			// тело опущено: default-ветка parseTriggerDecl делает synchronize по
+			// строке; индентный блок после неопознанного вида породил бы
+			// производные «увеличение отступа»/«конец блока» (не одна ошибка).
+			name: "SE-TRIGGER-KIND нет вида после когда",
+			src:  "когда X:\n",
+			want: "ожидалось 'метрика, событие или расписание', получено 'X'",
+			line: 1, col: 7, // токен 'X' после 'когда '
+		},
+		{
+			name: "SE-EXPECT-COMPOP нет оператора после метрика Ident",
+			src:  "когда метрика m:\n    печать(1)\n",
+			want: "ожидалось 'оператор сравнения', получено ':'",
+			line: 1, col: 16, // токен ':' там, где ожидался CompOp
+		},
+		{
+			name: "SE-SCHEDULE-SPEC нет каждые/в после расписание",
+			src:  "когда расписание X:\n    печать(1)\n",
+			want: "ожидалось 'каждые или в', получено 'X'",
+			line: 1, col: 18, // токен 'X' после 'расписание '
+		},
+		{
+			name: "msgEmptyBlock пустое тело триггера",
+			src:  "когда метрика m > 1:\nпечать(1)\n",
+			want: "пустой блок не допускается, добавьте хотя бы один оператор",
+			line: 2, col: 1, // ведущий токен строки на месте отсутствующего INDENT
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, el := parseProgramSrc(t, c.src)
+			if el.Len() != 1 {
+				t.Fatalf("ошибок %d, хотим 1: %v", el.Len(), el.Error())
+			}
+			pe := firstParseError(t, el)
+			if pe.Msg != c.want {
+				t.Errorf("Msg = %q, хотим %q", pe.Msg, c.want)
+			}
+			if pe.Pos.Line != c.line || pe.Pos.Col != c.col {
+				t.Errorf("позиция = %+v, хотим {%d,%d}", pe.Pos, c.line, c.col)
+			}
+		})
+	}
+}
+
+// T024 (§8.1, SC-003): три новые синтаксические диагностики форм триггера в ПОЛНОМ
+// двухстрочном каноне `Ошибка в строке N, колонка M:\n<payload>` (assertGolden из
+// errors_golden_test.go) — БАЙТ-В-БАЙТ из contracts/diagnostics.md §TR-7.F.
+func TestGoldenTriggerSyntaxDiagnostics(t *testing.T) {
+	assertGolden(t, "когда X:\n",
+		"Ошибка в строке 1, колонка 7:\nожидалось 'метрика, событие или расписание', получено 'X'")
+	assertGolden(t, "когда метрика m:\n    печать(1)\n",
+		"Ошибка в строке 1, колонка 16:\nожидалось 'оператор сравнения', получено ':'")
+	assertGolden(t, "когда расписание X:\n    печать(1)\n",
+		"Ошибка в строке 1, колонка 18:\nожидалось 'каждые или в', получено 'X'")
+	assertGolden(t, "когда метрика m > 1:\nпечать(1)\n",
+		"Ошибка в строке 2, колонка 1:\nпустой блок не допускается, добавьте хотя бы один оператор")
 }

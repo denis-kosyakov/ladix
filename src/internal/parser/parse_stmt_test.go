@@ -289,3 +289,92 @@ func TestExamplesParseCleanP2a(t *testing.T) {
 		})
 	}
 }
+
+// T028 (§TR-3 шов A/B, D-TR-1, §TR-10.5 п.1/п.6; diagnostics.md §TR-7.F): краевые
+// случаи ВЕДУЩЕГО top-level токена после развода `когда`/`значение`/`событие` по двум
+// швам парсера. Комплементарно golden-замку TestGoldenSEUnexpectedTopLevel (там
+// `значение`/`событие`/`{` остаются SE-UNEXPECTED) — здесь фиксируются: (1)
+// `значение`/`событие`/`{`/`}` → msgUnexpected с точной позицией; (2) приём ведущего
+// `когда` (шов A → parseTriggerDecl). СИММЕТРИЯ `значение`≡`событие` на top-level
+// (§TR-7.F / FR-006/FR-020/SC-007): оба — первичные выражения (шов B, parsePrimary),
+// но оба отвергаются isUnexpectedTopLevel ДО разбора выражения. Отказ `значение`/
+// `событие` ВНЕ контекста-триггера в теле — забота СЕМПРОХОДА (TR-VAL-CTX/TR-EVT-CTX).
+func TestTopLevelLeadingTokenEdgeCases(t *testing.T) {
+	// (1) значение/событие/{/} — отвергаются isUnexpectedTopLevel ДО разбора
+	//     выражения → msgUnexpected; позиция = ведущий токен (строка 1, колонка 1).
+	t.Run("msgUnexpected", func(t *testing.T) {
+		leads := []string{"значение", "событие", "{", "}"}
+		for _, lead := range leads {
+			t.Run(lead, func(t *testing.T) {
+				_, el := parseProgramSrc(t, lead+"\n")
+				if el.Len() != 1 {
+					t.Fatalf("ошибок %d, хотим 1: %v", el.Len(), el.Error())
+				}
+				pe := firstParseError(t, el)
+				want := "неожиданный токен '" + lead + "'"
+				if pe.Msg != want {
+					t.Errorf("Msg = %q, хотим %q", pe.Msg, want)
+				}
+				if pe.Pos.Line != 1 || pe.Pos.Col != 1 {
+					t.Errorf("позиция = %+v, хотим {1,1} (ведущий токен)", pe.Pos)
+				}
+			})
+		}
+	})
+
+	// (2) Подтверждение: isUnexpectedTopLevel БОЛЬШЕ не содержит KW_WHEN (шов A →
+	//     parseTriggerDecl), но содержит KW_VALUE/KW_EVENT/LBRACE/RBRACE (зеркало
+	//     предиката, без разбора). KW_EVENT отвергается симметрично KW_VALUE (§TR-7.F).
+	t.Run("isUnexpectedTopLevel предикат", func(t *testing.T) {
+		cases := []struct {
+			tt   lexer.TokenType
+			want bool
+		}{
+			{lexer.KW_WHEN, false}, // снят — шов A → parseTriggerDecl
+			{lexer.KW_EVENT, true}, // отвергается (симметрия с значение, §TR-7.F)
+			{lexer.KW_VALUE, true}, // остаётся недопустимым на top-level
+			{lexer.LBRACE, true},
+			{lexer.RBRACE, true},
+		}
+		for _, c := range cases {
+			if got := isUnexpectedTopLevel(c.tt); got != c.want {
+				t.Errorf("isUnexpectedTopLevel(%v) = %v, хотим %v", c.tt, got, c.want)
+			}
+		}
+	})
+
+	// (3) Ведущий `когда` БОЛЬШЕ не отвергается isUnexpectedTopLevel — он
+	//     диспетчеризуется в parseTriggerDecl и парсится как триггер (НЕ
+	//     `неожиданный токен 'когда'`). Полный валидный триггер → 0 ошибок, узел
+	//     *ast.TriggerDecl на верхнем уровне.
+	t.Run("когда принят как триггер", func(t *testing.T) {
+		prog, el := parseProgramSrc(t, "когда метрика m > 1:\n    печать(1)\n")
+		if !el.Empty() {
+			t.Fatalf("ведущий `когда` дал ошибки (хотим 0, шов A): %v", el.Error())
+		}
+		if len(prog.Items) != 1 {
+			t.Fatalf("Items = %d, хотим 1 (TriggerDecl)", len(prog.Items))
+		}
+		if _, ok := prog.Items[0].(*ast.TriggerDecl); !ok {
+			t.Errorf("Items[0] = %T, хотим *ast.TriggerDecl", prog.Items[0])
+		}
+	})
+
+	// (4) Симметрия шова B (компенсация): `событие` — первичное выражение
+	//     (parsePrimary, как и `значение`), но на top-level отвергается
+	//     isUnexpectedTopLevel ДО разбора выражения. Регресс-страж бага «шов B
+	//     добавил KW_EVENT в parsePrimary, не компенсировав в isUnexpectedTopLevel»:
+	//     для `событие 5` нарушитель — ВЕДУЩИЙ `событие`, а НЕ хвост `5`. (Внутри
+	//     тела триггера события `событие`/`событие.поле` валидны — позитивы US1.)
+	t.Run("ведущее событие — unexpected (симметрия значение)", func(t *testing.T) {
+		_, el := parseProgramSrc(t, "событие 5\n")
+		pe := firstParseError(t, el)
+		want := "неожиданный токен 'событие'"
+		if pe.Msg != want {
+			t.Errorf("Msg = %q, хотим %q (нарушитель — ведущий 'событие', не хвост '5')", pe.Msg, want)
+		}
+		if pe.Pos.Line != 1 || pe.Pos.Col != 1 {
+			t.Errorf("позиция = %+v, хотим {1,1} (ведущий токен)", pe.Pos)
+		}
+	})
+}

@@ -56,9 +56,11 @@ func TestGoldenSEAssignTarget(t *testing.T) {
 }
 
 func TestGoldenSEUnexpectedTopLevel(t *testing.T) {
-	// источник/метрика парсятся с 004 (§SM-3), процесс — с 005 (§PM-3, D-6) —
-	// здесь только отложенные когда/значение/{ } остаются SE-UNEXPECTED.
-	leads := []string{"когда", "значение", "{"}
+	// источник/метрика парсятся с 004 (§SM-3), процесс — с 005 (§PM-3, D-6),
+	// триггер (когда) — с 007a (шов A → parseTriggerDecl, §TR-10.5 п.6) —
+	// здесь значение/событие/{ } остаются SE-UNEXPECTED на top-level (симметрия
+	// значение≡событие, §TR-7.F / FR-006/FR-020/SC-007).
+	leads := []string{"значение", "событие", "{"}
 	for _, lead := range leads {
 		t.Run(lead, func(t *testing.T) {
 			assertGolden(t, lead+"\n",

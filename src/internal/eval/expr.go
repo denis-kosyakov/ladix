@@ -52,6 +52,15 @@ func (i *Interpreter) evalExpr(env *Environment, e ast.Expression) (value.Value,
 		return i.evalRunProcess(env, ex)
 	case *ast.DurationLit:
 		return i.evalDurationLit(ex)
+	case *ast.ValueExpr:
+		// «значение» (метрика-тело, §TR-5): резолв инжектированной величины из env.
+		// Контекст-гард семпрохода (§TR-7.A) уже гарантирует, что узел встречается
+		// только в теле метрика-триггера, где RunTriggers связал «значение» в env;
+		// отсутствие — защитная рантайм-ошибка (недостижима в норме).
+		if v, ok := env.Lookup(valueName); ok {
+			return v, nil
+		}
+		return nil, runtimeErr(ex.Pos(), "внутренняя ошибка: 'значение' не связано вне срабатывания метрика-триггера")
 	}
 	return nil, runtimeErr(e.Pos(), "внутренняя ошибка: неизвестный узел выражения")
 }

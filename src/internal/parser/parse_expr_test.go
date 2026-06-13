@@ -65,6 +65,10 @@ func sexpr(e ast.Expression) string {
 		return n.Amount + n.Unit
 	case *ast.Ident:
 		return n.Name
+	case *ast.ValueExpr:
+		return "значение"
+	case *ast.EventExpr:
+		return "событие"
 	default:
 		return "?"
 	}

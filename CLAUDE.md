@@ -1,17 +1,23 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-specs/006-process-engine/plan.md (фича 006-process-engine — ДВИЖОК ИСПОЛНЕНИЯ ПРОЦЕССОВ +
-ЧЕЛОВЕК-В-ЦИКЛЕ: новый пакет internal/store (контракт Store из 8 методов, две реализации —
-MemoryStore память / SQLiteStore SQLite-файл; кодек type-tagged JSON; персистентный mint id);
-новый пакет internal/engine (lifecycle Start/advance/Complete, engine-Clock, фаза атрибутов до
-тела, гард-догон, реализация eval.ProcessRuntime); граница eval↔engine — интерфейс ProcessRuntime
-в eval + сеттер-инъекция (D-1, разрыв цикла); активация deferred-веток 005 (действия шага, литерал
-длительности, сравнения Длительности, 3 процессные встроенные — реестр 28+7); CLI run --db /
-complete <file.ladix> <task-id> / tasks [исполнитель]; байт-точные stdout (§EN-7, 11 форматов) и
-диагностики (§EN-8.A 9 / §EN-8.B 10). Первая внешняя зависимость проекта — modernc.org/sqlite
-(чистый Go без CGO, разрешена конституцией I; go.mod+go.sum отдельным коммитом). Связывающий якорь —
-docs/engine-model.md §EN-0…§EN-10 (решения Q1–Q3, D-1…D-22 закрыты). Фронтенд процессов 005 — в
+specs/007a-trigger-frontend/plan.md (фича 007a-trigger-frontend — ФРОНТЕНД ТРИГГЕРОВ `когда …:`
++ МЕТРИКА-FIRE-IF-TRUE В `run`: разрез B — чистый фронтенд трёх форм триггера (метрика/событие/
+расписание) плюс ОДНА точка исполнения. 0 новых пакетов: расширяются ast/parser/eval + 1 врезка в
+cmd/ladix. Новые узлы AST — TriggerDecl (declBase) + маркер-интерфейсы TriggerSpec (Metric/Event/
+Schedule) и ScheduleSpec (Every/At) + первичные ValueExpr/EventExpr (доступ событие.поле через
+FieldExpr). Два независимых шва парсера (D-TR-1): шов A — top-level диспетчер `когда` (минус KW_WHEN
+из isUnexpectedTopLevel, parseTriggerDecl); шов B — Primary `значение`/`событие`. Семпроход:
+регистрация триггеров, резолв метрики, флаги inMetricTrigger/inEventTrigger (зеркало inStep),
+контекст-гарды значение/событие; переиспользование гардов действий-шага §PM-6.B и checkRunProcess
+§PM-6.C. fire-if-true — экспортный метод интерпретатора (RunTriggers), врезка после interp.Run, до
+сводки задач: вычислить метрику → порог → сравнить → инжектировать read-only `значение` → исполнить
+тело штатным путём движка 006. База ЛОЖЬ эфемерно (trigger_state не читается/не пишется даже под
+--db). Событие/расписание — строка-заглушка (no-op). 7 новых диагностик (4 сем: TR-VAL-CTX/TR-EVT-CTX/
+TR-MET-UNDECL/TR-MET-NOTMETRIC; 3 синт: SE-TRIGGER-KIND/SE-EXPECT-COMPOP/SE-SCHEDULE-SPEC). Связывающий
+якорь — docs/trigger-model.md §TR-0…§TR-11 (D-TR-1, D-25…D-27 закрыты; нет/мес валидны без ошибки,
+формат "ЧЧ:ММ" и демон serve/события/edge+trigger_state/исполнение расписания — граница 007b). Движок
+процессов 006 — в specs/006-process-engine/plan.md; фронтенд процессов 005 — в
 specs/005-process-frontend/plan.md; декларативный слой 004 — в specs/004-source-metric/plan.md;
 интерпретатор 003 — в specs/003-interpreter-eval/plan.md; парсер+AST 002 — в
 specs/002-parser-ast/plan.md; лексер 001 — в specs/001-lexer-tokens/plan.md).
