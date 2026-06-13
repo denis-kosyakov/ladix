@@ -18,7 +18,24 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/lexer"
 	"github.com/denis-kosyakov/ladix/internal/parser"
 	"github.com/denis-kosyakov/ladix/internal/store"
+	"github.com/denis-kosyakov/ladix/internal/value"
 )
+
+// evalClockFromEngine адаптирует часы планировщика (engine.Clock, time.Time) к
+// дневным часам интерпретатора (eval.Clock, value.Дата): усекает момент до
+// календарной даты в локальной зоне — ровно как eval.SystemClock (clock.go).
+// Так двойные часы (FR-024) едины: и движок процессов (engine.WithClock), и
+// интерпретатор (NewInterpreter → пересчёт даты метрик в ResetRunState) читают
+// дату ОТ ОДНИХ И ТЕХ ЖЕ инъектированных часов планировщика, а не из независимого
+// eval.SystemClock. eval не импортирует engine (слой), потому адаптер живёт здесь,
+// где видны оба интерфейса. Значение-обёртка без состояния (Принцип V).
+type evalClockFromEngine struct{ c engine.Clock }
+
+// Now снимает момент планировщика и усекает до Y/M/D в Local.
+func (a evalClockFromEngine) Now() value.Дата {
+	t := a.c.Now().In(time.Local)
+	return value.Дата{Year: t.Year(), Month: int(t.Month()), Day: t.Day()}
+}
 
 // defaultInterval — период тика демона по умолчанию (--interval, FR-001).
 const defaultInterval = time.Minute
@@ -107,7 +124,8 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 // Открытие SQLite (под --db) вне guard: сбой — окружение, exit 2. Остальное — под guard:
 // сборка стека, Analyze (вкл. новую семош "ЧЧ:ММ" SE-TIME-FORMAT → exit 1, демон НЕ
 // стартует), Run (связать глобалы), рестарт-скан ДО тиков, затем блокирующий Run(ctx) с
-// грациозной остановкой по SIGINT/SIGTERM (выход 0). Двойные часы — прод-SystemClock.
+// грациозной остановкой по SIGINT/SIGTERM (выход 0). Часы планировщика — прод
+// engine.SystemClock (отсюда же дата метрик интерпретатора, FR-024, см. buildServeDaemon).
 func serveFile(path, dbPath string, interval time.Duration, maxDepth int, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -158,9 +176,15 @@ func serveFile(path, dbPath string, interval time.Duration, maxDepth int, stdout
 // семпрохода (вкл. SE-TIME-FORMAT) — диагностика уже напечатана в stderr. Зеркало
 // сборки стека runFile (§EN-6): SetProcessRuntime ДО Run, interp.Run связывает
 // глобалы (как run), затем демон владеет реестром триггеров и метриками. clock —
-// инъекция (прод SystemClock; тест — фиксированные часы).
+// инъекция часов планировщика (прод engine.SystemClock; тест — фиксированные):
+// одни и те же часы идут И в движок (WithClock), И в интерпретатор (через адаптер
+// evalClockFromEngine), И в демон — двойные часы едины (FR-024).
 func buildServeDaemon(prog *ast.Program, st store.Store, interval time.Duration, maxDepth int, clock engine.Clock, stdout, stderr io.Writer) (*daemon.Daemon, int) {
-	interp := eval.NewInterpreter(stdout, maxDepth, eval.SystemClock{})
+	// Интерпретатор читает дату метрик ОТ инъектированных часов планировщика
+	// (через адаптер engine.Clock→eval.Clock), а не из независимого eval.SystemClock:
+	// иначе ResetRunState на тике перевычислял бы дату от собственных часов
+	// интерпретатора, расходясь с движком и планировщиком (FR-024, двойные часы).
+	interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
 	eng := engine.NewEngine(st, interp, stdout, engine.WithClock(clock))
 	interp.SetProcessRuntime(eng)
 	if err := interp.Analyze(prog); err != nil {

@@ -87,6 +87,6 @@ var (
 	ErrTaskAlreadyCompleted = errors.New("task already completed")
 	// ErrTriggerStateNotFound — LoadTriggerState не нашёл строку (прайминг/первая
 	// регистрация, EM-17.2, 007b). Зеркало ErrInstanceNotFound/ErrTaskNotFound;
-	// развёртка через errors.Is. Русский текст — наружу не печатается.
-	ErrTriggerStateNotFound = errors.New("состояние триггера не найдено")
+	// развёртка через errors.Is.
+	ErrTriggerStateNotFound = errors.New("trigger state not found")
 )

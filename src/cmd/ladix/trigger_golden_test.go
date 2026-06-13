@@ -482,3 +482,26 @@ func TestRunTriggerFnCallWritesGlobal(t *testing.T) {
 		t.Errorf("stdout не содержит обновлённый глобал «счёт: 99» — функция из тела не записала глобал: %q", out.String())
 	}
 }
+
+// TestRunBadTimeFormat / SE-TIME-FORMAT (FR-014/SC-010/FR-026) — РУН-СТОРОННИЙ замок на
+// САНКЦИОНИРОВАННУЮ дельту 007b: расписание-триггер с невалидным «в "ЧЧ:ММ"» в `run`
+// теперь даёт семош «неверный формат времени…» + exit 1. В 007a та же строка была
+// stub-no-op с exit 0 (формат не анализировался, граница 007a). serve_golden_test уже
+// фиксирует это на serve-пути (TestServeBadTimeFormat); этот тест пинит run-путь, чтобы
+// будущее не откатило намеренную дельту молча (run и serve делят interp.Analyze).
+func TestRunBadTimeFormat(t *testing.T) {
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"run", filepath.Join("testdata", "bad_time.ladix")}, &out, &errBuf)
+	if code != 1 {
+		t.Fatalf("код = %d, хотим 1; stdout=%q stderr=%q", code, out.String(), errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "неверный формат времени") {
+		t.Errorf("stderr не содержит диагностику SE-TIME-FORMAT: %q", errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "Ошибка в строке") {
+		t.Errorf("ожидалась каноническая двухстрочная диагностика, stderr=%q", errBuf.String())
+	}
+	if strings.Contains(errBuf.String(), ".go:") || strings.Contains(errBuf.String(), "goroutine") {
+		t.Errorf("в stderr просочился Go stack trace: %q", errBuf.String())
+	}
+}

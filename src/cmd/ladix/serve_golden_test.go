@@ -199,6 +199,63 @@ func TestServeMetricPrimingNoFalsePositive(t *testing.T) {
 	}
 }
 
+// TestServeMetricDateFollowsSchedulerClock — двойные часы (FR-024): дата вычисления
+// метрик интерпретатора, перевычисляемая в ResetRunState на каждом тике, идёт ОТ
+// ЧАСОВ ПЛАНИРОВЩИКА (инъекция через buildServeDaemon → evalClockFromEngine), а НЕ
+// от собственного eval.SystemClock интерпретатора.
+//
+// Доказательство: метрика с ОКОННЫМ периодом (ежемесячно + по_дате) над записями,
+// датированными маем 2026. Часы планировщика = FixedClock 2026-05-31 → окно = май
+// 2026 → записи в окне → сумма=100 > 0 → метрика ИСТИНА → прайминг сохраняет
+// LastBool=true. Если бы дата бралась из системных часов интерпретатора (сегодня —
+// НЕ май 2026), майские записи выпали бы из окна → сумма=0 → метрика ЛОЖЬ →
+// LastBool=false. Так LastBool==true однозначно различает «дата от планировщика».
+func TestServeMetricDateFollowsSchedulerClock(t *testing.T) {
+	dir := t.TempDir()
+	srcJSON := filepath.Join(dir, "src.json")
+	// Записи датированы маем 2026 (в окне FixedClock 2026-05-31, вне любого иного месяца).
+	if err := os.WriteFile(srcJSON,
+		[]byte(`[{"дата_заказа":"2026-05-10","сумма_заказа":60},{"дата_заказа":"2026-05-20","сумма_заказа":40}]`),
+		0o644); err != nil {
+		t.Fatalf("запись источника: %v", err)
+	}
+	src := strings.ReplaceAll(readFixture(t, "metric_dated.ladix"), "__SOURCE__", srcJSON)
+
+	st := store.NewMemoryStore()
+	var out bytes.Buffer
+	prog := parseServeSrc(t, src)
+	d, code := buildServeDaemon(prog, st, 5*time.Millisecond, 0,
+		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, &out, &out)
+	if d == nil {
+		t.Fatalf("buildServeDaemon вернул nil, код=%d; out=%q", code, out.String())
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+
+	// Ждём прайминга (LastBool записан первым тиком).
+	waitUntil(t, func() bool {
+		ts, err := st.LoadTriggerState("trg-0")
+		return err == nil && ts.LastBool != nil
+	})
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Run вернул ошибку: %v", err)
+	}
+
+	ts, err := st.LoadTriggerState("trg-0")
+	if err != nil || ts.LastBool == nil {
+		t.Fatalf("trigger_state не записан: err=%v ts=%+v", err, ts)
+	}
+	if !*ts.LastBool {
+		t.Fatalf("LastBool=false: майские записи выпали из окна — дата метрик НЕ от " +
+			"часов планировщика (FR-024 нарушен: интерпретатор использует свои часы, не " +
+			"инъектированные)")
+	}
+}
+
 // --- Рестарт-скан через прод-путь сборки ---
 
 // TestServeRestartScanLiftsStuck — залипший инстанс «выполняется» с валидным шагом в
