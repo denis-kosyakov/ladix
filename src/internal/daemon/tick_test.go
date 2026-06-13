@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"testing"
+	"time"
 
 	"github.com/denis-kosyakov/ladix/internal/store"
 )
@@ -65,5 +66,46 @@ func TestTickPhaseOrder(t *testing.T) {
 	// evalMetrics отработала: метрика-триггер trg-0 праймлен.
 	if _, err := st.LoadTriggerState("trg-0"); err != nil {
 		t.Fatalf("evalMetrics не вызвана в фазе тика: trg-0 не праймлен (%v)", err)
+	}
+}
+
+// TestTickPhaseOrderAllThreeFire — строгий порядок исполнения тел при срабатывании
+// ВСЕХ трёх фаз в одном тике: drainEvents («E») → evalMetrics («M») → checkSchedules
+// («S»). Программа: событие-триггер, метрика-триггер, расписание-триггер. Прайм-тик
+// якорит метрику (база ложь) и расписание; срабатывающий тик: событие в очереди +
+// метрика ложь→истина + расписание просрочено → вывод строго «E\nM\nS\n» (FR-002).
+func TestTickPhaseOrderAllThreeFire(t *testing.T) {
+	path := fixturePath(t)
+	out := &countWriter{marker: "E"}
+	st := store.NewMemoryStore()
+
+	// trg-0 событие; trg-1 метрика (сумма(x) > 10); trg-2 расписание каждые 1дн.
+	src := "источник s:\n    файл: \"" + path + "\"\n" +
+		"метрика m:\n    источник: s\n    агрегат: сумма(x)\n" +
+		"когда событие тик:\n    печать(\"E\")\n" +
+		"когда метрика m > 10:\n    печать(\"M\")\n" +
+		"когда расписание каждые 1дн:\n    печать(\"S\")\n"
+	d, clk := buildDaemon(t, src, st, out)
+
+	start := time.Date(2026, 1, 10, 8, 0, 0, 0, time.UTC)
+	setClock(clk, start)
+
+	// Прайм-тик при метрике=ложь (сумма=1 ≤ 10): метрика праймлена false, расписание
+	// заякорено, без срабатываний.
+	writeFixture(t, path, `[{"x":1}]`)
+	d.tick()
+	if out.String() != "" {
+		t.Fatalf("прайм-тик: ожидали пусто, out=%q", out.String())
+	}
+
+	// Срабатывающий тик: событие в очереди + метрика ложь→истина (сумма=30>10) +
+	// расписание просрочено (через 25ч). Все три тела исполняются в порядке фаз.
+	enqueue(t, st, "тик", `{}`, time.Unix(100, 0))
+	writeFixture(t, path, `[{"x":30}]`)
+	setClock(clk, start.Add(25*time.Hour))
+	d.tick()
+
+	if got, want := out.String(), "E\nM\nS\n"; got != want {
+		t.Fatalf("порядок фаз drainEvents→evalMetrics→checkSchedules: out=%q, хотим %q", got, want)
 	}
 }
