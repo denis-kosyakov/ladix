@@ -320,19 +320,22 @@ func TestRunTriggerMixedKindsOrderGolden(t *testing.T) {
 	}
 }
 
-// COV-3 / FR-025 / §TR-5 — read-only видимость глобалов в теле триггера + эфемерность
-// локального «пусть» тела. Фиксируем два свойства одним прогоном:
+// COV-3 позитив / FR-025 / §TR-5 — ВИДИМОСТЬ (чтение) глобалов в теле триггера +
+// эфемерность локального «пусть» тела. НЕ проверяет запрет ЗАПИСИ в глобал — это
+// отдельный замок TestRunTriggerGlobalReadOnly (TR-BODY-RO). Фиксируем два свойства
+// одним прогоном:
 //
-//	(а) тело видит глобальный «пусть g = 7» (read-only) и «значение» (снимок метрики);
+//	(а) тело ЧИТАЕТ глобальный «пусть g = 7» и «значение» (снимок метрики) — Lookup
+//	    поднимается вверх сквозь boundary-env (барьер режет запись, не чтение);
 //	(б) локальный «пусть g = 999» в теле A ТЕНИТ глобал лишь локально и НЕ протекает
 //	    ни в глобал, ни в последующее тело B.
 //
 // Семантика подтверждена пробой: «пусть g» в теле триггера = env.Define в локальном
-// env тела (NewEnvironment(global)), а не Assign в глобал; vars/letLine тела засеяны
-// пусто (analyze.go checkTriggerBody), поэтому теневой «пусть g» при глобальном g НЕ
-// даёт SEM-REDECL-VAR. Базовый вариант ПРИМЕНИМ напрямую (шейдинг разрешён):
+// boundary-env тела (NewEnvironment(global)), а не Assign в глобал; vars/letLine тела
+// засеяны пусто (analyze.go checkTriggerBody), поэтому теневой «пусть g» при глобальном
+// g НЕ даёт SEM-REDECL-VAR. Базовый вариант ПРИМЕНИМ напрямую (шейдинг разрешён):
 // A печатает 999 (тень), B печатает 7 (глобал цел, тень A испарилась).
-func TestRunTriggerBodyScopeGolden(t *testing.T) {
+func TestRunTriggerBodyReadShadowGolden(t *testing.T) {
 	src := "" +
 		"пусть g = 7\n\n" +
 		"источник продажи_демо:\n" +
@@ -364,6 +367,36 @@ func TestRunTriggerBodyScopeGolden(t *testing.T) {
 	}
 	if out.String() != want {
 		t.Errorf("stdout областей видимости байт-не-точен:\n--- получено ---\n%s\n--- ожидание ---\n%s", out.String(), want)
+	}
+}
+
+// COV-3 настоящий замок / FR-025 / §TR-5 / TR-BODY-RO — read-only ЗАПИСИ в глобал из
+// тела триггера обеспечен env-барьером (environment.go boundary). Глобал «пусть g = 7»,
+// метрика-триггер с ИСТИННЫМ условием, тело — ГОЛОЕ присваивание «g = 5» (без «пусть»:
+// попытка мутации глобала, не объявление локали). Барьер обрывает Assign на boundary-env
+// тела (g не локаль тела), а eval различает: Lookup нашёл g вверху (глобал) → рантайм-
+// ошибка TR-BODY-RO, exit 1. Это и есть инфорсмент FR-025: БЕЗ барьера тест падает —
+// Assign поднялся бы к глобалу, тихо записал 5 и вернул exit 0 (полый прежний замок).
+func TestRunTriggerGlobalReadOnly(t *testing.T) {
+	src := "" +
+		"пусть g = 7\n\n" +
+		"источник продажи_демо:\n" +
+		"    файл: \"%DATA%\"\n\n" +
+		"метрика выручка_демо:\n" +
+		"    источник: продажи_демо\n" +
+		"    где:      статус == \"оплачен\"\n" +
+		"    агрегат:  сумма(сумма_заказа)\n\n" +
+		"когда метрика выручка_демо < 3_000_000:\n" +
+		"    g = 5\n"
+	prog := writeProgFixture(t, src)
+
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"run", prog}, &out, &errBuf)
+	if code != 1 {
+		t.Fatalf("код = %d, хотим 1; stdout=%q stderr=%q", code, out.String(), errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "глобальная переменная 'g' доступна в теле триггера только для чтения") {
+		t.Errorf("stderr не содержит TR-BODY-RO для записи в глобал 'g': %q", errBuf.String())
 	}
 }
 

@@ -73,7 +73,10 @@ func (i *Interpreter) runMetricTrigger(td *ast.TriggerDecl, spec *ast.MetricTrig
 		return nil // ложь → молчание (§TR-6.3): тело не исполнено, значение не инжектировано
 	}
 	// (4) истинно: read-only «значение» = снимок метрики (§TR-5) в локальном env тела.
+	// Env тела — граница записи: чтение глобалов/метрик поднимается вверх, но запись в
+	// глобал забарьерена (TR-BODY-RO, §TR-5/§TR-7.G); локальные «пусть» тела эфемерны.
 	env := NewEnvironment(i.global)
+	env.markBoundary()
 	env.Define(valueName, metricVal)
 	return i.evalBlockInTrigger(env, td.Body)
 }

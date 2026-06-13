@@ -25,6 +25,13 @@ func (i *Interpreter) evalStmt(env *Environment, s ast.Statement) (Signal, error
 			return Signal{}, err
 		}
 		if !env.Assign(st.Name.Name, v) {
+			// Boundary-env тела триггера (§TR-5): имя резолвится Lookup-ом вверх
+			// (глобал виден), но запись забарьерена → read-only глобала (TR-BODY-RO,
+			// §TR-7.G). Не резолвится нигде → прежняя «'x' не объявлено». Вне триггера
+			// boundary=false: Assign падает лишь когда Lookup тоже не находит → нижняя ветвь.
+			if _, ok := env.Lookup(st.Name.Name); ok {
+				return Signal{}, runtimeErr(st.Name.Pos(), fmt.Sprintf("глобальная переменная '%s' доступна в теле триггера только для чтения", st.Name.Name))
+			}
 			return Signal{}, runtimeErr(st.Name.Pos(), fmt.Sprintf("'%s' не объявлено", st.Name.Name))
 		}
 		return Signal{Kind: SigNormal}, nil
