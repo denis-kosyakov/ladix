@@ -60,7 +60,7 @@ RunTriggers(w):
               threshVal, err := i.evalExpr(i.global, spec.Threshold)
               if err != nil: return err
               // 3. применить CompOp существующим оператором сравнения 003 → Булево
-              fired, err := i.compare(ast.BinOp(spec.Op), metricVal, threshVal)
+              fired, err := i.compareValues(spec.Metric.Pos(), ast.BinOp(spec.Op), metricVal, threshVal)
               if err != nil: return err
               // 4. база ЛОЖЬ ⇒ «переход ложь→истина» ≡ «истинно сейчас»
               if fired:
