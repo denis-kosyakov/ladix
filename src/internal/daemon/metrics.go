@@ -41,6 +41,14 @@ func (d *Daemon) evalMetrics() {
 			// Нештатная невычислимость (цикл метрик/сбой загрузки): логируем и
 			// замораживаем — тик не падает (Принцип III, FR-009 трактовка).
 			d.logf("триггер '%s': метрика не вычислена: %s", id, err.Error())
+			// Этот continue — ЗАЩИТНАЯ ИЗБЫТОЧНОСТЬ: EvalMetricCondition возвращает
+			// computable=false на КАЖДОМ err-пути, поэтому соседний `if !computable`
+			// ниже перехватил бы заморозку и без него. Оставлен на случай будущего
+			// изменения контракта (если EvalMetricCondition станет возвращать err при
+			// computable=true — тогда continue здесь не даст пройти к persist/телу).
+			// Err-путь залочен TestEvalMetricsConditionErrorFreeze (лог «метрика не
+			// вычислена» + отсутствие персиста trigger_state); отдельного замка на сам
+			// continue нет — он структурно недостижим как ЕДИНСТВЕННЫЙ guard.
 			continue
 		}
 		if !computable {

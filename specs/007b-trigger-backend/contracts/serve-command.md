@@ -36,7 +36,7 @@ ladix serve <файл> [--db путь] [--interval D] [--max-depth N]
      ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
      defer stop()
      d.RunRestartScan()        // рестарт-скан ДО тиков (FR-019)
-     d.Run(ctx)                // блокирующий цикл тикера; выход по ctx.Done()
+     d.Run(ctx)                // НЕМЕДЛЕННЫЙ первый тик в t=0 (CONC-3), затем цикл тикера; выход по ctx.Done()
      return 0
    })
 ```

@@ -62,9 +62,23 @@ func (d *Daemon) logf(format string, args ...any) {
 // signal.NotifyContext) ловится в select МЕЖДУ тиками — полу-записанного состояния
 // нет, т.к. tick() синхронен под d.mu. Тикер-горутина не утекает: defer ticker.Stop()
 // + выход по ctx.Done() (SC-007). Возвращает nil при штатной остановке.
+//
+// Первый тик — НЕМЕДЛЕННЫЙ в t=0 (CONC-3): time.NewTicker не стреляет в t=0, поэтому
+// дрена событий из очереди, прайминг метрик-edge и якорение расписаний иначе запоздали
+// бы на полный --interval (при дефолте 1m — на минуту). Первый тик остаётся ПРАЙМИНГОМ
+// (метрика заводит базу, не фаерит — инвариант сохранён, просто наступает в t=0); далее
+// тики по тикеру. Отмена ctx ДО первого тика (грациозный shutdown до t=0) → тик не идёт.
 func (d *Daemon) Run(ctx context.Context) error {
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
+	// Немедленный первый тик (CONC-3): не ждём первого срабатывания тикера. select с
+	// default — неблокирующая проверка ctx: если уже отменён, не тикаем (грациозность).
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+		d.tick()
+	}
 	for {
 		select {
 		case <-ctx.Done():

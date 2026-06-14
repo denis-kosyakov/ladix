@@ -148,6 +148,10 @@ func (s *MemoryStore) NextEventID() (string, error) {
 func (s *MemoryStore) EnqueueEvent(e *Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Дубль ID недостижим по построению: ID выдаёт монотонный NextEventID (e-%06d), и
+	// другого источника ID у событий нет. Здесь Memory тихо append, тогда как SQLite на
+	// том же дубле упал бы на UNIQUE-constraint — расхождение осознанно НЕ выравнивается
+	// в v1 (недостижимый путь; выравнивание добавило бы проверку ради мёртвой ветки).
 	s.events = append(s.events, copyEvent(e))
 	return nil
 }
