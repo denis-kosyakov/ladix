@@ -590,6 +590,8 @@ func (i *Interpreter) checkCall(c *ast.CallExpr, vars map[string]bool, inMetricT
 		return nil
 	}
 	if b, ok := i.builtins[name]; ok {
+		// backstop: при пустом deferredNames недостижим; поле Deferred и механизм
+		// НЕ удаляются (008/§DB-6, D-DB-якорь).
 		if b.Deferred {
 			return semErr(c.Pos(), fmt.Sprintf("функция '%s' не поддерживается в этой версии", name))
 		}

@@ -7,8 +7,8 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
-// Закрытый реестр: РОВНО 28 активных + 7 deferred = 35 (D6; после активации
-// дата/сегодня в 004 — §SM-6 — и 3 процессных встроенных в 006 — §EN-0/D-15);
+// Закрытый реестр: РОВНО 35 активных, 0 deferred = 35 (D6/§DB-6; 008 активировал 7
+// дата/время-функций, ранее 004 — дата/сегодня §SM-6, 006 — 3 процессных §EN-0/D-15);
 // длина в счёте ×1.
 func TestBuiltinRegistryClosed(t *testing.T) {
 	m := registerBuiltins()
@@ -23,11 +23,11 @@ func TestBuiltinRegistryClosed(t *testing.T) {
 			active++
 		}
 	}
-	if active != 28 {
-		t.Errorf("активных = %d, хотим 28", active)
+	if active != 35 {
+		t.Errorf("активных = %d, хотим 35", active)
 	}
-	if deferred != 7 {
-		t.Errorf("deferred = %d, хотим 7", deferred)
+	if deferred != 0 {
+		t.Errorf("deferred = %d, хотим 0", deferred)
 	}
 }
 
@@ -143,22 +143,23 @@ func TestBuiltinKopiyaIndependent(t *testing.T) {
 	}
 }
 
-// Все 7 оставшихся deferred (дата/время) → SEM-DEFERRED-BUILTIN (отлично от «не
-// объявлена»); 3 процессных встроенных активированы в 006 (§EN-0/D-15).
-func TestBuiltinDeferredAll(t *testing.T) {
-	for _, name := range deferredNames {
-		t.Run(name, func(t *testing.T) {
-			_, err := run(t, "печать("+name+"())")
-			if err == nil {
-				t.Fatalf("deferred %s не дал ошибку", name)
-			}
-			_, _, msg := evalErr(t, err)
-			want := "функция '" + name + "' не поддерживается в этой версии"
-			if msg != want {
-				t.Errorf("msg = %q, хотим %q", msg, want)
-			}
-			if !isSem(err) {
-				t.Errorf("категория не СемантическаяОшибка")
+// 7 дата/время-функций активированы (008/§DB-6): минимальная sanity-проверка
+// вызываемости каждого имени без ошибки (детерминизм через FixedClock; матрица
+// значений/усечения/ошибок — в duration_builtins_test.go).
+func TestBuiltinDatetimeCallable(t *testing.T) {
+	srcs := []string{
+		"печать(вчера())",
+		"печать(завтра())",
+		`печать(длительность(5, "мин"))`,
+		`печать(в_секундах(длительность(1, "мин")))`,
+		`печать(в_минутах(длительность(60, "сек")))`,
+		`печать(в_часах(длительность(3600, "сек")))`,
+		`печать(в_днях(длительность(1, "нед")))`,
+	}
+	for _, src := range srcs {
+		t.Run(src, func(t *testing.T) {
+			if _, err := run(t, src); err != nil {
+				t.Fatalf("неожиданная ошибка: %v", err)
 			}
 		})
 	}
