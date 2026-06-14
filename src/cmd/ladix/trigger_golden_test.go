@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/denis-kosyakov/ladix/internal/store"
 )
 
 // Golden-тесты прохода fire-if-true в `run` (007a US2, §TR-6/§TR-8/§TR-9).
@@ -148,13 +151,22 @@ func TestRunTriggerDBRepeatEphemeral(t *testing.T) {
 		t.Errorf("прогон 2 (маска <ID>) не совпал:\n--- получено ---\n%s\n--- ожидание ---\n%s", got, want2)
 	}
 
-	// Канон §TR-6.2/§TR-8.3: durable trigger_state не создаётся даже под --db.
-	raw, rerr := os.ReadFile(db)
-	if rerr != nil {
-		t.Fatalf("чтение БД: %v", rerr)
+	// Канон §TR-6.2/§TR-8.3: durable-состояние триггера эфемерно под `run` —
+	// `run`/fire-if-true НЕ читает и НЕ пишет trigger_state (потому оба прогона
+	// снова срабатывают). Схема trigger_state/events существует с 007b (DDL
+	// безусловный), но `run` оставляет её ПУСТОЙ. Проверяем поведенческий
+	// инвариант: после двух прогонов в trigger_state нет строки триггера trg-0
+	// (LoadTriggerState → ErrTriggerStateNotFound), а очередь events пуста.
+	sq, oerr := store.NewSQLiteStore(db)
+	if oerr != nil {
+		t.Fatalf("открытие БД: %v", oerr)
 	}
-	if bytes.Contains(raw, []byte("trigger_state")) {
-		t.Errorf("в БД присутствует trigger_state — нарушен канон «база ЛОЖЬ эфемерно»")
+	defer sq.Close()
+	if _, lerr := sq.LoadTriggerState("trg-0"); !errors.Is(lerr, store.ErrTriggerStateNotFound) {
+		t.Errorf("trigger_state не пуст после run --db (err=%v) — нарушен канон «база ЛОЖЬ эфемерно»", lerr)
+	}
+	if evs, eerr := sq.ListUnprocessedEvents(); eerr != nil || len(evs) != 0 {
+		t.Errorf("events не пуст после run --db (events=%v, err=%v) — run не трогает очередь событий", evs, eerr)
 	}
 }
 
@@ -468,5 +480,28 @@ func TestRunTriggerFnCallWritesGlobal(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "счёт: 99") {
 		t.Errorf("stdout не содержит обновлённый глобал «счёт: 99» — функция из тела не записала глобал: %q", out.String())
+	}
+}
+
+// TestRunBadTimeFormat / SE-TIME-FORMAT (FR-014/SC-010/FR-026) — РУН-СТОРОННИЙ замок на
+// САНКЦИОНИРОВАННУЮ дельту 007b: расписание-триггер с невалидным «в "ЧЧ:ММ"» в `run`
+// теперь даёт семош «неверный формат времени…» + exit 1. В 007a та же строка была
+// stub-no-op с exit 0 (формат не анализировался, граница 007a). serve_golden_test уже
+// фиксирует это на serve-пути (TestServeBadTimeFormat); этот тест пинит run-путь, чтобы
+// будущее не откатило намеренную дельту молча (run и serve делят interp.Analyze).
+func TestRunBadTimeFormat(t *testing.T) {
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"run", filepath.Join("testdata", "bad_time.ladix")}, &out, &errBuf)
+	if code != 1 {
+		t.Fatalf("код = %d, хотим 1; stdout=%q stderr=%q", code, out.String(), errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "неверный формат времени") {
+		t.Errorf("stderr не содержит диагностику SE-TIME-FORMAT: %q", errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "Ошибка в строке") {
+		t.Errorf("ожидалась каноническая двухстрочная диагностика, stderr=%q", errBuf.String())
+	}
+	if strings.Contains(errBuf.String(), ".go:") || strings.Contains(errBuf.String(), "goroutine") {
+		t.Errorf("в stderr просочился Go stack trace: %q", errBuf.String())
 	}
 }

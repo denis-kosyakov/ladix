@@ -408,6 +408,30 @@ func typeErr(p ast.Position, msg string) error {
 	return errors.ОшибкаТипа{Pos: errors.Position{Line: p.Line, Col: p.Col}, Msg: msg}
 }
 
+// ErrInstanceDrift — рестарт-скан 007b обнаружил дрейф исходника: CurrentStep
+// залипшего инстанса (или сам процесс) отсутствует в перезагруженном определении
+// (решение #6, FR-020). Распознаётся демоном через errors.Is → лог расхождения, инстанс
+// оставляется залипшим (НЕ угадывать шаг, Принцип IX). Английский сентинел: наружу не
+// печатается, демон формирует русскую строку.
+var ErrInstanceDrift = stderrors.New("instance step drifted from definition")
+
+// ReactivateInstance возобновляет исполнение залипшего инстанса при подъёме демона
+// (рестарт-скан 007b, решение #6). Сверяет inst.CurrentStep с ПЕРЕЗАГРУЖЕННЫМ
+// ProcessDecl: процесс не найден ИЛИ шаг не найден → ErrInstanceDrift (демон логирует
+// расхождение, инстанс залипает — шаг НЕ угадывается, Принцип IX/D-4). Шаг найден →
+// прогон advance от CurrentStep (at-least-once: повтор шага безвреден по D-11/EM-12),
+// инстанс догоняется до ожидания/терминала штатным lifecycle §EN-3. Runtime-ошибка
+// продвижения (тело/атрибут) → инстанс «провален» (D-14), ошибка всплывает наверх.
+// Инкапсулирует решение «реактивировать или сигнализировать дрейф» в engine: демон
+// не лезет в шаги напрямую.
+func (e *Engine) ReactivateInstance(inst *store.ProcessInstance) error {
+	pd, ok := e.interp.Process(inst.ProcessName)
+	if !ok || !stepInDef(pd, inst.CurrentStep) {
+		return ErrInstanceDrift
+	}
+	return e.advance(inst)
+}
+
 // printTaskCreated печатает строку создания задачи (§EN-7, строки 3/4).
 func (e *Engine) printTaskCreated(t *store.Task) {
 	if t.Deadline != nil {

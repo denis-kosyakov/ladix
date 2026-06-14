@@ -19,18 +19,22 @@ import (
 // аналогично (Deadline/CompletedAt копируются как новые указатели). Load
 // возвращает копию: мутации снаружи не видны в Store до следующего Save.
 type MemoryStore struct {
-	mu        sync.Mutex
-	instances map[string]*ProcessInstance
-	tasks     map[string]*Task
-	instSeq   int64
-	taskSeq   int64
+	mu           sync.Mutex
+	instances    map[string]*ProcessInstance
+	tasks        map[string]*Task
+	triggerState map[string]*TriggerState // 007b: ключ TriggerID
+	events       []*Event                 // 007b: FIFO-срез (порядок = порядок Enqueue ≈ CreatedAt)
+	instSeq      int64
+	taskSeq      int64
+	eventSeq     int64 // 007b: счётчик e-NNNNNN
 }
 
 // NewMemoryStore создаёт пустой MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		instances: make(map[string]*ProcessInstance),
-		tasks:     make(map[string]*Task),
+		instances:    make(map[string]*ProcessInstance),
+		tasks:        make(map[string]*Task),
+		triggerState: make(map[string]*TriggerState),
 	}
 }
 
@@ -113,6 +117,111 @@ func (s *MemoryStore) NextTaskID() (string, error) {
 	defer s.mu.Unlock()
 	s.taskSeq++
 	return fmt.Sprintf("t-%06d", s.taskSeq), nil
+}
+
+// --- триггерные методы (007b, паритет; всё под mu, без алиасинга) ---
+
+func (s *MemoryStore) LoadTriggerState(triggerID string) (*TriggerState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ts, ok := s.triggerState[triggerID]
+	if !ok {
+		return nil, ErrTriggerStateNotFound
+	}
+	return copyTriggerState(ts), nil
+}
+
+func (s *MemoryStore) SaveTriggerState(ts *TriggerState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.triggerState[ts.TriggerID] = copyTriggerState(ts)
+	return nil
+}
+
+func (s *MemoryStore) NextEventID() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.eventSeq++
+	return fmt.Sprintf("e-%06d", s.eventSeq), nil
+}
+
+func (s *MemoryStore) EnqueueEvent(e *Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, copyEvent(e))
+	return nil
+}
+
+func (s *MemoryStore) ListUnprocessedEvents() ([]*Event, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Event
+	for _, e := range s.events {
+		if e.Processed {
+			continue
+		}
+		out = append(out, copyEvent(e))
+	}
+	// FIFO по CreatedAt, затем по ID для стабильности при равных штампах —
+	// паритет с SQLite (ORDER BY created_at, id; FR-016/SC-006).
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func (s *MemoryStore) MarkEventProcessed(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Идемпотентно: повтор по уже помеченному — no-op без ошибки (FR-017).
+	for _, e := range s.events {
+		if e.ID == id {
+			e.Processed = true
+		}
+	}
+	return nil
+}
+
+func (s *MemoryStore) ListInstancesByStatus(status string) ([]*ProcessInstance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*ProcessInstance
+	for _, inst := range s.instances {
+		if string(inst.Status) != status {
+			continue
+		}
+		out = append(out, copyInstance(inst))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// copyTriggerState — копия состояния триггера с новыми указателями (без алиасинга,
+// зеркало copyTask).
+func copyTriggerState(ts *TriggerState) *TriggerState {
+	cp := *ts
+	if ts.LastBool != nil {
+		b := *ts.LastBool
+		cp.LastBool = &b
+	}
+	if ts.LastFire != nil {
+		f := *ts.LastFire
+		cp.LastFire = &f
+	}
+	if ts.LastFiredDate != nil {
+		d := *ts.LastFiredDate
+		cp.LastFiredDate = &d
+	}
+	return &cp
+}
+
+// copyEvent — копия события (значимые поля; алиасинга указателей нет).
+func copyEvent(e *Event) *Event {
+	cp := *e
+	return &cp
 }
 
 // copyInstance возвращает глубокую копию инстанса: новая структура + новая карта
