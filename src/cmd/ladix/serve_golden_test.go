@@ -366,3 +366,62 @@ func waitGoroutines(t *testing.T, before int) {
 	}
 	t.Fatalf("горутины не вернулись к базовому уровню: before=%d after=%d", before, runtime.NumGoroutine())
 }
+
+// TestServeBrokenDBExit2 — `serve --db <битый-путь>`: открытие SQLite вне guard →
+// ошибка использования CLI, exit 2 (демон не стартует, открытие синхронно).
+func TestServeBrokenDBExit2(t *testing.T) {
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"serve", "--db", "нет/такого/каталога.db",
+		filepath.Join("testdata", "schedule.ladix")}, &out, &errBuf)
+	if code != 2 {
+		t.Fatalf("код = %d, хотим 2; stderr=%q", code, errBuf.String())
+	}
+	if !strings.HasPrefix(errBuf.String(), "ladix: не удалось открыть хранилище 'нет/такого/каталога.db': ") {
+		t.Errorf("stderr=%q", errBuf.String())
+	}
+}
+
+// TestServeInlineBrokenDBExit2 — то же через inline-форму `--db=<битый-путь>`
+// (ветка strings.HasPrefix(a, "--db=")): exit 2, тот же префикс.
+func TestServeInlineBrokenDBExit2(t *testing.T) {
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"serve", "--db=нет/такого/каталога.db",
+		filepath.Join("testdata", "schedule.ladix")}, &out, &errBuf)
+	if code != 2 {
+		t.Fatalf("код = %d, хотим 2; stderr=%q", code, errBuf.String())
+	}
+	if !strings.HasPrefix(errBuf.String(), "ladix: не удалось открыть хранилище 'нет/такого/каталога.db': ") {
+		t.Errorf("stderr=%q", errBuf.String())
+	}
+}
+
+// TestServeInlineBadIntervalExit2 — inline-форма `--interval=<мусор>` (ветка
+// strings.HasPrefix(a, "--interval=")): неверное значение → exit 2.
+func TestServeInlineBadIntervalExit2(t *testing.T) {
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"serve", "--interval=тик",
+		filepath.Join("testdata", "schedule.ladix")}, &out, &errBuf)
+	if code != 2 {
+		t.Fatalf("код = %d, хотим 2; stderr=%q", code, errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "--interval") {
+		t.Errorf("stderr=%q", errBuf.String())
+	}
+}
+
+// TestServeTopLevelParseErrorExit1 — top-level лекс/синт ошибка в файле (ветка
+// serve.go: !errList.Empty()) → exit 1, канонический двухстрочный Error() (§13),
+// без утечки Go-стека в stderr. Дополняет TestServeBadTimeFormat (семантическая ветка).
+func TestServeTopLevelParseErrorExit1(t *testing.T) {
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"serve", filepath.Join("testdata", "сломанный.ladix")}, &out, &errBuf)
+	if code != 1 {
+		t.Fatalf("код = %d, хотим 1; stderr=%q", code, errBuf.String())
+	}
+	if !strings.HasPrefix(errBuf.String(), "Ошибка в строке ") {
+		t.Errorf("stderr=%q, хотим канон §13", errBuf.String())
+	}
+	if strings.Contains(errBuf.String(), ".go:") || strings.Contains(errBuf.String(), "goroutine") {
+		t.Errorf("в stderr просочился Go stack trace: %q", errBuf.String())
+	}
+}

@@ -50,7 +50,9 @@ ladix emit <событие> [json] [--db путь]
 
 - `emit заявка_создана '{"клиент":"ООО"}'` → exit 0, в `events` одна необработанная строка с этим
   payload (проверка через Store).
-- два `emit` подряд → две строки, FIFO-порядок по `CreatedAt` (читается `ListUnprocessedEvents`).
+- два `emit` подряд → две строки, FIFO-порядок по `CreatedAt`, затем по `id ASC` (монотонный
+  `e-%06d`) для детерминизма при равных штампах (читается `ListUnprocessedEvents`; паритет SQLite
+  `ORDER BY created_at ASC, id ASC` / Memory `SliceStable` по CreatedAt, затем ID).
 - `emit` без имени → exit 2.
 - интеграция с `serve` (golden): эмитировать → поднять демон → `drainEvents` привязывает
   `событие.клиент="ООО"`, исполняет тело, помечает processed (US4).

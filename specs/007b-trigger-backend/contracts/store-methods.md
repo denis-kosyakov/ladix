@@ -29,7 +29,7 @@ Compile-time проверки `_ Store = (*MemoryStore)(nil)` / `(*SQLiteStore)(
 ## Сентинел
 
 ```go
-var ErrTriggerStateNotFound = stderrors.New("состояние триггера не найдено") // EM-17.2; errors.Is
+var ErrTriggerStateNotFound = errors.New("trigger state not found") // EM-17.2; errors.Is
 ```
 
 ## Семантика каждого метода (контракт паритета)

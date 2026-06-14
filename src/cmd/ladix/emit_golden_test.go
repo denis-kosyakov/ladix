@@ -100,3 +100,21 @@ func TestEmitUnknownFlag(t *testing.T) {
 		t.Fatalf("код = %d, хотим 2", code)
 	}
 }
+
+// TestEmitConfirmationStdoutGolden — единственная строка подтверждения emit в stdout
+// (emit.go): exact-match golden. Свежая БД → монотонный e-000001; строка не зависит
+// от часов, поэтому детерминирована. exit 0, пустой stderr.
+func TestEmitConfirmationStdoutGolden(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "emit.db")
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"emit", "заявка_создана", "--db", db}, &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+	}
+	if out.String() != "событие e-000001 'заявка_создана' поставлено в очередь\n" {
+		t.Errorf("stdout = %q", out.String())
+	}
+	if errBuf.Len() != 0 {
+		t.Errorf("непустой stderr: %q", errBuf.String())
+	}
+}

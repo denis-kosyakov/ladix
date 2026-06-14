@@ -169,3 +169,108 @@ func TestEvalMetricsAtMostOncePanicAfterPersist(t *testing.T) {
 	// нет (сбойный триггер не зацикливается, FR-008).
 	d.tick() // не должно паниковать/ре-файрить
 }
+
+// failSaveTriggerStateStore оборачивает Store и проваливает SaveTriggerState РОВНО
+// при записи базовой линии «истина» (LastBool==true) — моделирует сбой коммита
+// trigger_state на fired-кромке. Прайминг и ре-арм лжи (LastBool==false) проходят
+// штатно, делегируясь обёрнутому Store. Зеркало идиомы failOnceMarkStore/markErr.
+type failSaveTriggerStateStore struct {
+	store.Store
+}
+
+func (s *failSaveTriggerStateStore) SaveTriggerState(ts *store.TriggerState) error {
+	if ts != nil && ts.LastBool != nil && *ts.LastBool {
+		return errSaveFailed
+	}
+	return s.Store.SaveTriggerState(ts)
+}
+
+var errSaveFailed = &saveErr{}
+
+type saveErr struct{}
+
+func (*saveErr) Error() string { return "имитация сбоя записи состояния" }
+
+// TestEvalMetricsSaveFailureSuppressesBody — at-most-once (FR-008): persist базовой
+// линии идёт ДО тела; если SaveTriggerState на fired-кромке проваливается → continue,
+// тело НЕ исполняется (лучше не сработать, чем сработать без записи и ре-файрить).
+// Замок ветки «continue после saveErr» (metrics.go §re-arm).
+func TestEvalMetricsSaveFailureSuppressesBody(t *testing.T) {
+	path := fixturePath(t)
+	out := &countWriter{marker: "FIRE"}
+	st := &failSaveTriggerStateStore{Store: store.NewMemoryStore()}
+	d, _ := buildDaemon(t, metricSrc(path, "FIRE", 10), st, out)
+
+	// Прайминг при лжи (сумма=1 > 10 == ложь): Save(LastBool=false) проходит.
+	writeFixture(t, path, `[{"x":1}]`)
+	d.tick()
+	if got := out.count(); got != 0 {
+		t.Fatalf("прайминг: срабатываний = %d, хотим 0", got)
+	}
+
+	// Фронт ложь→истина (сумма=30 > 10 == истина): re-arm Save(LastBool=true)
+	// проваливается → тело подавлено, лог сбоя.
+	writeFixture(t, path, `[{"x":30}]`)
+	d.tick()
+	if got := out.count(); got != 0 {
+		t.Fatalf("сбой Save на fired-кромке: срабатываний = %d, хотим 0 (тело подавлено, FR-008)", got)
+	}
+	if !out.contains("сбой записи trigger_state") {
+		t.Fatalf("ожидали лог сбоя записи trigger_state, out=%q", out.String())
+	}
+}
+
+// TestEvalMetricsConditionErrorFreeze — ветка err!=nil EvalMetricCondition («метрика
+// не вычислена»): сбой загрузки источника (файл-фикстура не создана) → лог + continue,
+// заморозка тика (Принцип III, FR-009). Ничего не персистится, тело не исполняется.
+func TestEvalMetricsConditionErrorFreeze(t *testing.T) {
+	path := fixturePath(t)
+	out := &countWriter{marker: "FIRE"}
+	st := store.NewMemoryStore()
+	// Файл-фикстуру НЕ пишем: loadSource → «файл не найден» → EvalMetricCondition err.
+	d, _ := buildDaemon(t, metricSrc(path, "FIRE", 10), st, out)
+
+	d.tick()
+
+	if got := out.count(); got != 0 {
+		t.Fatalf("ошибка метрики: срабатываний = %d, хотим 0", got)
+	}
+	if !out.contains("метрика не вычислена") {
+		t.Fatalf("ожидали лог «метрика не вычислена», out=%q", out.String())
+	}
+	// Ветка err идёт ДО Load/Save: ничего не персистнуто.
+	if _, err := st.LoadTriggerState("trg-0"); !stderrors.Is(err, store.ErrTriggerStateNotFound) {
+		t.Fatalf("после ошибки метрики trigger_state не должен существовать, err=%v", err)
+	}
+}
+
+// TestEvalMetricsReArmFiresTwice — ре-арм базовой линии: истина→ложь возвращает
+// LastBool=false, повторный фронт ложь→истина срабатывает ВТОРОЙ раз (FR-006).
+// Слепая зона 5 существующих кейсов, останавливающихся на первом фаере.
+func TestEvalMetricsReArmFiresTwice(t *testing.T) {
+	path := fixturePath(t)
+	out := &countWriter{marker: "FIRE"}
+	d, _ := buildDaemon(t, metricSrc(path, "FIRE", 10), store.NewMemoryStore(), out)
+
+	// Прайминг при лжи.
+	writeFixture(t, path, `[{"x":1}]`)
+	d.tick()
+	// Фронт ложь→истина: первое срабатывание.
+	writeFixture(t, path, `[{"x":30}]`)
+	d.tick()
+	if got := out.count(); got != 1 {
+		t.Fatalf("первый фронт: срабатываний = %d, хотим 1", got)
+	}
+	// Истина→ложь: ре-арм базовой линии (LastBool=false), без срабатывания.
+	writeFixture(t, path, `[{"x":1}]`)
+	d.tick()
+	if got := out.count(); got != 1 {
+		t.Fatalf("истина→ложь: срабатываний = %d, хотим 1 (ре-арм без фаера)", got)
+	}
+	// Повторный фронт ложь→истина: ВТОРОЕ срабатывание.
+	writeFixture(t, path, `[{"x":30}]`)
+	d.tick()
+	if got := out.count(); got != 2 {
+		t.Fatalf("повторный фронт после ре-арма: срабатываний = %d, хотим 2", got)
+	}
+}

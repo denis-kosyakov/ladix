@@ -2,6 +2,7 @@ package eval
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
 	"github.com/denis-kosyakov/ladix/internal/value"
@@ -251,11 +252,24 @@ func (i *Interpreter) checkTrigger(td *ast.TriggerDecl) error {
 	case *ast.ScheduleTrigger:
 		// SE-TIME-FORMAT (007b, R-8/FR-014): формат строки «в "ЧЧ:ММ"» — это точка,
 		// где 007a отложил проверку содержимого строки (→ 007b). Аддитивно: синтаксис/
-		// AST/реестр диагностик 007a не меняются (§TR-11). Подформа «каждые» формат не
-		// несёт. Проверка ДО обхода тела (fail-fast, зеркало резолва метрики выше).
+		// AST/реестр диагностик 007a не меняются (§TR-11). Проверки ДО обхода тела
+		// (fail-fast, зеркало резолва метрики выше).
 		if at, ok := spec.Spec.(*ast.AtSchedule); ok {
 			if err := checkTimeFormat(at.At); err != nil {
 				return err
+			}
+		}
+		// SCHED-1: интервал «каждые <amount><ед>» должен быть строго положительным —
+		// иначе next==LastFire (или next в прошлом) → busy-fire на каждом тике (для тела
+		// «запустить процесс» = лавина инстансов; см. shiftEvery/checkEvery демона).
+		// Единиценезависимо: плейсхолдер — Amount+Unit (как scheduleName, trigger_run.go),
+		// работает одинаково для сек/мин/час/дн и календарных нед/мес. Amount —
+		// нормализованная лексемой строка цифр без знака, так что n<=0 ⟺ ноль во всех
+		// формах («0»/«00»). Переполнение int64/time.Duration огромным, но положительным
+		// amount — осознанный край v1 (data-model.md §SCHED-2), здесь не ловится.
+		if ev, ok := spec.Spec.(*ast.EverySchedule); ok {
+			if n, err := strconv.ParseInt(ev.Every.Amount, 10, 64); err == nil && n <= 0 {
+				return semErr(ev.Every.Pos(), fmt.Sprintf("интервал расписания должен быть положительным: 'каждые %s'", ev.Every.Amount+ev.Every.Unit))
 			}
 		}
 		return i.checkTriggerBody(td.Body, false, false)

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/denis-kosyakov/ladix/internal/store"
+	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
 // enqueue кладёт событие в очередь Store с заданным именем/payload/штампом FIFO.
@@ -164,5 +165,47 @@ func TestDrainEventsEmptyPayloadTolerant(t *testing.T) {
 	rest, _ := st.ListUnprocessedEvents()
 	if len(rest) != 0 {
 		t.Fatalf("после drain необработанных = %d, хотим 0", len(rest))
+	}
+}
+
+// TestPayloadToRecordValueTypes — декод JSON-payload в value-типы (§9.3): различение
+// Целое/Дробное по форме токена, деградация int64-overflow → Дробное (numberToValue),
+// построение Списка из JSON-массива (decodeArray), доступ к полю/None у открытой Записи.
+func TestPayloadToRecordValueTypes(t *testing.T) {
+	rec, err := payloadToRecord(`{"n":3,"f":1.5,"xs":[1,2],"big":99999999999999999999}`)
+	if err != nil {
+		t.Fatalf("payloadToRecord: %v", err)
+	}
+
+	// Целое: число без '.'/'e' в пределах int64 → value.Целое.
+	if got, ok := rec.Get("n").(value.Целое); !ok || got.V != 3 {
+		t.Errorf("поле n = %#v, хотим value.Целое{V:3}", rec.Get("n"))
+	}
+	// Дробное: число с '.' → value.Дробное (различение по форме токена, не по величине).
+	if got, ok := rec.Get("f").(value.Дробное); !ok || got.V != 1.5 {
+		t.Errorf("поле f = %#v, хотим value.Дробное{V:1.5}", rec.Get("f"))
+	}
+	// int64-overflow деградирует в Дробное (payload толерантен: приближение > сбой доставки).
+	if _, ok := rec.Get("big").(value.Дробное); !ok {
+		t.Errorf("поле big (вне int64) = %#v, хотим value.Дробное (деградация)", rec.Get("big"))
+	}
+	// Список: JSON-массив → value.Список с поэлементным декодом.
+	xs, ok := rec.Get("xs").(value.Список)
+	if !ok {
+		t.Fatalf("поле xs = %#v, хотим value.Список", rec.Get("xs"))
+	}
+	elems := *xs.Elems
+	if len(elems) != 2 {
+		t.Fatalf("список xs: длина = %d, хотим 2", len(elems))
+	}
+	if e0, ok := elems[0].(value.Целое); !ok || e0.V != 1 {
+		t.Errorf("xs[0] = %#v, хотим value.Целое{V:1}", elems[0])
+	}
+	if e1, ok := elems[1].(value.Целое); !ok || e1.V != 2 {
+		t.Errorf("xs[1] = %#v, хотим value.Целое{V:2}", elems[1])
+	}
+	// Открытая Запись: отсутствующее поле → None (value.Пусто), без ошибки.
+	if _, ok := rec.Get("нет_такого").(value.Пусто); !ok {
+		t.Errorf("отсутствующее поле = %#v, хотим value.Пусто (None)", rec.Get("нет_такого"))
 	}
 }

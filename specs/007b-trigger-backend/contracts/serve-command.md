@@ -23,8 +23,12 @@ ladix serve <файл> [--db путь] [--interval D] [--max-depth N]
    Невалидный --interval/--max-depth/нет файла → stderr + exit 2.
 2. Прочитать+лексировать+распарсить файл → prog (зеркало run). Ошибка → двухстрочный Error(), exit 1.
 3. guard(stderr, func() int {                       // recover-барьер CLI (Принцип III)
-     interp := eval.NewInterpreter(stdout, maxDepth, eval.SystemClock{})
-     eng := engine.NewEngine(st, interp, stdout); interp.SetProcessRuntime(eng)
+     // ОДНИ часы планировщика schedClock (engine.SystemClock{} в проде) → И в eval (через
+     // адаптер engine.Clock→eval.Clock), И в движок (WithClock), И в демон: двойные часы
+     // едины (FR-024). Независимый eval.SystemClock сломал бы это — ResetRunState на тике
+     // считал бы дату метрик от собственных часов, расходясь с движком/планировщиком.
+     interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{schedClock})
+     eng := engine.NewEngine(st, interp, stdout, engine.WithClock(schedClock)); interp.SetProcessRuntime(eng)
      if err := interp.Analyze(prog); err != nil { ... exit 1 }   // СЕМПРОХОД: вкл. новую семош "ЧЧ:ММ" (FR-014)
        // невалидный формат "ЧЧ:ММ" → СемантическаяОшибка здесь, exit 1, демон НЕ стартует
      if err := interp.Run(prog); err != nil { ... exit 1 }        // связать глобалы (как run)
