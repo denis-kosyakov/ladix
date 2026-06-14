@@ -573,7 +573,8 @@ func (i *Interpreter) checkExpr(e ast.Expression, vars map[string]bool, inMetric
 
 // checkCall резолвит вызов на семпроходе (§9): имя-переменная области → рантайм;
 // пользовательская/активная встроенная фикс. арности → проверка числа аргументов;
-// deferred-встроенная → SEM-DEFERRED-BUILTIN; иначе → SEM-FN-UNDECLARED.
+// deferred-встроенная → SEM-DEFERRED-BUILTIN (инертный backstop, активных deferred
+// нет с 008/§DB-6); иначе → SEM-FN-UNDECLARED.
 func (i *Interpreter) checkCall(c *ast.CallExpr, vars map[string]bool, inMetricTrigger bool, inEventTrigger bool) error {
 	id, ok := c.Callee.(*ast.Ident)
 	if !ok {
