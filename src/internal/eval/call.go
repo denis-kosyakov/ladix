@@ -32,6 +32,8 @@ func (i *Interpreter) evalCall(env *Environment, c *ast.CallExpr) (value.Value, 
 	}
 	// 3. встроенная
 	if b, ok := i.builtins[name]; ok {
+		// backstop: при пустом deferredNames недостижим; поле Deferred и механизм
+		// НЕ удаляются (008/§DB-6, D-DB-якорь).
 		if b.Deferred {
 			return nil, semErr(c.Pos(), fmt.Sprintf("функция '%s' не поддерживается в этой версии", name))
 		}

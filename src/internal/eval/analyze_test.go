@@ -64,12 +64,6 @@ func TestAnalyzeSemanticErrors(t *testing.T) {
 			"функция 'нету' не объявлена",
 			true,
 		},
-		{
-			"deferred-встроенная",
-			"печать(вчера())",
-			"функция 'вчера' не поддерживается в этой версии",
-			true,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
