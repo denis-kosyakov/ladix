@@ -152,6 +152,140 @@ func TestCheckSchedulesEveryMonthEndClamp(t *testing.T) {
 	}
 }
 
+// TestCheckSchedulesEveryWeekCrossesMonthAndYear — `каждые N нед` функционально (через
+// d.tick()) переносит срабатывание через границу МЕСЯЦА и ГОДА: якорь → рано → факт.
+func TestCheckSchedulesEveryWeekCrossesMonthAndYear(t *testing.T) {
+	t.Run("граница месяца (29янв→5фев)", func(t *testing.T) {
+		out := &countWriter{marker: "WMB"}
+		st := store.NewMemoryStore()
+		d, clk := buildDaemon(t, scheduleSrc("WMB", "каждые 1нед"), st, out)
+		start := time.Date(2026, 1, 29, 9, 0, 0, 0, time.UTC)
+		setClock(clk, start)
+		d.tick() // якорь LastFire=29 янв
+		// 4 фев (6 дней) — рано (через янв→фев).
+		setClock(clk, time.Date(2026, 2, 4, 9, 0, 0, 0, time.UTC))
+		d.tick()
+		if got := out.count(); got != 0 {
+			t.Fatalf("6 дней < недели (через границу месяца): %d, хотим 0", got)
+		}
+		// 5 фев (7 дней) — срабатывание, граница месяца пройдена.
+		setClock(clk, time.Date(2026, 2, 5, 9, 0, 0, 0, time.UTC))
+		d.tick()
+		if got := out.count(); got != 1 {
+			t.Fatalf("7 дней через границу месяца: %d, хотим 1", got)
+		}
+	})
+	t.Run("граница года (каждые 2нед, 18дек→1янв)", func(t *testing.T) {
+		out := &countWriter{marker: "WYB"}
+		st := store.NewMemoryStore()
+		d, clk := buildDaemon(t, scheduleSrc("WYB", "каждые 2нед"), st, out)
+		start := time.Date(2025, 12, 18, 9, 0, 0, 0, time.UTC)
+		setClock(clk, start)
+		d.tick() // якорь LastFire=18 дек 2025
+		// +13 дней (31 дек) — рано (2 нед = 14 дней).
+		setClock(clk, start.AddDate(0, 0, 13))
+		d.tick()
+		if got := out.count(); got != 0 {
+			t.Fatalf("13 дней < 2 недель (через дек→янв): %d, хотим 0", got)
+		}
+		// +14 дней (1 янв 2026) — срабатывание, граница года пройдена.
+		setClock(clk, start.AddDate(0, 0, 14))
+		d.tick()
+		if got := out.count(); got != 1 {
+			t.Fatalf("14 дней через границу года: %d, хотим 1", got)
+		}
+	})
+}
+
+// TestCheckSchedulesEveryMonthCrossesYearAndShortMonth — `каждые 1мес` функционально
+// через границу ГОДА (15дек→15янв) и от 31-го на короткий февраль (зажим: 31дек→31янв→28фев).
+func TestCheckSchedulesEveryMonthCrossesYearAndShortMonth(t *testing.T) {
+	t.Run("граница года (15дек→15янв)", func(t *testing.T) {
+		out := &countWriter{marker: "MYB"}
+		st := store.NewMemoryStore()
+		d, clk := buildDaemon(t, scheduleSrc("MYB", "каждые 1мес"), st, out)
+		start := time.Date(2025, 12, 15, 9, 0, 0, 0, time.UTC)
+		setClock(clk, start)
+		d.tick() // якорь LastFire=15 дек 2025
+		// 14 янв — рано (цель 15 янв 2026).
+		setClock(clk, time.Date(2026, 1, 14, 9, 0, 0, 0, time.UTC))
+		d.tick()
+		if got := out.count(); got != 0 {
+			t.Fatalf("14 янв < 15 янв (через границу года): %d, хотим 0", got)
+		}
+		// 15 янв — срабатывание.
+		setClock(clk, time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC))
+		d.tick()
+		if got := out.count(); got != 1 {
+			t.Fatalf("15 янв через границу года: %d, хотим 1", got)
+		}
+	})
+	t.Run("31-е → короткий февраль через год (зажим)", func(t *testing.T) {
+		out := &countWriter{marker: "MSM"}
+		st := store.NewMemoryStore()
+		d, clk := buildDaemon(t, scheduleSrc("MSM", "каждые 1мес"), st, out)
+		// Старт 31 дек 2025: +1 мес → 31 янв (у января 31 день, без зажима).
+		start := time.Date(2025, 12, 31, 9, 0, 0, 0, time.UTC)
+		setClock(clk, start)
+		d.tick() // якорь LastFire=31 дек
+		// 31 янв — наступила цель «31дек+1мес» → срабатывание #1, LastFire:=31 янв.
+		setClock(clk, time.Date(2026, 1, 31, 9, 0, 0, 0, time.UTC))
+		d.tick()
+		if got := out.count(); got != 1 {
+			t.Fatalf("31 янв (31дек+1мес): %d, хотим 1", got)
+		}
+		// 27 фев — рано (next = зажим 31янв+1мес → 28 фев 2026, невисокосный).
+		setClock(clk, time.Date(2026, 2, 27, 9, 0, 0, 0, time.UTC))
+		d.tick()
+		if got := out.count(); got != 1 {
+			t.Fatalf("27 фев < зажатого 28 фев: всего %d, хотим 1", got)
+		}
+		// 28 фев — зажатый конец короткого месяца → срабатывание #2.
+		setClock(clk, time.Date(2026, 2, 28, 9, 0, 0, 0, time.UTC))
+		d.tick()
+		if got := out.count(); got != 2 {
+			t.Fatalf("28 фев (зажим 31янв+1мес): всего %d, хотим 2", got)
+		}
+	})
+}
+
+// TestCheckSchedulesEveryCatchUpOneFirePerTick — catch-up: если демон «проспал» N
+// периодов (now далеко за next), один тик даёт РОВНО ОДНО срабатывание, не N. checkEvery
+// сдвигает якорь на ФАКТ=now (долг/дрейф не копятся, FR-011/012) и фаерит максимум раз
+// за тик. Здесь «каждые 1дн», просыпаемся через 5 суток → 1 срабатывание, не 5.
+func TestCheckSchedulesEveryCatchUpOneFirePerTick(t *testing.T) {
+	out := &countWriter{marker: "CU"}
+	st := store.NewMemoryStore()
+	d, clk := buildDaemon(t, scheduleSrc("CU", "каждые 1дн"), st, out)
+	start := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
+	setClock(clk, start)
+	d.tick() // якорь LastFire=1 мар
+
+	// «Проспали» 5 суток: один тик далеко в будущем → РОВНО 1 срабатывание (не 5).
+	caught := start.Add(5 * 24 * time.Hour)
+	setClock(clk, caught)
+	d.tick()
+	if got := out.count(); got != 1 {
+		t.Fatalf("catch-up: проспали 5 периодов → %d срабатываний, хотим 1 (долг не копится)", got)
+	}
+	// Якорь сдвинут на ФАКТ=now (не +1дн от старта): дрейф не накоплен.
+	ts, _ := st.LoadTriggerState("trg-0")
+	if ts.LastFire == nil || !ts.LastFire.Equal(caught) {
+		t.Fatalf("catch-up якорь LastFire=%v, хотим %v (факт, не накопленный долг)", ts.LastFire, caught)
+	}
+	// Тот же момент ещё раз — без новых срабатываний (next = факт+1дн ещё не наступил).
+	d.tick()
+	if got := out.count(); got != 1 {
+		t.Fatalf("повторный тик в тот же момент: всего %d, хотим 1", got)
+	}
+	// Через сутки после факта → следующее срабатывание (расписание идёт от факта).
+	setClock(clk, caught.Add(24*time.Hour))
+	d.tick()
+	if got := out.count(); got != 2 {
+		t.Fatalf("через сутки после catch-up: всего %d, хотим 2", got)
+	}
+}
+
 // TestCheckSchedulesAtOncePerDay — `в "09:00"`: несколько тиков в один день → РОВНО
 // 1 срабатывание; тик на следующий день → снова срабатывание (FR-013, SC-005).
 func TestCheckSchedulesAtOncePerDay(t *testing.T) {

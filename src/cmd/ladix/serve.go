@@ -162,6 +162,10 @@ func serveFile(path, dbPath string, interval time.Duration, maxDepth int, stdout
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		d.RunRestartScan() // рестарт-скан ДО тиков (FR-019)
+		// Защитный no-op: Run в текущей реализации возвращает только nil (тик глотает
+		// Store-сбои в лог намеренно — serve долгоживущий, §EN-8 не нарушен). Ветка
+		// `return 1` недостижима сегодня, но оставлена на случай, если Run станет
+		// возвращать ошибку подъёма (тогда — двухстрочный вывод + exit 1, как у run).
 		if rerr := d.Run(ctx); rerr != nil {
 			fmt.Fprintln(stderr, rerr.Error())
 			return 1

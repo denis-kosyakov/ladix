@@ -59,8 +59,11 @@ func TestServeFlagBadInterval(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("код = %d, хотим 2; stderr=%q", code, errBuf.String())
 	}
-	if !strings.Contains(errBuf.String(), "--interval") {
-		t.Fatalf("ожидалось сообщение про --interval, stderr=%q", errBuf.String())
+	// Exact-match канона: для формы `--interval <мусор>` достижимо РОВНО одно сообщение
+	// (значение присутствует, парс не прошёл) — не «требует значение». Мутация текста в
+	// serve.go роняет тест.
+	if got, want := errBuf.String(), "ladix: неверное значение --interval\n"; got != want {
+		t.Fatalf("stderr=%q, хотим %q", got, want)
 	}
 }
 
@@ -404,8 +407,10 @@ func TestServeInlineBadIntervalExit2(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("код = %d, хотим 2; stderr=%q", code, errBuf.String())
 	}
-	if !strings.Contains(errBuf.String(), "--interval") {
-		t.Errorf("stderr=%q", errBuf.String())
+	// Exact-match канона: inline-форма `--interval=<мусор>` достижима только сообщением
+	// «неверное значение --interval» (serve.go:100). Мутация текста роняет тест.
+	if got, want := errBuf.String(), "ladix: неверное значение --interval\n"; got != want {
+		t.Errorf("stderr=%q, хотим %q", got, want)
 	}
 }
 

@@ -92,3 +92,71 @@ func TestShiftEveryMonthClamp(t *testing.T) {
 		})
 	}
 }
+
+// TestShiftEveryWeekBoundaries — нед-сдвиг через границу МЕСЯЦА и ГОДА (R-6):
+// AddDate(0,0,7*amount) корректно переносит дни в следующий месяц/год (Go нормализует).
+func TestShiftEveryWeekBoundaries(t *testing.T) {
+	cases := []struct {
+		name   string
+		last   time.Time
+		amount int64
+		want   time.Time
+	}{
+		{
+			"29янв+1нед→5фев (граница месяца)",
+			time.Date(2026, 1, 29, 10, 0, 0, 0, time.UTC), 1,
+			time.Date(2026, 2, 5, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			"25дек+1нед→1янв (граница года)",
+			time.Date(2025, 12, 25, 10, 0, 0, 0, time.UTC), 1,
+			time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			"18дек+3нед→8янв (3·7=21дн через границу года)",
+			time.Date(2025, 12, 18, 0, 0, 0, 0, time.UTC), 3,
+			time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := shiftEvery(c.last, c.amount, "нед"); !got.Equal(c.want) {
+				t.Fatalf("shiftEvery(%v,%d,нед) = %v, хотим %v", c.last, c.amount, got, c.want)
+			}
+		})
+	}
+}
+
+// TestShiftEveryMonthYearBoundary — мес-сдвиг через границу ГОДА (R-6): дек→янв сохраняет
+// день (у января он есть), год инкрементируется; от 30 ноя +3 мес зажимается к 28 фев.
+func TestShiftEveryMonthYearBoundary(t *testing.T) {
+	cases := []struct {
+		name   string
+		last   time.Time
+		amount int64
+		want   time.Time
+	}{
+		{
+			"15дек+1мес→15янв (граница года)",
+			time.Date(2025, 12, 15, 9, 0, 0, 0, time.UTC), 1,
+			time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC),
+		},
+		{
+			"31дек+1мес→31янв (у января 31 день, без зажима)",
+			time.Date(2025, 12, 31, 9, 0, 0, 0, time.UTC), 1,
+			time.Date(2026, 1, 31, 9, 0, 0, 0, time.UTC),
+		},
+		{
+			"30ноя+3мес→28фев (след.год, зажим)",
+			time.Date(2025, 11, 30, 0, 0, 0, 0, time.UTC), 3,
+			time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := shiftEvery(c.last, c.amount, "мес"); !got.Equal(c.want) {
+				t.Fatalf("shiftEvery(%v,%d,мес) = %v, хотим %v", c.last, c.amount, got, c.want)
+			}
+		})
+	}
+}

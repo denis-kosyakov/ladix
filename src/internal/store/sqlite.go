@@ -413,6 +413,10 @@ func (s *SQLiteStore) EnqueueEvent(e *Event) error {
 	if e.Processed {
 		processed = 1
 	}
+	// На дубле ID этот INSERT упал бы на UNIQUE-constraint (PRIMARY KEY events.id), тогда
+	// как MemoryStore тихо сделал бы append. Дубль ID недостижим по построению: ID выдаёт
+	// монотонный NextEventID (e-%06d), другого источника нет — потому расхождение Memory/
+	// SQLite осознанно НЕ выравнивается в v1 (мёртвый путь).
 	_, err := s.db.Exec(
 		`INSERT INTO events (id, name, payload_json, created_at, processed)
 		 VALUES (?, ?, ?, ?, ?)`,
