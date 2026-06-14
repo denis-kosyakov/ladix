@@ -110,6 +110,10 @@ func (i *Interpreter) evalCallAction(env *Environment, c *ast.CallAction) (Signa
 	if err != nil {
 		return Signal{}, err
 	}
+	// TODO(D-14): стаб engine.CallExternal в v1 всегда возвращает nil (D-13) — ветка
+	// мёртвая; при активации внешних вызовов заменить на runtimeErrWrap(c.Pos(), err),
+	// чтобы сохранить цепочку Cause/Unwrap (*engine.StoreError), как в evalAssignAction
+	// (stmt.go:96) и evalRunProcess (expr.go:205).
 	if err := i.runtime.CallExternal(c.Name.Name, args); err != nil {
 		return Signal{}, runtimeErr(c.Pos(), err.Error())
 	}
@@ -126,6 +130,10 @@ func (i *Interpreter) evalNotifyAction(env *Environment, n *ast.NotifyAction) (S
 	if err != nil {
 		return Signal{}, err
 	}
+	// TODO(D-14): стаб engine.Notify в v1 всегда возвращает nil (D-13) — ветка мёртвая;
+	// при активации внешних вызовов заменить на runtimeErrWrap(n.Pos(), err), чтобы
+	// сохранить цепочку Cause/Unwrap (*engine.StoreError), как в evalAssignAction
+	// (stmt.go:96) и evalRunProcess (expr.go:205).
 	if err := i.runtime.Notify(n.Name.Name, args); err != nil {
 		return Signal{}, runtimeErr(n.Pos(), err.Error())
 	}
