@@ -84,6 +84,28 @@ func (i *Interpreter) evalMetric(m *ast.MetricDecl) (value.Value, error) {
 	return i.evalAggExpr(m.Aggregate, surviving, schema, sortedFields)
 }
 
+// nounToAdverb отображает существительное «последнего завершённого периода»
+// («прошлый <noun>», §MW-5) в базовый календарный адверб value.Период: день→
+// ежедневно … год→ежегодно. Обратная к value.nounFromAdverb. Чистая функция;
+// для незнакомого noun возвращает "" — periodWindow на нём даст ok=false (защитно;
+// семантика §MW-SEM-3 отвергает неизвестный noun ДО eval, так что в норме сюда
+// приходит только валидный noun).
+func nounToAdverb(noun string) string {
+	switch noun {
+	case "день":
+		return "ежедневно"
+	case "неделя":
+		return "еженедельно"
+	case "месяц":
+		return "ежемесячно"
+	case "квартал":
+		return "ежеквартально"
+	case "год":
+		return "ежегодно"
+	}
+	return ""
+}
+
 // emptyWindowResult выбирает результат метрики на ПУСТОМ наборе выживших по КОРНЮ
 // выражения «агрегат:» (§SM-8 шаг 5, §10.5, ревью №1 D4-1) — ДО любого вычисления.
 // Корневой единичный вызов сумма/количество → Целое 0; всё прочее (единичные

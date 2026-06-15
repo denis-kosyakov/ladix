@@ -170,6 +170,37 @@ func (i *Interpreter) checkMetricDecl(m *ast.MetricDecl) error {
 	if hasByDate && !hasPeriod {
 		return semErr(m.Attrs.ByDatePos, fmt.Sprintf("метрика '%s': 'по_дате' без 'период' не имеет смысла", name))
 	}
+	// (2b) статические проверки оконных форм period: (011-A2, §MW-SEM-1/2/3). Обход
+	// AST m.Period: WindowPeriodLit (скользящее «последние N <ед>») и
+	// LastCompletedPeriodLit («прошлый <noun>»). Адверб-константа v1 (Ident) — без
+	// проверок (множество гарантировано предрегистрацией). A2-4 (по_дате) — НЕ
+	// дублируется (покрыто связкой выше). Позиция — period attr (PeriodPos). Тексты
+	// §MW-8.A byte-identical.
+	switch lit := m.Period.(type) {
+	case *ast.WindowPeriodLit:
+		// §MW-SEM-1: единица окна ∈ {дн,нед,мес}.
+		if lit.Unit != "дн" && lit.Unit != "нед" && lit.Unit != "мес" {
+			return semErr(m.Attrs.PeriodPos, fmt.Sprintf("метрика '%s': единица '%s' недопустима для окна (допустимо: дн, нед, мес)", name, lit.Unit))
+		}
+		// §MW-SEM-2: размер окна N ≥ 1. Amount — нормализованная цифровая строка из
+		// DURATION (цифры без знака). РАЗДЕЛЕНЫ два случая (self-check Ф8): ParseInt-err
+		// ⟺ переполнение int64 (N положителен, лишь вне диапазона) → «слишком велик»;
+		// успешный парс с N < 1 (т.е. N == 0, «0дн»/«00дн») → «должен быть положительным».
+		n, err := strconv.ParseInt(lit.Amount, 10, 64)
+		if err != nil {
+			return semErr(m.Attrs.PeriodPos, fmt.Sprintf("метрика '%s': размер окна слишком велик", name))
+		}
+		if n < 1 {
+			return semErr(m.Attrs.PeriodPos, fmt.Sprintf("метрика '%s': размер окна должен быть положительным", name))
+		}
+	case *ast.LastCompletedPeriodLit:
+		// §MW-SEM-3: noun завершённого периода ∈ {день,неделя,месяц,квартал,год}.
+		switch lit.Noun {
+		case "день", "неделя", "месяц", "квартал", "год":
+		default:
+			return semErr(m.Attrs.PeriodPos, fmt.Sprintf("метрика '%s': неизвестный период '%s' (допустимо: день, неделя, месяц, квартал, год)", name, lit.Noun))
+		}
+	}
 	// (3) резолв источника: имя должно быть зарегистрированным источником.
 	src := m.Source.Name
 	if _, ok := i.sources[src]; !ok {

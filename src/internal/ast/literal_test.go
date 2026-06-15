@@ -47,6 +47,25 @@ func TestLiteralConstructorsAndPos(t *testing.T) {
 	var _ Expression = id
 }
 
+// T005 (011-A2 §MW-D-PARSE-3): листовые узлы оконных форм метрики —
+// WindowPeriodLit{Amount,Unit} и LastCompletedPeriodLit{Noun}; Pos() = свой токен,
+// оба реализуют Expression.
+func TestWindowPeriodLitConstructors(t *testing.T) {
+	pos := Position{Line: 5, Col: 9}
+
+	wp := NewWindowPeriodLit(pos, "30", "дн")
+	if wp.Pos() != pos || wp.Amount != "30" || wp.Unit != "дн" {
+		t.Errorf("WindowPeriodLit: %+v, хотим {Amount:30, Unit:дн, Pos:{5,9}}", wp)
+	}
+	lc := NewLastCompletedPeriodLit(pos, "месяц")
+	if lc.Pos() != pos || lc.Noun != "месяц" {
+		t.Errorf("LastCompletedPeriodLit: %+v, хотим {Noun:месяц, Pos:{5,9}}", lc)
+	}
+
+	var _ Expression = wp
+	var _ Expression = lc
+}
+
 func TestListLitHeterogeneousAndEmpty(t *testing.T) {
 	pos := Position{Line: 1, Col: 1}
 	hetero := NewListLit(pos, []Expression{

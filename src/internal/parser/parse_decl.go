@@ -223,7 +223,7 @@ func (p *Parser) parseMetricDecl() *ast.MetricDecl {
 			aggregate = p.parseExpression()
 			attrs.AggregatePos = toASTPos(attrTok.Pos)
 		case "период":
-			period = p.parseExpression()
+			period = p.parsePeriodValue()
 			attrs.PeriodPos = toASTPos(attrTok.Pos)
 		case "по_дате":
 			byDate = p.parseExpression()
@@ -236,6 +236,40 @@ func (p *Parser) parseMetricDecl() *ast.MetricDecl {
 	}
 	p.expect(lexer.DEDENT, "конец блока")
 	return ast.NewMetricDecl(toASTPos(mTok.Pos), *name, source, where, aggregate, period, byDate, attrs)
+}
+
+// parsePeriodValue разбирает значение атрибута период: (011-A2 §MW-4/§MW-D-PARSE).
+// Контекстный спец-парс ТОЛЬКО внутри ветки период: — слова «последние»/«прошлый»/
+// «прошлая» остаются обычными IDENT (НЕ ключевые слова; v1-программа может звать
+// переменную с таким именем — §MW-D-PARSE-1), матч по лексеме как metricAttrName.
+//
+//   - «последние» <DURATION> → WindowPeriodLit{Amount,Unit} (контигуальная форма,
+//     §MW-D-PARSE-2: спейсовая «30 дн» даёт INT, не DURATION → expect эмитит
+//     SE-EXPECTED «ожидалось 'период вида N<ед>, например 30дн'»);
+//   - «прошлый»/«прошлая» <IDENT> → LastCompletedPeriodLit{Noun} (маппинг noun→
+//     адверб и валидация множества — в семантике/eval);
+//   - иначе → parseExpression() (адверб-константа v1: ежемесячно… — путь не меняется,
+//     §MW-D-PARSE-4).
+func (p *Parser) parsePeriodValue() ast.Expression {
+	tok := p.peek()
+	if tok.Type == lexer.IDENT && tok.Lexeme == "последние" {
+		p.advance() // последние
+		durTok, ok := p.expect(lexer.DURATION, "период вида N<ед>, например 30дн")
+		if !ok {
+			return nil
+		}
+		dv, _ := durTok.Value.(lexer.DurationValue)
+		return ast.NewWindowPeriodLit(toASTPos(tok.Pos), dv.Amount, dv.Unit)
+	}
+	if tok.Type == lexer.IDENT && (tok.Lexeme == "прошлый" || tok.Lexeme == "прошлая") {
+		p.advance() // прошлый/прошлая
+		nounTok, ok := p.expect(lexer.IDENT, "период: день/неделя/месяц/квартал/год")
+		if !ok {
+			return nil
+		}
+		return ast.NewLastCompletedPeriodLit(toASTPos(tok.Pos), nounTok.Lexeme)
+	}
+	return p.parseExpression()
 }
 
 // parseProcessDecl: процесс Ident ("(" ParamList? ")")? ":" NEWLINE INDENT

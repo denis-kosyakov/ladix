@@ -52,6 +52,19 @@ func (i *Interpreter) evalExpr(env *Environment, e ast.Expression) (value.Value,
 		return i.evalRunProcess(env, ex)
 	case *ast.DurationLit:
 		return i.evalDurationLit(ex)
+	case *ast.WindowPeriodLit:
+		// 011-A2 (§MW-5): «последние N <ед>» → скользящий Период. Amount —
+		// нормализованная цифровая строка из DURATION; парс-ошибка недостижима
+		// (типизированная защитная ветка).
+		n, err := strconv.ParseInt(ex.Amount, 10, 64)
+		if err != nil {
+			return nil, runtimeErr(ex.Pos(), "размер окна вне диапазона типа Целое")
+		}
+		return value.Период{Name: "последние", Amount: n, Unit: ex.Unit, Offset: 0}, nil
+	case *ast.LastCompletedPeriodLit:
+		// 011-A2 (§MW-5): «прошлый <noun>» → календарный адверб + Offset:-1. Noun
+		// провалидирован семантикой (§MW-SEM-3) → nounToAdverb всегда даёт адверб.
+		return value.Период{Name: nounToAdverb(ex.Noun), Amount: 0, Unit: "", Offset: -1}, nil
 	case *ast.ValueExpr:
 		// «значение» (метрика-тело, §TR-5): резолв инжектированной величины из env.
 		// Контекст-гард семпрохода (§TR-7.A) уже гарантирует, что узел встречается
