@@ -195,6 +195,128 @@ func TestSourceDeclDuplicateFile(t *testing.T) {
 	}
 }
 
+// T006 (010-A1, §SC-D-PARSE-2/3, конституция VI): ТЕСТ-ЗАМОК позитивов парсера
+// источника — тип: голый IDENT и поля: вложенный блок объявлений.
+func TestSourceDeclTypeAndFieldsParse(t *testing.T) {
+	t.Run("тип: csv → Type.Name=csv, TypePos.Line!=0", func(t *testing.T) {
+		src := "источник заказы:\n    файл: \"data/orders.csv\"\n    тип: csv\n"
+		prog, el := parseProgramSrc(t, src)
+		if !el.Empty() {
+			t.Fatalf("ошибки: %v", el.Error())
+		}
+		sd := prog.Items[0].(*ast.SourceDecl)
+		if sd.Type.Name != "csv" {
+			t.Errorf("Type.Name = %q, хотим \"csv\"", sd.Type.Name)
+		}
+		if sd.TypePos.Line == 0 {
+			t.Errorf("TypePos.Line = 0, хотим presence (!= 0)")
+		}
+		if sd.TypePos.Line != 3 || sd.TypePos.Col != 5 {
+			t.Errorf("TypePos = %+v, хотим {3,5} (слово тип)", sd.TypePos)
+		}
+	})
+	t.Run("поля: блок ≥2 строк → срез FieldDef", func(t *testing.T) {
+		src := "источник заказы:\n" +
+			"    файл: \"data/orders.csv\"\n" +
+			"    тип: csv\n" +
+			"    поля:\n" +
+			"        сумма: Дробное\n" +
+			"        статус: Строка\n"
+		prog, el := parseProgramSrc(t, src)
+		if !el.Empty() {
+			t.Fatalf("ошибки: %v", el.Error())
+		}
+		sd := prog.Items[0].(*ast.SourceDecl)
+		if sd.FieldsPos.Line == 0 {
+			t.Errorf("FieldsPos.Line = 0, хотим presence (!= 0)")
+		}
+		if len(sd.Fields) != 2 {
+			t.Fatalf("Fields = %d, хотим 2", len(sd.Fields))
+		}
+		if sd.Fields[0].Name.Name != "сумма" || sd.Fields[0].TypeName.Name != "Дробное" {
+			t.Errorf("Fields[0] = %+v, хотим {сумма, Дробное}", sd.Fields[0])
+		}
+		if sd.Fields[0].Pos.Line != 5 || sd.Fields[0].Pos.Col != 9 {
+			t.Errorf("Fields[0].Pos = %+v, хотим {5,9}", sd.Fields[0].Pos)
+		}
+		if sd.Fields[1].Name.Name != "статус" || sd.Fields[1].TypeName.Name != "Строка" {
+			t.Errorf("Fields[1] = %+v, хотим {статус, Строка}", sd.Fields[1])
+		}
+		if sd.Fields[1].Pos.Line != 6 {
+			t.Errorf("Fields[1].Pos.Line = %d, хотим 6", sd.Fields[1].Pos.Line)
+		}
+	})
+	t.Run("v1-форма (только файл:) → нулевые Type/Fields", func(t *testing.T) {
+		src := "источник продажи:\n    файл: \"data/sales.json\"\n"
+		prog, el := parseProgramSrc(t, src)
+		if !el.Empty() {
+			t.Fatalf("ошибки: %v", el.Error())
+		}
+		sd := prog.Items[0].(*ast.SourceDecl)
+		if sd.Type.Name != "" || sd.TypePos.Line != 0 {
+			t.Errorf("Type = %+v / TypePos = %+v, хотим нулевые (v1 → json)", sd.Type, sd.TypePos)
+		}
+		if sd.Fields != nil || sd.FieldsPos.Line != 0 {
+			t.Errorf("Fields = %v / FieldsPos = %+v, хотим nil/нулевую", sd.Fields, sd.FieldsPos)
+		}
+	})
+}
+
+// T007 (010-A1, §SC-D-PARSE-3/spec Edge Cases, конституция VI): ТЕСТ-ЗАМОК
+// негативов парсера источника — дубль тип:, дубль имени поля, пустой поля:,
+// неизвестный атрибут источника. Все тексты — канон §SM-9.A.
+func TestSourceDeclNegatives(t *testing.T) {
+	cases := []struct {
+		name      string
+		src       string
+		want      string
+		line, col int
+	}{
+		{
+			name: "дубль тип:",
+			src: "источник з:\n    файл: \"o.csv\"\n" +
+				"    тип: csv\n    тип: json\n",
+			want: "атрибут 'тип' уже задан",
+			line: 4, col: 5,
+		},
+		{
+			name: "дубль имени поля в поля:",
+			src: "источник з:\n    файл: \"o.csv\"\n    тип: csv\n" +
+				"    поля:\n        сумма: Дробное\n        сумма: Целое\n",
+			want: "поле 'сумма' уже объявлено",
+			line: 6, col: 9,
+		},
+		{
+			name: "пустой поля: (INDENT сразу DEDENT)",
+			src: "источник з:\n    файл: \"o.csv\"\n    тип: csv\n" +
+				"    поля:\n    тип: ndjson\n",
+			want: msgEmptyBlock,
+			line: 5, col: 5,
+		},
+		{
+			name: "неизвестный атрибут источника",
+			src:  "источник з:\n    файл: \"o.json\"\n    адрес: \"x\"\n",
+			want: "неизвестный атрибут 'адрес'",
+			line: 3, col: 5,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, el := parseProgramSrc(t, c.src)
+			if el.Len() == 0 {
+				t.Fatalf("ожидалась ошибка %q", c.want)
+			}
+			pe := firstParseError(t, el)
+			if pe.Msg != c.want {
+				t.Errorf("Msg = %q, хотим %q", pe.Msg, c.want)
+			}
+			if pe.Pos.Line != c.line || pe.Pos.Col != c.col {
+				t.Errorf("позиция = %+v, хотим {%d,%d}", pe.Pos, c.line, c.col)
+			}
+		})
+	}
+}
+
 // T010: позитивный разбор полной метрики (5 атрибутов).
 func TestMetricDeclParseFull(t *testing.T) {
 	src := "метрика выручка_месяца:\n" +

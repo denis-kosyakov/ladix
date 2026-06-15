@@ -74,9 +74,15 @@ func TestDocsAlignmentA3OnboardingComment(t *testing.T) {
 	}
 }
 
-// A4: тип(x) недостижим из синтаксиса в v1 — имя «тип» зарезервировано лексером.
-// печать(тип(5)) даёт reserved-word ошибку (код 1), а НЕ «Целое».
-// Это эмпирический инвариант поведения (docs-alignment §«Инварианты поведения»).
+// A4 (010-A1, §SC-10 #7, ИНВЕРСИЯ 009-замка): тип(x) ПО-ПРЕЖНЕМУ недостижим из
+// синтаксиса — но механизм изменён. С 010-A1 «тип» более НЕ зарезервированное
+// слово, а ключевое слово-атрибут источника (KW_TYPE, §SC-D-RESERVE). В выражении
+// KW_TYPE не начинает primary → печать(тип(5)) даёт ПАРС-ошибку «неожиданный токен
+// 'тип'» (код 1), а НЕ «Целое». Ядро инварианта — (a) код 1 + (c) stdout без
+// «Целое» (builtin `тип` dormant) — сохранено; assert (b) переведён с reserved-word
+// на парс-диагностику (эмпирически: «неожиданный токен 'тип'»). Замок ОБЯЗАН
+// кусаться: если тип(x) станет достижим (KW_TYPE попадёт в parsePrimary) →
+// stdout=«Целое» → красный.
 func TestDocsAlignmentA4TipReserved(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "tip.ladix")
@@ -87,12 +93,13 @@ func TestDocsAlignmentA4TipReserved(t *testing.T) {
 	code := realMain([]string{"run", file}, &out, &errBuf)
 
 	if code != 1 {
-		t.Fatalf("A4: печать(тип(5)) дал код %d, хотим 1 (reserved-word ошибка); stdout=%q stderr=%q",
+		t.Fatalf("A4: печать(тип(5)) дал код %d, хотим 1 (парс-ошибка KW_TYPE); stdout=%q stderr=%q",
 			code, out.String(), errBuf.String())
 	}
-	// Должна быть именно reserved-word диагностика про «тип», а не успешный вывод «Целое».
-	if !strings.Contains(errBuf.String(), "зарезервированное слово") {
-		t.Errorf("A4: stderr не содержит «зарезервированное слово»: %q", errBuf.String())
+	// (b) Должна быть именно парс-диагностика про «тип» (KW_TYPE не начинает выражение),
+	// а не reserved-word и не успешный вывод «Целое».
+	if !strings.Contains(errBuf.String(), "неожиданный токен 'тип'") {
+		t.Errorf("A4: stderr не содержит «неожиданный токен 'тип'»: %q", errBuf.String())
 	}
 	if strings.Contains(out.String(), "Целое") {
 		t.Errorf("A4: тип(x) стал достижим — stdout вернул «Целое»: %q (функция активирована вопреки v1-резерву)", out.String())

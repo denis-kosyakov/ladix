@@ -130,6 +130,60 @@ func assertNegativeExample(t *testing.T, name, wantStderr string) {
 	}
 }
 
+// T028 (010-A1, Phase F, SC-003) — Golden CSV-демо: прогон examples/источник_csv.ladix
+// через CLI `run`. Метрика БЕЗ периода/по_дате (фильтр `где` + сумма) → дата-независима,
+// поэтому байт-точный stdout детерминирован под прод-Clock (без FixedClock). Источник
+// адресует data/orders.csv относительно cwd → прогон из корня репо (withRepoRoot).
+// Оплаченные заказы CSV: 1200000 + 800000.50 + 300000 = 2300000.5 (отменённый 450000
+// отфильтрован `где статус == "оплачен"`).
+// 🔁 ИНВЕРСИЯ: если CSV-загрузка/коэрсия/фильтр разошлись → stdout разойдётся → красный.
+func TestCLIGoldenSourceCSV(t *testing.T) {
+	want := "выручка оплаченных (CSV): 2300000.5\n"
+	withRepoRoot(t, func() {
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"run", filepath.Join("examples", "источник_csv.ladix")}, &out, &errBuf)
+		if code != 0 {
+			t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+		}
+		if errBuf.Len() != 0 {
+			t.Errorf("непустой stderr: %q", errBuf.String())
+		}
+		if out.String() != want {
+			t.Errorf("stdout байт-не-точен:\nполучено %q\nхотим   %q", out.String(), want)
+		}
+	})
+}
+
+// T029 (010-A1, Phase F, US2, §SC-10 #6) — NEGATIVE-замок examples/ошибочная.ladix:
+// объявленный тип поля `сумма_заказа: Целое` НЕ совпадает с дробным 800000.50 в
+// data/orders.json (запись 2) → §SC-9.B «ожидался Целое, получено Дробное», exit 1,
+// канон §13, без Go stack trace. Источник адресует data/orders.json относительно cwd →
+// прогон из корня репо (withRepoRoot); assertNegativeExample неприменим (его examplePath
+// адресует из каталога пакета, а пример требует cwd=корень для резолва data/orders.json).
+// stderr пиннится из T026 (фактический прогон бинаря).
+// 🔁 ИНВЕРСИЯ: если коэрсия начнёт демоутить Дробное→Целое или сменит класс ошибки →
+// красный.
+func TestCLINegativeSourceSchema(t *testing.T) {
+	wantStderr := "Ошибка в строке 9, колонка 1:\n" +
+		"источник 'заказы': запись 2, поле 'сумма_заказа': ожидался Целое, получено Дробное\n"
+	withRepoRoot(t, func() {
+		var out, errBuf bytes.Buffer
+		code := realMain([]string{"run", filepath.Join("examples", "ошибочная.ladix")}, &out, &errBuf)
+		if code != 1 {
+			t.Fatalf("код = %d, хотим 1; stderr=%q", code, errBuf.String())
+		}
+		if got := errBuf.String(); got != wantStderr {
+			t.Errorf("stderr байт-не-точен:\nполучено %q\nхотим   %q", got, wantStderr)
+		}
+		if out.Len() != 0 {
+			t.Errorf("stdout не пуст: %q", out.String())
+		}
+		if s := errBuf.String(); strings.Contains(s, ".go:") || strings.Contains(s, "goroutine") {
+			t.Errorf("в stderr просочился Go stack trace: %q", s)
+		}
+	})
+}
+
 // T026 (US3, класс 5 — СИНТАКСИЧЕСКАЯ ошибка) — examples/ошибка_синтаксис.ladix
 // падает на ПАРСИНГЕ (незакрытая скобка вызова) → канон §13 «ожидалось ')'…», exit 1.
 // Пример НЕ входит в TestExamplesParseCleanSet (он обязан НЕ парситься).

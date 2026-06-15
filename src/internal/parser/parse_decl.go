@@ -35,47 +35,125 @@ func (p *Parser) parseParamList() []ast.Ident {
 	return params
 }
 
-// parseSourceDecl: источник Ident ":" NEWLINE INDENT (файл ":" STRING NEWLINE)+
-// DEDENT (§SM-3). Единственный допустимый атрибут — файл; неизвестный → §SM-9.A,
-// повтор → §SM-9.A. Пустой блок → msgEmptyBlock. Pos() = токен источник.
+// sourceAttrName сопоставляет лексему ведущего токена строки атрибута источника
+// фикс-набору {файл,тип,поля} — унифицированно по лексеме (зеркало metricAttrName,
+// §SC-D-PARSE-1). `файл`→KW_FILE, `тип`→KW_TYPE, `поля`→IDENT — все матчатся по
+// тексту лексемы, а не по типу токена.
+func sourceAttrName(lexeme string) bool {
+	switch lexeme {
+	case "файл", "тип", "поля":
+		return true
+	}
+	return false
+}
+
+// parseSourceDecl: источник Ident ":" NEWLINE INDENT SourceAttr+ DEDENT (§SM-3/
+// §SC-4). SourceAttr ::= файл ":" STRING NEWLINE | тип ":" IDENT NEWLINE | поля ":"
+// NEWLINE INDENT FieldDef+ DEDENT (§SC-D-PARSE). Неизвестный атрибут → §SM-9.A
+// msgUnknownAttr; повтор → §SM-9.A msgDuplicateAttr (через seen map). Значение
+// тип: — голый IDENT (валидация json|csv|ndjson семантическая, §SC-D-PARSE-2).
+// Пустой блок → msgEmptyBlock. Pos() = токен источник.
 func (p *Parser) parseSourceDecl() *ast.SourceDecl {
 	srcTok := p.advance() // источник
 	nameTok, _ := p.expect(lexer.IDENT, "имя источника")
 	name := p.identFrom(nameTok)
 	p.expect(lexer.COLON, ":")
+	sd := ast.NewSourceDecl(toASTPos(srcTok.Pos), *name, ast.StringLit{}, ast.Position{})
 	if !p.openAttrBlock() {
-		return ast.NewSourceDecl(toASTPos(srcTok.Pos), *name, ast.StringLit{}, ast.Position{})
+		return sd
 	}
 	var file *ast.StringLit
 	var filePos lexer.Token
+	seen := make(map[string]bool, 3)
 	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
 		before := p.pos
 		attrTok := p.peek()
-		if attrTok.Lexeme != "файл" {
-			p.error(attrTok.Pos, msgUnknownAttr(attrTok.Lexeme))
+		lexeme := attrTok.Lexeme
+		if !sourceAttrName(lexeme) {
+			p.error(attrTok.Pos, msgUnknownAttr(lexeme))
 			break
 		}
-		p.advance() // файл
-		p.expect(lexer.COLON, ":")
-		strTok, ok := p.expect(lexer.STRING, "путь к файлу")
-		if ok {
-			if file != nil {
-				p.error(attrTok.Pos, msgDuplicateAttr("файл"))
-				break
-			}
-			file = p.buildStringLit(strTok)
-			filePos = strTok
+		if seen[lexeme] {
+			p.error(attrTok.Pos, msgDuplicateAttr(lexeme))
+			break
 		}
-		p.expect(lexer.NEWLINE, "конец строки")
+		seen[lexeme] = true
+		p.advance() // ключевое слово/имя атрибута (файл|тип|поля)
+		p.expect(lexer.COLON, ":")
+		switch lexeme {
+		case "файл":
+			strTok, ok := p.expect(lexer.STRING, "путь к файлу")
+			if ok {
+				file = p.buildStringLit(strTok)
+				filePos = strTok
+			}
+			p.expect(lexer.NEWLINE, "конец строки")
+		case "тип":
+			// §SC-D-PARSE-2: значение — голый IDENT; множество json|csv|ndjson
+			// валидируется семантически (Analyze), не парсером.
+			valTok, ok := p.expect(lexer.IDENT, "значение типа")
+			if ok {
+				sd.Type = *p.identFrom(valTok)
+				sd.TypePos = toASTPos(attrTok.Pos)
+			}
+			p.expect(lexer.NEWLINE, "конец строки")
+		case "поля":
+			// §SC-D-PARSE-3: вложенный блок объявлений; позиция атрибута — слово поля.
+			sd.FieldsPos = toASTPos(attrTok.Pos)
+			sd.Fields = p.parseFieldBlock()
+		}
 		if p.pos == before {
 			p.advance() // backstop: гарантия прогресса
 		}
 	}
 	p.expect(lexer.DEDENT, "конец блока")
-	if file == nil {
-		return ast.NewSourceDecl(toASTPos(srcTok.Pos), *name, ast.StringLit{}, ast.Position{})
+	if file != nil {
+		sd.File = *file
+		sd.FilePos = toASTPos(filePos.Pos)
 	}
-	return ast.NewSourceDecl(toASTPos(srcTok.Pos), *name, *file, toASTPos(filePos.Pos))
+	return sd
+}
+
+// parseFieldBlock разбирает вложенный блок поля: — { IDENT(имя) ":" IDENT(тип)
+// NEWLINE }+ (§SC-D-PARSE-3). Открытие — openAttrBlock() (NEWLINE + INDENT);
+// пустой блок → msgEmptyBlock и nil. Собственный seen map на имена полей: дубль →
+// msgDuplicateField + continue (восстановление как parseStepDecl — собрать
+// несколько FieldDef, а не падать на первой). Закрытие — expect(DEDENT).
+func (p *Parser) parseFieldBlock() []ast.FieldDef {
+	if !p.openAttrBlock() {
+		return nil
+	}
+	var fields []ast.FieldDef
+	seen := make(map[string]bool, 4)
+	for !p.check(lexer.DEDENT) && !p.check(lexer.EOF) {
+		p.suppress = false // граница строки поля (доктрина recover.go)
+		before := p.pos
+		nameTok, ok := p.expect(lexer.IDENT, "имя поля")
+		if !ok {
+			if p.pos == before {
+				p.advance() // backstop: гарантия прогресса
+			}
+			continue
+		}
+		p.expect(lexer.COLON, ":")
+		typeTok, _ := p.expect(lexer.IDENT, "тип поля")
+		p.expect(lexer.NEWLINE, "конец строки")
+		if seen[nameTok.Lexeme] {
+			p.error(nameTok.Pos, msgDuplicateField(nameTok.Lexeme))
+			continue // строка дубля съедена synchronize; цикл полей продолжается
+		}
+		seen[nameTok.Lexeme] = true
+		fields = append(fields, ast.FieldDef{
+			Name:     *p.identFrom(nameTok),
+			TypeName: *p.identFrom(typeTok),
+			Pos:      toASTPos(nameTok.Pos),
+		})
+		if p.pos == before {
+			p.advance() // backstop: гарантия прогресса
+		}
+	}
+	p.expect(lexer.DEDENT, "конец блока")
+	return fields
 }
 
 // parseSourceRef разбирает значение атрибута источник: — ровно один IDENT (D-1).

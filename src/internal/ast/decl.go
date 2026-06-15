@@ -15,20 +15,39 @@ func NewFunctionDecl(pos Position, name Ident, params []Ident, body *Block) *Fun
 	return &FunctionDecl{declBase: declBase{base{pos}}, Name: name, Params: params, Body: body}
 }
 
-// SourceDecl — объявление источника: источник Name: файл "<путь>". Только верхний
-// уровень (§SM-2/§SM-3). File — строковый литерал пути (не Expression); FilePos —
-// позиция самого литерала пути. Pos() = токен источник.
+// SourceDecl — объявление источника: источник Name: файл "<путь>" [тип: …]
+// [поля: …]. Только верхний уровень (§SM-2/§SM-3/§SC-2). File — строковый литерал
+// пути (не Expression); FilePos — позиция самого литерала пути. Type/Fields —
+// аддитивное расширение 010-A1 (§SC-2): заполняются парсером сеттер-присваиванием
+// (§SC-D-3), для v1-формы остаются нулевыми (тип: опущен ≡ json, A1-2). Presence
+// тип:/поля: отслеживается TypePos.Line != 0 / FieldsPos.Line != 0 (§SC-D-1, как
+// MetricAttrPos), а не nil. Pos() = токен источник.
 type SourceDecl struct {
 	declBase
-	Name    Ident
-	File    StringLit
-	FilePos Position
+	Name      Ident
+	File      StringLit
+	FilePos   Position
+	Type      Ident      // значение тип: (json|csv|ndjson); zero-value Name=="" → json (A1-2)
+	TypePos   Position   // позиция атрибута тип: (presence: Line != 0)
+	Fields    []FieldDef // объявленная схема поля:; nil/пусто → schemaless (A1-3)
+	FieldsPos Position   // позиция атрибута поля: (presence: Line != 0)
 }
 
 // NewSourceDecl строит объявление источника; pos — позиция токена источник,
-// filePos — позиция строкового литерала пути.
+// filePos — позиция строкового литерала пути. §SC-D-3: сигнатура НЕ меняется;
+// Type/Fields заполняются парсером сеттер-присваиванием (sd.Type = …).
 func NewSourceDecl(pos Position, name Ident, file StringLit, filePos Position) *SourceDecl {
 	return &SourceDecl{declBase: declBase{base{pos}}, Name: name, File: file, FilePos: filePos}
+}
+
+// FieldDef — одно объявление поля в блоке поля: (имя: ТипПоля). Листовой узел
+// (§SC-D-2): несёт локальную ast.Position, НЕ импортирует errors — ast остаётся
+// листовым (конституция IV/VII). НЕ Node (без Pos()/маркеров) — вспомогательная
+// структура, как MetricAttrPos.
+type FieldDef struct {
+	Name     Ident    // имя поля (произвольный идентификатор)
+	TypeName Ident    // имя типа (Целое|Дробное|Строка|Логическое|Дата) — резолвится семантически
+	Pos      Position // позиция строки объявления поля
 }
 
 // MetricDecl — объявление метрики: метрика Name: блок атрибутов
