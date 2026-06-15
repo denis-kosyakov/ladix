@@ -31,9 +31,10 @@ func TestKeywordTable(t *testing.T) {
 		"после": KW_AFTER, "присвоить": KW_SET, "вызвать": KW_CALL, "уведомить": KW_NOTIFY,
 		"когда": KW_WHEN, "событие": KW_EVENT, "значение": KW_VALUE, "расписание": KW_SCHEDULE,
 		"каждые": KW_EVERY, "в": KW_IN, "запустить": KW_RUN,
+		"тип": KW_TYPE, // 010-A1 §SC-D-RESERVE: разрезервировано из reservedWords
 	}
-	if len(table) != 34 {
-		t.Fatalf("в таблице теста %d ключевых слов, хотим 34", len(table))
+	if len(table) != 35 {
+		t.Fatalf("в таблице теста %d ключевых слов, хотим 35", len(table))
 	}
 	for w, want := range table {
 		t.Run(w, func(t *testing.T) {
@@ -79,4 +80,45 @@ func TestShortKeywordsOnlyAsFullWord(t *testing.T) {
 	toks, errs := lexAll("и или не в")
 	requireNoErrors(t, errs)
 	requireTypes(t, toks, KW_AND, KW_OR, KW_NOT, KW_IN, NEWLINE, EOF)
+}
+
+// T001 (010-A1, §SC-3/§SC-D-RESERVE/§SC-D-LEX-MIN, конституция VI): ТЕСТ-ЗАМОК
+// разрезервирования `тип`. `тип` становится ключевым словом KW_TYPE (НЕ IDENT —
+// иначе `тип(5)` распарсился бы как вызов builtin и СЛУЧАЙНО активировал бы
+// `тип(x)`, что хартия запрещает; НЕ lex-ошибка — он более НЕ зарезервирован).
+// `поля` ОБЯЗАН остаться IDENT (v1-программа может звать переменную `поля`).
+func TestTypeKeywordReserveLift(t *testing.T) {
+	t.Run("тип → KW_TYPE (а не IDENT, не lex-ошибка)", func(t *testing.T) {
+		toks, errs := lexAll("тип")
+		requireNoErrors(t, errs)
+		requireTypes(t, toks, KW_TYPE, NEWLINE, EOF)
+		if toks[0].Lexeme != "тип" {
+			t.Errorf("KW_TYPE.Lexeme = %q, хотим %q", toks[0].Lexeme, "тип")
+		}
+	})
+	t.Run("поля остаётся IDENT", func(t *testing.T) {
+		toks, errs := lexAll("поля")
+		requireNoErrors(t, errs)
+		requireTypes(t, toks, IDENT, NEWLINE, EOF)
+		if toks[0].Lexeme != "поля" {
+			t.Errorf("IDENT.Lexeme = %q, хотим %q", toks[0].Lexeme, "поля")
+		}
+	})
+	t.Run("тип более НЕ даёт L-11 «зарезервированное слово»", func(t *testing.T) {
+		_, errs := lexAll("тип")
+		requireNoErrors(t, errs)
+	})
+	t.Run("аннотации типов полей и значения тип: — IDENT", func(t *testing.T) {
+		for _, w := range []string{
+			"Целое", "Дробное", "Строка", "Логическое", "Дата",
+			"json", "csv", "ndjson",
+		} {
+			toks, errs := lexAll(w)
+			requireNoErrors(t, errs)
+			requireTypes(t, toks, IDENT, NEWLINE, EOF)
+			if toks[0].Lexeme != w {
+				t.Errorf("%q: Lexeme = %q, хотим IDENT %q", w, toks[0].Lexeme, w)
+			}
+		}
+	})
 }

@@ -6,8 +6,9 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/errors"
 )
 
-// TokenType — вид токена. Всего 67 ЭМИТИРУЕМЫХ видов (data-model §5):
-// 6 литералов + IDENT + 34 ключевых слова + 14 операторов + 8 разделителей/скобок
+// TokenType — вид токена. Всего 68 ЭМИТИРУЕМЫХ видов (data-model §5; +1 за
+// 010-A1 KW_TYPE):
+// 6 литералов + IDENT + 35 ключевых слов + 14 операторов + 8 разделителей/скобок
 // + 4 виртуальных. INVALID — внутренний нулевой сентинел: не эмитится, делает
 // нулевое значение Token безопасно отличимым.
 type TokenType int
@@ -26,7 +27,7 @@ const (
 	// --- Идентификатор (1) ---
 	IDENT
 
-	// --- Ключевые слова (34) ---
+	// --- Ключевые слова (35) ---
 	KW_LET       // пусть
 	KW_FUNC      // функция
 	KW_RETURN    // вернуть
@@ -61,6 +62,7 @@ const (
 	KW_EVERY     // каждые
 	KW_IN        // в
 	KW_RUN       // запустить
+	KW_TYPE      // тип — 010-A1 §SC-D-RESERVE: атрибут источника; в выражении НЕ начинает primary
 
 	// --- Операторы (14) ---
 	PLUS        // +
@@ -112,7 +114,7 @@ var tokenNames = map[TokenType]string{
 	KW_PROCESS: "KW_PROCESS", KW_STEP: "KW_STEP", KW_ASSIGNEE: "KW_ASSIGNEE", KW_DEADLINE: "KW_DEADLINE",
 	KW_AFTER: "KW_AFTER", KW_SET: "KW_SET", KW_CALL: "KW_CALL", KW_NOTIFY: "KW_NOTIFY",
 	KW_WHEN: "KW_WHEN", KW_EVENT: "KW_EVENT", KW_VALUE: "KW_VALUE", KW_SCHEDULE: "KW_SCHEDULE",
-	KW_EVERY: "KW_EVERY", KW_IN: "KW_IN", KW_RUN: "KW_RUN",
+	KW_EVERY: "KW_EVERY", KW_IN: "KW_IN", KW_RUN: "KW_RUN", KW_TYPE: "KW_TYPE",
 
 	PLUS: "PLUS", MINUS: "MINUS", STAR: "STAR", SLASH: "SLASH",
 	SLASH_SLASH: "SLASH_SLASH", PERCENT: "PERCENT", ASSIGN: "ASSIGN",

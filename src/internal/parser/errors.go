@@ -38,6 +38,13 @@ func msgDuplicateAttr(name string) string {
 	return fmt.Sprintf("атрибут '%s' уже задан", name)
 }
 
+// msgDuplicateField — §SC-9.A (010-A1): повтор имени поля в блоке поля:
+// источника (поз. повторного объявления). Доменный текст, отличный от
+// msgDuplicateAttr (атрибут vs поле).
+func msgDuplicateField(name string) string {
+	return fmt.Sprintf("поле '%s' уже объявлено", name)
+}
+
 // msgIntRange — канон §13.4 с подстановкой реальной лексемы числа целиком.
 func msgIntRange(lexeme string) string {
 	return fmt.Sprintf("целочисленный литерал вне диапазона типа Целое '%s'", lexeme)

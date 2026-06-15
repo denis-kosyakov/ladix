@@ -40,6 +40,73 @@ func TestSourceDeclPos(t *testing.T) {
 	var _ TopLevelItem = sd
 }
 
+// T004 (010-A1, §SC-2/§SC-D-1, конституция VI): ТЕСТ-ЗАМОК аддитивного расширения
+// SourceDecl полями Type/TypePos/Fields/FieldsPos и нового листового узла FieldDef.
+// Presence атрибута — Pos.Line != 0 (как MetricAttrPos); v1-форма (только файл:)
+// даёт нулевые Type/Fields.
+func TestSourceDeclTypeAndFields(t *testing.T) {
+	srcPos := Position{Line: 1, Col: 1}
+	filePos := Position{Line: 2, Col: 11}
+	typePos := Position{Line: 3, Col: 5}
+	fieldsPos := Position{Line: 4, Col: 5}
+
+	sd := NewSourceDecl(srcPos, *NewIdent(Position{Line: 1, Col: 10}, "заказы"),
+		*NewStringLit(filePos, "data/orders.csv"), filePos)
+	// §SC-D-3: Type/Fields заполняются сеттер-присваиванием парсером.
+	sd.Type = *NewIdent(typePos, "csv")
+	sd.TypePos = typePos
+	sd.Fields = []FieldDef{
+		{Name: *NewIdent(Position{Line: 5, Col: 9}, "сумма"),
+			TypeName: *NewIdent(Position{Line: 5, Col: 16}, "Дробное"),
+			Pos:      Position{Line: 5, Col: 9}},
+		{Name: *NewIdent(Position{Line: 6, Col: 9}, "статус"),
+			TypeName: *NewIdent(Position{Line: 6, Col: 17}, "Строка"),
+			Pos:      Position{Line: 6, Col: 9}},
+	}
+	sd.FieldsPos = fieldsPos
+
+	if sd.Type.Name != "csv" {
+		t.Errorf("Type.Name = %q, хотим \"csv\"", sd.Type.Name)
+	}
+	if sd.TypePos != typePos || sd.TypePos.Line == 0 {
+		t.Errorf("TypePos = %+v, хотим %+v (presence Line!=0)", sd.TypePos, typePos)
+	}
+	if len(sd.Fields) != 2 {
+		t.Fatalf("Fields = %d, хотим 2", len(sd.Fields))
+	}
+	if sd.Fields[0].Name.Name != "сумма" || sd.Fields[0].TypeName.Name != "Дробное" {
+		t.Errorf("Fields[0] = %+v, хотим {сумма, Дробное}", sd.Fields[0])
+	}
+	if sd.Fields[1].Pos != (Position{Line: 6, Col: 9}) {
+		t.Errorf("Fields[1].Pos = %+v, хотим {6,9}", sd.Fields[1].Pos)
+	}
+	if sd.FieldsPos.Line == 0 {
+		t.Errorf("FieldsPos.Line = 0, хотим presence (!= 0)")
+	}
+}
+
+// T004 (§SC-D-1): v1-форма источника (без тип:/поля:) даёт нулевые Type/Fields —
+// presence отличает заданный атрибут от нулевого.
+func TestSourceDeclV1ZeroTypeFields(t *testing.T) {
+	srcPos := Position{Line: 1, Col: 1}
+	filePos := Position{Line: 2, Col: 11}
+	sd := NewSourceDecl(srcPos, *NewIdent(Position{Line: 1, Col: 10}, "продажи"),
+		*NewStringLit(filePos, "data/sales.json"), filePos)
+
+	if sd.Type.Name != "" {
+		t.Errorf("Type.Name = %q, хотим пусто (v1 → json)", sd.Type.Name)
+	}
+	if sd.TypePos.Line != 0 {
+		t.Errorf("TypePos.Line = %d, хотим 0 (тип: отсутствует)", sd.TypePos.Line)
+	}
+	if sd.Fields != nil {
+		t.Errorf("Fields = %v, хотим nil (схемы нет)", sd.Fields)
+	}
+	if sd.FieldsPos.Line != 0 {
+		t.Errorf("FieldsPos.Line = %d, хотим 0 (поля: отсутствует)", sd.FieldsPos.Line)
+	}
+}
+
 // T007: MetricDecl — поля, Attrs и Pos() = токен метрика; реализует Decl/TopLevelItem.
 
 func TestMetricDeclPos(t *testing.T) {
