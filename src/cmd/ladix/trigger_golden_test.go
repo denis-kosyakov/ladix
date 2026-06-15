@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/denis-kosyakov/ladix/internal/eval"
 	"github.com/denis-kosyakov/ladix/internal/store"
 )
 
@@ -481,6 +482,38 @@ func TestRunTriggerFnCallWritesGlobal(t *testing.T) {
 	if !strings.Contains(out.String(), "счёт: 99") {
 		t.Errorf("stdout не содержит обновлённый глобал «счёт: 99» — функция из тела не записала глобал: %q", out.String())
 	}
+}
+
+// T027 (US3, FR-011/SC-005) — ДЕТЕРМИНИРОВАННЫЙ golden дата-зависимого витринного
+// examples/выручка.ladix. Сам файл оставлен ЖИВЫМ (демо: метрика период:ежемесячно +
+// по_дате → окно от сегодня()), поэтому под прод-Clock его stdout зависит от текущего
+// месяца (сейчас данные за май 2026 → в июне метрика = 0, в мае = 2_000_000). Чтобы
+// замок был байт-детерминирован В ЛЮБОЙ ДЕНЬ, инжектируем ФИКСИРОВАННЫЙ Clock через тот
+// же seam, что и metric-golden (runMetric(path, имя, depth, clock, …) — main.go: clock
+// инжектируется; прод-путь metricMain строит SystemClock). FixedClock D=2026-05-31
+// (fixedClock2026, см. metric_test.go) ставит окно «ежемесячно» на май 2026 → оба
+// оплаченных майских заказа (1_200_000 + 800_000) попадают → 2_000_000; отменённый
+// отфильтрован `где статус == "оплачен"`. Прогон из корня репо (withRepoRoot), чтобы
+// относительный «data/sales.json» источника резолвился. НЕ хардкодим «сегодня».
+// ИНВЕРСИЯ: сменилась формула/данные/окно — стд-аут разойдётся с пином → красный.
+func TestRevenueExampleFixedClockGolden(t *testing.T) {
+	withRepoRoot(t, func() {
+		// cwd = корень репо (withRepoRoot), путь к примеру — относительно корня (НЕ
+		// examplePath, который адресует из каталога пакета через ../../../).
+		revenueExample := filepath.Join("examples", "выручка.ladix")
+		var out, errBuf bytes.Buffer
+		code := runMetric(revenueExample, "выручка_месяца",
+			eval.DefaultMaxDepth, fixedClock2026, &out, &errBuf)
+		if code != 0 {
+			t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+		}
+		if errBuf.Len() != 0 {
+			t.Errorf("непустой stderr: %q", errBuf.String())
+		}
+		if out.String() != "2000000\n" {
+			t.Errorf("stdout байт-не-точен (фикс-Clock 2026-05-31): получено %q, хотим %q", out.String(), "2000000\n")
+		}
+	})
 }
 
 // TestRunBadTimeFormat / SE-TIME-FORMAT (FR-014/SC-010/FR-026) — РУН-СТОРОННИЙ замок на
