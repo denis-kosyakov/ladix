@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -101,4 +102,57 @@ func TestCLIGoldenMetrics(t *testing.T) {
 			t.Errorf("stdout байт-не-точен:\nполучено %q\nхотим   %q", out.String(), want)
 		}
 	})
+}
+
+// assertNegativeExample прогоняет негатив-пример витрины через realMain и утверждает:
+// (а) код выхода РОВНО 1; (б) stderr БАЙТ-В-БАЙТ равен канону §13 этого класса
+// (две строки: «Ошибка в строке N, колонка M:\n<сообщение>\n»), пинённому из
+// фактического вывода бинаря; (в) пустой stdout; (г) НЕТ Go stack trace.
+//
+// Полный байт-пин stderr — намеренно (находка analyze F1): он не даёт пройти ни
+// пустому stderr+exit1, ни смене класса ошибки, ни сдвигу строки/колонки. Различение
+// классов — по фактическому тексту сообщения, заодно с каноном, а не вместо него.
+func assertNegativeExample(t *testing.T, name, wantStderr string) {
+	t.Helper()
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"run", examplePath(name)}, &out, &errBuf)
+	if code != 1 {
+		t.Fatalf("%s: код = %d, хотим 1; stderr=%q", name, code, errBuf.String())
+	}
+	if got := errBuf.String(); got != wantStderr {
+		t.Errorf("%s: stderr байт-не-точен:\nполучено %q\nхотим   %q", name, got, wantStderr)
+	}
+	if out.Len() != 0 {
+		t.Errorf("%s: stdout не пуст: %q", name, out.String())
+	}
+	if s := errBuf.String(); strings.Contains(s, ".go:") || strings.Contains(s, "goroutine") {
+		t.Errorf("%s: в stderr просочился Go stack trace: %q", name, s)
+	}
+}
+
+// T026 (US3, класс 5 — СИНТАКСИЧЕСКАЯ ошибка) — examples/ошибка_синтаксис.ladix
+// падает на ПАРСИНГЕ (незакрытая скобка вызова) → канон §13 «ожидалось ')'…», exit 1.
+// Пример НЕ входит в TestExamplesParseCleanSet (он обязан НЕ парситься).
+// ИНВЕРСИЯ: если перестал быть синтаксической ошибкой / stderr опустел / код ≠ 1 — красный.
+func TestCLINegativeSyntax(t *testing.T) {
+	assertNegativeExample(t, "ошибка_синтаксис.ladix",
+		"Ошибка в строке 5, колонка 1:\nожидалось ')', получено 'конец файла'\n")
+}
+
+// T026 (US3, класс 6 — ТИПОВАЯ/семантическая ошибка) — examples/ошибка_тип.ladix
+// парсится ЧИСТО, падает в РАНТАЙМЕ на несовместимости типов (Целое + Строка) →
+// канон §13 «'+' нельзя применить к Целое и Строка», exit 1.
+// ИНВЕРСИЯ: смена класса (напр. парс-ошибка) / иной текст / код ≠ 1 — красный.
+func TestCLINegativeType(t *testing.T) {
+	assertNegativeExample(t, "ошибка_тип.ladix",
+		"Ошибка в строке 5, колонка 19:\n'+' нельзя применить к Целое и Строка\n")
+}
+
+// T026 (US3, класс 7 — ошибка ПРОЦЕССА) — examples/ошибка_процесс.ladix парсится
+// ЧИСТО, падает в РАНТАЙМЕ на процессной операции «запустить процесс» с необъявленным
+// процессом → канон §13 «процесс 'выдача_заказа' не объявлен», exit 1.
+// ИНВЕРСИЯ: смена класса / иной текст / код ≠ 1 — красный.
+func TestCLINegativeProcess(t *testing.T) {
+	assertNegativeExample(t, "ошибка_процесс.ladix",
+		"Ошибка в строке 3, колонка 12:\nпроцесс 'выдача_заказа' не объявлен\n")
 }
