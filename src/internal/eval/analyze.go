@@ -73,6 +73,19 @@ func (i *Interpreter) Analyze(prog *ast.Program) error {
 		}
 	}
 
+	// Шаг 1a' — статическая валидация источников (010-A1, §SC-4-sem): множество
+	// значений тип:, обязательность поля: для csv/ndjson, множество типов полей.
+	// Статически (без чтения файла), ДО валидации метрик; тексты §SC-9.A дословно.
+	for _, item := range prog.Items {
+		sd, ok := item.(*ast.SourceDecl)
+		if !ok {
+			continue
+		}
+		if err := checkSourceDecl(sd); err != nil {
+			return err
+		}
+	}
+
 	// Шаг 1b — статическая валидация метрик: обязательность источник/агрегат,
 	// связка период↔по_дате, резолв источника (§SM-4, §SM-9.A). НЕ резолвит поля
 	// записи/типы/голое поле/цикл — это eval-time (D-5/D-6/D-8).
@@ -167,6 +180,55 @@ func (i *Interpreter) checkMetricDecl(m *ast.MetricDecl) error {
 			return semErr(m.Attrs.SourcePos, fmt.Sprintf("метрика '%s': '%s' — не источник", name, src))
 		}
 		return semErr(m.Attrs.SourcePos, fmt.Sprintf("метрика '%s': источник '%s' не объявлен", name, src))
+	}
+	return nil
+}
+
+// fieldTypeNames — допустимое множество аннотаций поля: (A1-4, §SC-5). Порядок
+// фиксирован для текста диагностики «неизвестный тип поля» (§SC-9.A).
+var fieldTypeNames = []string{"Целое", "Дробное", "Строка", "Логическое", "Дата"}
+
+// isFieldTypeName — принадлежность имени множеству допустимых аннотаций поля.
+func isFieldTypeName(name string) bool {
+	for _, t := range fieldTypeNames {
+		if name == t {
+			return true
+		}
+	}
+	return false
+}
+
+// checkSourceDecl — статическая валидация одного источника (Шаг 1a', §SC-4-sem,
+// 010-A1). Порядок (fail-fast): (1) значение тип: ∈ {json,csv,ndjson} (пусто=json
+// ок) — иначе semErr с поз. TypePos; (2) csv/ndjson требуют поля: (A1-3) — иначе
+// semErr с поз. TypePos; (3) каждый тип поля ∈ {Целое,Дробное,Строка,Логическое,
+// Дата} — иначе semErr с поз. FieldDef.Pos. Дубли имён полей ловит парсер
+// (§SC-4-sem п.4) — здесь НЕ дублируется. Тексты §SC-9.A byte-identical; без
+// чтения файла.
+func checkSourceDecl(sd *ast.SourceDecl) error {
+	name := sd.Name.Name
+	typ := sd.Type.Name
+	// (1) множество значений тип: (пусто ≡ json, A1-2).
+	if typ != "" && typ != "json" && typ != "csv" && typ != "ndjson" {
+		pos := sd.TypePos
+		if pos.Line == 0 {
+			pos = sd.Pos()
+		}
+		return semErr(pos, fmt.Sprintf("источник '%s': неизвестный тип источника '%s' (допустимо: json, csv, ndjson)", name, typ))
+	}
+	// (2) поля: обязательно для csv/ndjson (A1-3).
+	if (typ == "csv" || typ == "ndjson") && len(sd.Fields) == 0 {
+		pos := sd.TypePos
+		if pos.Line == 0 {
+			pos = sd.Pos()
+		}
+		return semErr(pos, fmt.Sprintf("источник '%s': тип '%s' требует объявления полей (поля:)", name, typ))
+	}
+	// (3) множество типов полей (A1-4).
+	for _, fd := range sd.Fields {
+		if !isFieldTypeName(fd.TypeName.Name) {
+			return semErr(fd.Pos, fmt.Sprintf("источник '%s': неизвестный тип поля '%s' (допустимо: Целое, Дробное, Строка, Логическое, Дата)", name, fd.TypeName.Name))
+		}
 	}
 	return nil
 }

@@ -889,3 +889,106 @@ func TestAnalyzeMetricPeriodPairOK(t *testing.T) {
 		t.Errorf("метрика с парой период/по_дате не должна давать ошибку: %v", err)
 	}
 }
+
+// T011 (Phase D, §SC-4-sem, §SC-9.A) — статические проверки источника: неизвестный
+// тип источника (поз. TypePos), csv/ndjson без поля: (поз. TypePos), неизвестный
+// тип поля (поз. FieldDef.Pos). Тексты §SC-9.A byte-identical; fail-fast.
+func TestAnalyzeSourceConnectorSemantic(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		wantMsg  string
+		wantLine int
+		wantCol  int
+	}{
+		{
+			// неизвестный тип источника → поз. TypePos (строка тип:).
+			"неизвестный тип источника",
+			"источник продажи:\n    файл: \"d.json\"\n    тип: xml",
+			"источник 'продажи': неизвестный тип источника 'xml' (допустимо: json, csv, ndjson)",
+			3, 5,
+		},
+		{
+			// csv без поля: → поз. TypePos.
+			"csv без поля:",
+			"источник продажи:\n    файл: \"d.csv\"\n    тип: csv",
+			"источник 'продажи': тип 'csv' требует объявления полей (поля:)",
+			3, 5,
+		},
+		{
+			// ndjson без поля: → поз. TypePos.
+			"ndjson без поля:",
+			"источник продажи:\n    файл: \"d.ndjson\"\n    тип: ndjson",
+			"источник 'продажи': тип 'ndjson' требует объявления полей (поля:)",
+			3, 5,
+		},
+		{
+			// неизвестный тип поля → поз. FieldDef.Pos (строка объявления поля).
+			"неизвестный тип поля",
+			"источник продажи:\n    файл: \"d.csv\"\n    тип: csv\n    поля:\n        сумма: Деньги",
+			"источник 'продажи': неизвестный тип поля 'Деньги' (допустимо: Целое, Дробное, Строка, Логическое, Дата)",
+			5, 9,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := analyzeSrc(t, tt.src)
+			if err == nil {
+				t.Fatalf("ожидалась ошибка семпрохода")
+			}
+			line, col, msg := evalErr(t, err)
+			if msg != tt.wantMsg {
+				t.Errorf("msg = %q, хотим %q", msg, tt.wantMsg)
+			}
+			if line != tt.wantLine || col != tt.wantCol {
+				t.Errorf("позиция = %d:%d, хотим %d:%d", line, col, tt.wantLine, tt.wantCol)
+			}
+			if !isSem(err) {
+				t.Errorf("категория не СемантическаяОшибка")
+			}
+		})
+	}
+}
+
+// T011 (Phase D, §SC-4-sem п.1/п.2) — позитивы семантики источника: json без поля:
+// валиден (A1-3); тип: опущен (≡ json) валиден; явный json со схемой валиден;
+// csv/ndjson со схемой и корректными типами полей валиден.
+func TestAnalyzeSourceConnectorSemanticOK(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			// json без поля: — валиден (схема опциональна для json, A1-3).
+			"json без схемы",
+			"источник продажи:\n    файл: \"d.json\"\n    тип: json",
+		},
+		{
+			// тип: опущен ≡ json — валиден.
+			"тип опущен",
+			"источник продажи:\n    файл: \"d.json\"",
+		},
+		{
+			// json + поля: со всеми пятью допустимыми аннотациями — валиден.
+			"json со схемой",
+			"источник продажи:\n    файл: \"d.json\"\n    тип: json\n    поля:\n        a: Целое\n        b: Дробное\n        c: Строка\n        d: Логическое\n        e: Дата",
+		},
+		{
+			// csv + поля: — валиден.
+			"csv со схемой",
+			"источник продажи:\n    файл: \"d.csv\"\n    тип: csv\n    поля:\n        сумма: Дробное",
+		},
+		{
+			// ndjson + поля: — валиден.
+			"ndjson со схемой",
+			"источник продажи:\n    файл: \"d.ndjson\"\n    тип: ndjson\n    поля:\n        сумма: Целое",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := analyzeSrc(t, tt.src); err != nil {
+				t.Errorf("семантика должна быть чистой: %v", err)
+			}
+		})
+	}
+}
