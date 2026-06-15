@@ -34,9 +34,15 @@ bin/
 *.exe
 *.out
 vendor/
+# собранный CLI-бинарник (go build -o ladix ./cmd/ladix из src/ либо -o ../ladix в корень)
+/src/ladix
+/ladix
 
 # ladix runtime
 ladix.db
+
+# ladix pipeline ledger (009 finalization — не коммитить)
+.ladix-pipeline/
 
 # Rust
 target/
