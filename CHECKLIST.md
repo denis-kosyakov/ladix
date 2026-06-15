@@ -12,7 +12,7 @@
 - [x] В `SPEC.md` описана грамматика языка. — `SPEC.md:80`
 - [x] В `SPEC.md` описаны типы данных. — `SPEC.md:148`
 - [x] В `SPEC.md` описаны области видимости. — `SPEC.md:243`
-- [x] В `SPEC.md` описаны ошибки. — `SPEC.md:552`
+- [x] В `SPEC.md` описаны ошибки. — `SPEC.md:553`
 - [x] В `SPEC.md` описаны ограничения языка. — `SPEC.md:538`
 
 ## Реализация
@@ -39,7 +39,7 @@
 - [x] Есть параметры функций. — `src/internal/eval/call.go:67`
 - [x] Есть возвращаемое значение. — `src/internal/eval/call.go:49` · `examples/функция.ladix:4`
 - [x] Есть локальные переменные. — `src/internal/eval/call.go:66`
-- [x] Есть вывод данных. — `src/internal/eval/builtins.go:60`
+- [x] Есть вывод данных. — `src/internal/eval/builtins.go:68`
 
 ## Ошибки
 

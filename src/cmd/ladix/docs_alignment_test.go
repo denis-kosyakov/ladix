@@ -98,3 +98,31 @@ func TestDocsAlignmentA4TipReserved(t *testing.T) {
 		t.Errorf("A4: тип(x) стал достижим — stdout вернул «Целое»: %q (функция активирована вопреки v1-резерву)", out.String())
 	}
 }
+
+// A5: serve/emit РЕАЛИЗОВАНЫ и смержены (main.go диспатчит serve→serveMain,
+// emit→emitMain; internal/daemon + serve_golden_test/emit_golden_test). README
+// больше не должен помечать их «ещё не реализован(а)»/«целевой контракт». Эта фраза
+// фигурировала РОВНО в двух снятых блок-цитатах серверных команд — её возврат был бы
+// ложным заявлением, что serve/emit будущие.
+// ИНВЕРСИЯ: вернётся ложное «ещё не реализована» (или «контракт ниже — целевой») —
+// красный.
+func TestDocsAlignmentA5ServeEmitImplemented(t *testing.T) {
+	readme := readRepoDoc(t, "README.md")
+
+	// Снятая подстрока серверных блок-цитат: «ещё не реализован» помечала serve/emit
+	// как будущие. Код их реализует — фраза не должна возвращаться.
+	if strings.Contains(readme, "ещё не реализован") {
+		t.Errorf("A5: README снова заявляет «ещё не реализован(а)» — serve/emit РЕАЛИЗОВАНЫ " +
+			"(main.go → serveMain/emitMain, internal/daemon, *_golden_test.go)")
+	}
+	// «Контракт ниже — целевой» — второй маркер будущности из тех же блок-цитат.
+	if strings.Contains(readme, "Контракт ниже — целевой") {
+		t.Errorf("A5: README снова помечает контракт serve/emit «целевым» (будущим) — команды доступны в v1")
+	}
+	// serve/emit должны быть описаны как присутствующие команды (защита от удаления секций).
+	for _, cmd := range []string{"ladix serve", "ladix emit"} {
+		if !strings.Contains(readme, cmd) {
+			t.Errorf("A5: README не упоминает доступную команду %q", cmd)
+		}
+	}
+}
