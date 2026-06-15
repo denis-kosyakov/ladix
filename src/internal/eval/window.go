@@ -14,7 +14,59 @@ import (
 // период: должен давать один из пяти value.PeriodNames). Арифметика дат —
 // служебная Go (time.Date в UTC), результат-границы суть value.Дата, сравниваемые
 // value.Compare.
+//
+// 011-A2 (§MW-6) расширяет switch АДДИТИВНО:
+//   - p.Name=="последние" (§MW-D-WINDOW-SLIDE): скользящее окно (d−N ед, d],
+//     возвращаемое инклюзивно-эквивалентно (конец=d; начало=(d−N ед)+1день), чтобы
+//     инклюзивный recordSurvives работал БЕЗ изменения;
+//   - p.Offset!=0 для календарного Name (§MW-D-WINDOW-COMPLETED): якорь d сдвигается
+//     назад на |Offset| периодов базовой единицы, затем считается существующее
+//     календарное окно сдвинутой даты (5 ветвей ниже).
+//
+// Всё считается от d=i.now() (заморожен, §MW-6 детерминизм) — никогда time.Now().
 func periodWindow(p value.Период, d value.Дата) (начало, конец value.Дата, ok bool) {
+	// §MW-D-WINDOW-SLIDE: скользящее окно «последние N <ед>».
+	if p.Name == "последние" {
+		n := int(p.Amount)
+		var нижняя_искл time.Time
+		t := dateToTime(d)
+		switch p.Unit {
+		case "дн":
+			нижняя_искл = t.AddDate(0, 0, -n)
+		case "нед":
+			нижняя_искл = t.AddDate(0, 0, -7*n)
+		case "мес":
+			нижняя_искл = t.AddDate(0, -n, 0)
+		default:
+			return value.Дата{}, value.Дата{}, false
+		}
+		// Инклюзивная нижняя граница ≡ полуинтервал (нижняя_искл, d]: начало = искл+1день.
+		начало = timeToDate(нижняя_искл.AddDate(0, 0, 1))
+		return начало, d, true
+	}
+
+	// §MW-D-WINDOW-COMPLETED: «последний завершённый период» — сдвинуть якорь d назад
+	// на Offset периодов базовой единицы, затем вычислить календарное окно (5 ветвей).
+	if p.Offset != 0 {
+		t := dateToTime(d)
+		var shifted time.Time
+		switch p.Name {
+		case "ежедневно":
+			shifted = t.AddDate(0, 0, p.Offset)
+		case "еженедельно":
+			shifted = t.AddDate(0, 0, 7*p.Offset)
+		case "ежемесячно":
+			shifted = t.AddDate(0, p.Offset, 0)
+		case "ежеквартально":
+			shifted = t.AddDate(0, 3*p.Offset, 0)
+		case "ежегодно":
+			shifted = t.AddDate(p.Offset, 0, 0)
+		default:
+			return value.Дата{}, value.Дата{}, false
+		}
+		d = timeToDate(shifted)
+	}
+
 	switch p.Name {
 	case "ежедневно":
 		return d, d, true
