@@ -69,6 +69,35 @@ func NewDurationLit(pos Position, amount, unit string) *DurationLit {
 	return &DurationLit{exprBase: exprBase{base{pos}}, Amount: amount, Unit: unit}
 }
 
+// WindowPeriodLit — литерал скользящего окна метрики «последние N <ед>» (011-A2,
+// §MW-D-PARSE-3). Amount — нормализованная цифровая строка из DurationValue (в int
+// парсится в eval), Unit ∈ {дн,нед,мес} (множество проверяет семантика). Листовой
+// узел-выражение (не импортирует errors). Pos() = токен «последние».
+type WindowPeriodLit struct {
+	exprBase
+	Amount string
+	Unit   string
+}
+
+// NewWindowPeriodLit строит литерал скользящего окна.
+func NewWindowPeriodLit(pos Position, amount, unit string) *WindowPeriodLit {
+	return &WindowPeriodLit{exprBase: exprBase{base{pos}}, Amount: amount, Unit: unit}
+}
+
+// LastCompletedPeriodLit — литерал «последнего завершённого периода»
+// «прошлый|прошлая <noun>» (011-A2, §MW-D-PARSE-3). Noun ∈ {день,неделя,месяц,
+// квартал,год} (множество и маппинг noun→адверб — в семантике/eval). Листовой
+// узел-выражение. Pos() = токен «прошлый»/«прошлая».
+type LastCompletedPeriodLit struct {
+	exprBase
+	Noun string
+}
+
+// NewLastCompletedPeriodLit строит литерал последнего завершённого периода.
+func NewLastCompletedPeriodLit(pos Position, noun string) *LastCompletedPeriodLit {
+	return &LastCompletedPeriodLit{exprBase: exprBase{base{pos}}, Noun: noun}
+}
+
 // ListLit — литерал списка: гетерогенные элементы, висящая запятая, пустой [].
 // Pos() = токен [.
 type ListLit struct {

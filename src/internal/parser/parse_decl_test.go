@@ -416,6 +416,169 @@ func TestMetricDeclSourceNotIdent(t *testing.T) {
 	}
 }
 
+// --- 011-A2 (Phase C): спец-парс ветки период: — окна метрик ---
+
+// metricWithPeriod собирает минимальную метрику с заданным значением период:
+// (источник + период + агрегат), чтобы изолировать parsePeriodValue.
+func metricWithPeriod(periodValue string) string {
+	return "метрика m:\n" +
+		"    источник: продажи\n" +
+		"    период: " + periodValue + "\n" +
+		"    агрегат: сумма(x)\n"
+}
+
+// T007 (011-A2 §MW-D-PARSE-2/4, FR-001/FR-006/FR-009): ПОЗИТИВНЫЙ разбор трёх форм
+// период: — скользящее «последние N<ед>» → WindowPeriodLit, «прошлый|прошлая <noun>»
+// → LastCompletedPeriodLit, адверб-константа → Ident (путь v1 неизменен).
+func TestMetricPeriodValueForms(t *testing.T) {
+	t.Run("последние 30дн → WindowPeriodLit{30,дн}", func(t *testing.T) {
+		prog, el := parseProgramSrc(t, metricWithPeriod("последние 30дн"))
+		if !el.Empty() {
+			t.Fatalf("ошибки: %v", el.Error())
+		}
+		md := prog.Items[0].(*ast.MetricDecl)
+		wp, ok := md.Period.(*ast.WindowPeriodLit)
+		if !ok {
+			t.Fatalf("Period = %T, хотим *ast.WindowPeriodLit", md.Period)
+		}
+		if wp.Amount != "30" || wp.Unit != "дн" {
+			t.Errorf("WindowPeriodLit = %+v, хотим {Amount:30, Unit:дн}", wp)
+		}
+		if wp.Pos().Line == 0 {
+			t.Errorf("Pos().Line = 0, хотим presence (токен «последние»)")
+		}
+	})
+	t.Run("прошлый месяц → LastCompletedPeriodLit{месяц}", func(t *testing.T) {
+		prog, el := parseProgramSrc(t, metricWithPeriod("прошлый месяц"))
+		if !el.Empty() {
+			t.Fatalf("ошибки: %v", el.Error())
+		}
+		md := prog.Items[0].(*ast.MetricDecl)
+		lc, ok := md.Period.(*ast.LastCompletedPeriodLit)
+		if !ok {
+			t.Fatalf("Period = %T, хотим *ast.LastCompletedPeriodLit", md.Period)
+		}
+		if lc.Noun != "месяц" {
+			t.Errorf("Noun = %q, хотим \"месяц\"", lc.Noun)
+		}
+		if lc.Pos().Line == 0 {
+			t.Errorf("Pos().Line = 0, хотим presence (токен «прошлый»)")
+		}
+	})
+	t.Run("прошлая неделя → LastCompletedPeriodLit{неделя}", func(t *testing.T) {
+		prog, el := parseProgramSrc(t, metricWithPeriod("прошлая неделя"))
+		if !el.Empty() {
+			t.Fatalf("ошибки: %v", el.Error())
+		}
+		md := prog.Items[0].(*ast.MetricDecl)
+		lc, ok := md.Period.(*ast.LastCompletedPeriodLit)
+		if !ok {
+			t.Fatalf("Period = %T, хотим *ast.LastCompletedPeriodLit", md.Period)
+		}
+		if lc.Noun != "неделя" {
+			t.Errorf("Noun = %q, хотим \"неделя\"", lc.Noun)
+		}
+	})
+	t.Run("ежемесячно → Ident (путь v1 неизменен)", func(t *testing.T) {
+		prog, el := parseProgramSrc(t, metricWithPeriod("ежемесячно"))
+		if !el.Empty() {
+			t.Fatalf("ошибки: %v", el.Error())
+		}
+		md := prog.Items[0].(*ast.MetricDecl)
+		id, ok := md.Period.(*ast.Ident)
+		if !ok {
+			t.Fatalf("Period = %T, хотим *ast.Ident (адверб-константа)", md.Period)
+		}
+		if id.Name != "ежемесячно" {
+			t.Errorf("Ident.Name = %q, хотим \"ежемесячно\"", id.Name)
+		}
+	})
+}
+
+// T008 (011-A2 §MW-D-PARSE-2, §MW-8): НЕГАТИВЫ формы период: — «последние» без
+// DURATION (в т.ч. спейсовая «30 дн» → INT) и «прошлый» без noun. Тексты — канон
+// через expect/msgExpected (byte-exact).
+func TestMetricPeriodValueNegatives(t *testing.T) {
+	cases := []struct {
+		name   string
+		period string
+		want   string
+	}{
+		{
+			name:   "последние без DURATION (конец строки)",
+			period: "последние",
+			want:   "ожидалось 'период вида N<ед>, например 30дн', получено 'конец строки'",
+		},
+		{
+			name:   "последние с не-DURATION словом",
+			period: "последние нед",
+			want:   "ожидалось 'период вида N<ед>, например 30дн', получено 'нед'",
+		},
+		{
+			name:   "спейсовая последние 30 дн (INT после последние)",
+			period: "последние 30 дн",
+			want:   "ожидалось 'период вида N<ед>, например 30дн', получено '30'",
+		},
+		{
+			name:   "прошлый без noun (конец строки)",
+			period: "прошлый",
+			want:   "ожидалось 'период: день/неделя/месяц/квартал/год', получено 'конец строки'",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, el := parseProgramSrc(t, metricWithPeriod(c.period))
+			if el.Len() == 0 {
+				t.Fatalf("ожидалась парс-ошибка %q", c.want)
+			}
+			pe := firstParseError(t, el)
+			if pe.Msg != c.want {
+				t.Errorf("Msg = %q, хотим %q", pe.Msg, c.want)
+			}
+		})
+	}
+}
+
+// T009 (011-A2 §MW-D-PARSE-1/§MW-3): «последние»/«прошлый»/«прошлая» ВНЕ ветки
+// период: остаются обычными IDENT — спец-парс контекстный, не keyword. Регресс
+// краснеет, если слова сделать ключевыми. Защита codec-skip (§MW-3): слова НЕ
+// предрегистрированы как глобалы (value.PeriodNames — только 5 адвербов) → при
+// чтении как переменной дают рантайм «не объявлено …»; скользящий/завершённый
+// Период НЕ может стать first-class значением, в Store/codec не попадает.
+func TestPeriodKeywordsStayIdentOutsideMetric(t *testing.T) {
+	t.Run("присвоить последние = 5 → AssignAction (последние — IDENT)", func(t *testing.T) {
+		prog, el := parseProgramSrc(t, "присвоить последние = 5\n")
+		if !el.Empty() {
+			t.Fatalf("ошибки: %v", el.Error())
+		}
+		aa, ok := prog.Items[0].(*ast.AssignAction)
+		if !ok {
+			t.Fatalf("Items[0] = %T, хотим *ast.AssignAction", prog.Items[0])
+		}
+		if aa.Name.Name != "последние" {
+			t.Errorf("цель = %q, хотим \"последние\" (обычный IDENT)", aa.Name.Name)
+		}
+	})
+	t.Run("пусть x = прошлый + 1 → прошлый как Ident в выражении", func(t *testing.T) {
+		prog, el := parseProgramSrc(t, "пусть x = прошлый + 1\n")
+		if !el.Empty() {
+			t.Fatalf("ошибки: %v", el.Error())
+		}
+		ls, ok := prog.Items[0].(*ast.LetStmt)
+		if !ok {
+			t.Fatalf("Items[0] = %T, хотим *ast.LetStmt", prog.Items[0])
+		}
+		be, ok := ls.Value.(*ast.BinaryExpr)
+		if !ok {
+			t.Fatalf("Value = %T, хотим *ast.BinaryExpr", ls.Value)
+		}
+		id, ok := be.Left.(*ast.Ident)
+		if !ok || id.Name != "прошлый" {
+			t.Errorf("левая часть = %T(%v), хотим Ident(прошлый)", be.Left, be.Left)
+		}
+	})
+}
+
 // --- T003: фронтенд процессов 005 — снятие cut только с KW_PROCESS ---
 
 // T003 (D-6, §PM-3) + 007a §TR-10.5 п.1: из top-level-отсечки сняты процесс (005)

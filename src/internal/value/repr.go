@@ -47,7 +47,16 @@ func String(v Value) string {
 	case Длительность:
 		return strconv.FormatInt(x.Amount, 10) + x.Unit
 	case Период:
-		return x.Name
+		// §MW-D-VALUE-EQ: скользящая → "последние N<ед>", завершённая (Offset!=0) →
+		// "прошлый <noun>", иначе календарный адверб v1.
+		switch {
+		case x.Name == "последние":
+			return "последние " + strconv.FormatInt(x.Amount, 10) + x.Unit
+		case x.Offset != 0:
+			return "прошлый " + nounFromAdverb(x.Name)
+		default:
+			return x.Name
+		}
 	case Дата:
 		return isoDate(x)
 	default:
@@ -81,6 +90,26 @@ func formatFloat(f float64) string {
 		s += ".0"
 	}
 	return s
+}
+
+// nounFromAdverb отображает базовый календарный адверб «последнего завершённого»
+// периода в существительное для печати (§MW-3): ежедневно→день … ежегодно→год.
+// Чистая функция; для незнакомого адверба возвращает его как есть (репрезентация
+// best-effort, недостижима в валидной программе — noun проверяется семантикой).
+func nounFromAdverb(adverb string) string {
+	switch adverb {
+	case "ежедневно":
+		return "день"
+	case "еженедельно":
+		return "неделя"
+	case "ежемесячно":
+		return "месяц"
+	case "ежеквартально":
+		return "квартал"
+	case "ежегодно":
+		return "год"
+	}
+	return adverb
 }
 
 // isoDate печатает Дата как YYYY-MM-DD (deferred-тип; в 003 не достигается).

@@ -69,8 +69,10 @@ func Equal(a, b Value) bool {
 		y, ok := b.(Дата)
 		return ok && x.Year == y.Year && x.Month == y.Month && x.Day == y.Day
 	case Период:
+		// §MW-D-VALUE-EQ: равенство по ВСЕМ полям (Name + скользящие Amount/Unit +
+		// сдвиг Offset завершённого). 5 календарных констант — нулевые новые поля.
 		y, ok := b.(Период)
-		return ok && x.Name == y.Name
+		return ok && x.Name == y.Name && x.Amount == y.Amount && x.Unit == y.Unit && x.Offset == y.Offset
 	case Длительность:
 		// D-17: равенство по паре (единица, значение) БЕЗ нормализации
 		// (1час != 60мин). Разные единицы → false.
