@@ -8,6 +8,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -260,6 +261,22 @@ func (i *Interpreter) loadCSV(decl *ast.SourceDecl) ([]value.Запись, error
 	}
 
 	header := rows[0]
+	// Снимаем ведущий UTF-8 BOM с первого столбца заголовка (экспорт Excel/Windows
+	// добавляет EF BB BF к первой ячейке) — иначе имя первого столбца приклеивается к
+	// BOM и сопоставление с полями ложно проваливается/уходит в мохибейк-ключ.
+	if len(header) > 0 {
+		header[0] = strings.TrimPrefix(header[0], "\ufeff")
+	}
+	// Дубликат имени столбца в заголовке (любого, не только объявленного) → потеря
+	// данных при тихом схлопывании (последний побеждает). Жёсткая load-ошибка §SC-9.B.
+	seenCol := map[string]bool{}
+	for _, h := range header {
+		if seenCol[h] {
+			return nil, runtimeErr(decl.Pos(),
+				fmt.Sprintf("источник '%s': в заголовке CSV «%s» столбец '%s' объявлен дважды", name, path, h))
+		}
+		seenCol[h] = true
+	}
 	// Заголовок ОБЯЗАН содержать все объявленные поля (§SC-D-CSV).
 	headerSet := map[string]bool{}
 	for _, h := range header {
@@ -314,12 +331,19 @@ func (i *Interpreter) loadNDJSON(decl *ast.SourceDecl) ([]value.Запись, er
 
 	recs := []value.Запись{}
 	idx := 0
+	firstLine := true
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // допускаем длинные строки
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
 			continue // пустые строки пропускаются (A1-9)
+		}
+		if firstLine {
+			// Снимаем ведущий UTF-8 BOM с первой непустой строки (экспорт
+			// Excel/Windows) — иначе json.Valid/декод первого объекта ложно падает.
+			line = strings.TrimPrefix(line, "\ufeff")
+			firstLine = false
 		}
 		idx++
 		// Сначала проверяем синтаксическую валидность строки целиком, чтобы
@@ -444,8 +468,18 @@ func (i *Interpreter) coerceField(decl *ast.SourceDecl, idx int, fname, T string
 	case "Дробное":
 		if isCSV {
 			s := v.(value.Строка).V
+			// §SC-D-COERCE-FLOAT: только конечные десятичные формы. Отвергаем
+			// hex-float (маркеры x/X/p/P, напр. «0x1p4») — это Go-синтаксис, не
+			// данные; и нечисловые ±Inf/NaN (ParseFloat принимает их без ошибки) —
+			// они отравляют агрегаты. Десятичная экспонента «1e3» остаётся валидной.
+			if strings.ContainsAny(s, "xXpP") {
+				return nil, badParse(s, "не является дробным")
+			}
 			f, err := strconv.ParseFloat(s, 64)
 			if err != nil {
+				return nil, badParse(s, "не является дробным")
+			}
+			if math.IsInf(f, 0) || math.IsNaN(f) {
 				return nil, badParse(s, "не является дробным")
 			}
 			return value.Дробное{V: f}, nil

@@ -137,6 +137,52 @@ func TestCLINegativeCSVMissingHeader(t *testing.T) {
 		"Ошибка в строке 1, колонка 1:\nисточник 's': в заголовке CSV «ch.csv» отсутствует поле 'b'\n")
 }
 
+// (Defect 3) Дубликат столбца в заголовке CSV → load-ошибка §SC-9.B (поз. decl).
+func TestCLINegativeCSVDuplicateHeader(t *testing.T) {
+	prog := "" +
+		"источник s:\n" +
+		"    файл: \"dup.csv\"\n" +
+		"    тип: csv\n" +
+		"    поля:\n" +
+		"        ид: Целое\n" +
+		"        статус: Строка\n\n" +
+		"метрика m:\n" +
+		"    источник: s\n" +
+		"    агрегат: сумма(ид)\n" + runtimeForceTrigger
+	assertSourceNegative(t, prog, map[string]string{"dup.csv": "ид,статус,статус\n7,оплачен,новый\n"},
+		"Ошибка в строке 1, колонка 1:\nисточник 's': в заголовке CSV «dup.csv» столбец 'статус' объявлен дважды\n")
+}
+
+// (Defect 4) CSV-Дробное со значением Inf → «не является дробным», exit 1.
+func TestCLINegativeCSVFloatInf(t *testing.T) {
+	prog := "" +
+		"источник s:\n" +
+		"    файл: \"inf.csv\"\n" +
+		"    тип: csv\n" +
+		"    поля:\n" +
+		"        цена: Дробное\n\n" +
+		"метрика m:\n" +
+		"    источник: s\n" +
+		"    агрегат: сумма(цена)\n" + runtimeForceTrigger
+	assertSourceNegative(t, prog, map[string]string{"inf.csv": "цена\nInf\n"},
+		"Ошибка в строке 1, колонка 1:\nисточник 's': запись 1, поле 'цена': «Inf» не является дробным\n")
+}
+
+// (Defect 4) CSV-Дробное с Go hex-float «0x1p4» → «не является дробным», exit 1.
+func TestCLINegativeCSVFloatHex(t *testing.T) {
+	prog := "" +
+		"источник s:\n" +
+		"    файл: \"hex.csv\"\n" +
+		"    тип: csv\n" +
+		"    поля:\n" +
+		"        цена: Дробное\n\n" +
+		"метрика m:\n" +
+		"    источник: s\n" +
+		"    агрегат: сумма(цена)\n" + runtimeForceTrigger
+	assertSourceNegative(t, prog, map[string]string{"hex.csv": "цена\n0x1p4\n"},
+		"Ошибка в строке 1, колонка 1:\nисточник 's': запись 1, поле 'цена': «0x1p4» не является дробным\n")
+}
+
 // Семантика: неизвестный `тип:` (Analyze, позиция TypePos).
 func TestCLINegativeSemUnknownType(t *testing.T) {
 	prog := "" +

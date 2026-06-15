@@ -619,3 +619,119 @@ func TestApplySchemaJSONDateNonString(t *testing.T) {
 	assertLoadErr(t, makeTypedSourceDecl("c", path, "json", []fieldSpec{{"d", "Дата"}}),
 		"источник 'c': запись 1, поле 'd': ожидался Дата, получено Целое")
 }
+
+// === 010-A1 hardening (adversarial self-check): 4 MAJOR-замка загрузчика CSV ===
+
+// bom — ведущий UTF-8 BOM (байты EF BB BF). Записываем фикстуры байтами, чтобы BOM
+// был точным, а не приклеенным редактором.
+const bom = "\ufeff"
+
+// Defect 1+2: ведущий UTF-8 BOM на CSV приклеивается к имени первого столбца («ид» →
+// «\ufeffид») → ложная «отсутствует поле 'ид'» ИЛИ тихая привязка к мохибейк-ключу.
+// loadCSV ОБЯЗАН снять BOM с header[0]: поле 'ид' достижимо, ошибки нет.
+func TestLoadCSVStripsBOMHeader(t *testing.T) {
+	dir := t.TempDir()
+	// EF BB BF + «ид,статус\n7,оплачен\n».
+	path := writeFixture(t, dir, "bom.csv", bom+"ид,статус\n7,оплачен\n")
+	i := newTestInterp()
+	recs, err := i.loadSource(makeTypedSourceDecl("заказы", path, "csv",
+		[]fieldSpec{{"ид", "Целое"}, {"статус", "Строка"}}))
+	if err != nil {
+		t.Fatalf("loadSource csv с BOM: %v (BOM не снят с header[0]?)", err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("записей = %d, хотим 1", len(recs))
+	}
+	r := recs[0]
+	// Поле 'ид' достижимо по настоящему имени (а не по «\ufeffид»).
+	if v, ok := r.Get("ид").(value.Целое); !ok || v.V != 7 {
+		t.Errorf("ид = %v (%T), хотим Целое 7 — BOM приклеился к ключу?", r.Get("ид"), r.Get("ид"))
+	}
+	if v, ok := r.Get("статус").(value.Строка); !ok || v.V != "оплачен" {
+		t.Errorf("статус = %v, хотим Строка «оплачен»", r.Get("статус"))
+	}
+	// Мохибейк-ключ с BOM НЕ должен существовать.
+	if _, ok := r.Get(bom + "ид").(value.Строка); ok {
+		t.Errorf("мохибейк-ключ «\\ufeffид» присутствует — BOM не снят")
+	}
+}
+
+// Defect 2 (NDJSON): ведущий BOM на первой непустой строке NDJSON → json.Valid ложно
+// падает. loadNDJSON ОБЯЗАН снять BOM с первой непустой строки.
+func TestLoadNDJSONStripsBOMFirstLine(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFixture(t, dir, "bom.ndjson", bom+`{"ид": 7, "статус": "оплачен"}`+"\n")
+	i := newTestInterp()
+	recs, err := i.loadSource(makeTypedSourceDecl("заказы", path, "ndjson",
+		[]fieldSpec{{"ид", "Целое"}, {"статус", "Строка"}}))
+	if err != nil {
+		t.Fatalf("loadSource ndjson с BOM: %v (BOM не снят с первой строки?)", err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("записей = %d, хотим 1", len(recs))
+	}
+	if v, ok := recs[0].Get("ид").(value.Целое); !ok || v.V != 7 {
+		t.Errorf("ид = %v (%T), хотим Целое 7", recs[0].Get("ид"), recs[0].Get("ид"))
+	}
+}
+
+// Defect 3: дубликат имени столбца в заголовке CSV («ид,статус,статус») тихо
+// схлопывается (последний побеждает) → потеря данных. loadCSV ОБЯЗАН выдать
+// типизированную §SC-9.B-ошибку с позицией decl, байт-в-байт.
+func TestLoadCSVDuplicateHeaderColumn(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFixture(t, dir, "dup.csv", "ид,статус,статус\n7,оплачен,новый\n")
+	assertLoadErr(t, makeTypedSourceDecl("заказы", path, "csv",
+		[]fieldSpec{{"ид", "Целое"}, {"статус", "Строка"}}),
+		"источник 'заказы': в заголовке CSV «"+path+"» столбец 'статус' объявлен дважды")
+}
+
+// Defect 4: CSV-Дробное отвергает нечисловые ±Inf/NaN (ParseFloat принимает их без
+// ошибки) — иначе отравляют агрегаты.
+func TestApplySchemaCSVFloatRejectsNonFinite(t *testing.T) {
+	for _, s := range []string{"Inf", "+Inf", "-Inf", "Infinity", "NaN", "inf", "nan"} {
+		t.Run(s, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeFixture(t, dir, "nf.csv", "x\n"+s+"\n")
+			assertLoadErr(t, makeTypedSourceDecl("c", path, "csv", []fieldSpec{{"x", "Дробное"}}),
+				"источник 'c': запись 1, поле 'x': «"+s+"» не является дробным")
+		})
+	}
+}
+
+// Defect 4: CSV-Дробное отвергает Go hex-float литералы («0x1p4» → 16.0) — это
+// Go-синтаксис, не данные.
+func TestApplySchemaCSVFloatRejectsHexFloat(t *testing.T) {
+	for _, s := range []string{"0x1p4", "0X1P4", "0x1.8p3"} {
+		t.Run(s, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeFixture(t, dir, "hf.csv", "x\n"+s+"\n")
+			assertLoadErr(t, makeTypedSourceDecl("c", path, "csv", []fieldSpec{{"x", "Дробное"}}),
+				"источник 'c': запись 1, поле 'x': «"+s+"» не является дробным")
+		})
+	}
+}
+
+// Defect 4 (регресс): десятичная экспонента «1e3» и обычные формы остаются валидными
+// после ужесточения (consistency с JSON number form).
+func TestApplySchemaCSVFloatExponentStillValid(t *testing.T) {
+	for _, tc := range []struct {
+		s    string
+		want float64
+	}{
+		{"1e3", 1000}, {"1.5", 1.5}, {"1200000", 1200000}, {"1200000.5", 1200000.5}, {"-2.5e-1", -0.25},
+	} {
+		t.Run(tc.s, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeFixture(t, dir, "ok.csv", "x\n"+tc.s+"\n")
+			i := newTestInterp()
+			recs, err := i.loadSource(makeTypedSourceDecl("c", path, "csv", []fieldSpec{{"x", "Дробное"}}))
+			if err != nil {
+				t.Fatalf("loadSource (валидная форма %q): %v", tc.s, err)
+			}
+			if v, ok := recs[0].Get("x").(value.Дробное); !ok || v.V != tc.want {
+				t.Errorf("x = %v (%T), хотим Дробное %v", recs[0].Get("x"), recs[0].Get("x"), tc.want)
+			}
+		})
+	}
+}
