@@ -45,26 +45,26 @@ func periodWindow(p value.Период, d value.Дата) (начало, кон�
 		return начало, d, true
 	}
 
-	// §MW-D-WINDOW-COMPLETED: «последний завершённый период» — сдвинуть якорь d назад
-	// на Offset периодов базовой единицы, затем вычислить календарное окно (5 ветвей).
+	// §MW-D-WINDOW-COMPLETED (ИСПРАВЛЕНО после self-check): «последний завершённый
+	// период» — «шаг назад от НАЧАЛА текущего периода». Сырой сдвиг даты
+	// d.AddDate(0,Offset,0) на day-31 ПЕРЕПОЛНЯЛСЯ вперёд (2026-05-31.AddDate(0,-1,0)
+	// = 2026-05-01, апрель 30 дней → 31 апр = 1 мая = ВСЁ ЕЩЁ МАЙ) → «прошлый месяц»
+	// на 31-м давал ТЕКУЩИЙ месяц. Корректно: для КАЖДОГО шага вычислить окно текущего
+	// периода базовым Период{Name} (Offset:0 → обычная календарная ветка ниже, без
+	// рекурсии в этот блок), затем якорь = начало_тек − 1 день — гарантированно в
+	// ПРЕДЫДУЩЕМ периоде для любого Name (день/неделя/месяц/квартал/год) БЕЗ
+	// переполнения дня. В A2 Offset == −1 (один шаг); цикл — на будущий |Offset|>1.
 	if p.Offset != 0 {
-		t := dateToTime(d)
-		var shifted time.Time
-		switch p.Name {
-		case "ежедневно":
-			shifted = t.AddDate(0, 0, p.Offset)
-		case "еженедельно":
-			shifted = t.AddDate(0, 0, 7*p.Offset)
-		case "ежемесячно":
-			shifted = t.AddDate(0, p.Offset, 0)
-		case "ежеквартально":
-			shifted = t.AddDate(0, 3*p.Offset, 0)
-		case "ежегодно":
-			shifted = t.AddDate(p.Offset, 0, 0)
-		default:
-			return value.Дата{}, value.Дата{}, false
+		base := value.Период{Name: p.Name}
+		anchor := d
+		for i := 0; i < -p.Offset; i++ {
+			start, _, ok := periodWindow(base, anchor)
+			if !ok {
+				return value.Дата{}, value.Дата{}, false
+			}
+			anchor = timeToDate(dateToTime(start).AddDate(0, 0, -1)) // на день раньше начала текущего периода → предыдущий период
 		}
-		d = timeToDate(shifted)
+		return periodWindow(base, anchor)
 	}
 
 	switch p.Name {

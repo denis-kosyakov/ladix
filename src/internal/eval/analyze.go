@@ -183,8 +183,14 @@ func (i *Interpreter) checkMetricDecl(m *ast.MetricDecl) error {
 			return semErr(m.Attrs.PeriodPos, fmt.Sprintf("метрика '%s': единица '%s' недопустима для окна (допустимо: дн, нед, мес)", name, lit.Unit))
 		}
 		// §MW-SEM-2: размер окна N ≥ 1. Amount — нормализованная цифровая строка из
-		// DURATION; парс-ошибка недостижима, при ней N остаётся 0 → отвергается.
-		if n, err := strconv.ParseInt(lit.Amount, 10, 64); err != nil || n < 1 {
+		// DURATION (цифры без знака). РАЗДЕЛЕНЫ два случая (self-check Ф8): ParseInt-err
+		// ⟺ переполнение int64 (N положителен, лишь вне диапазона) → «слишком велик»;
+		// успешный парс с N < 1 (т.е. N == 0, «0дн»/«00дн») → «должен быть положительным».
+		n, err := strconv.ParseInt(lit.Amount, 10, 64)
+		if err != nil {
+			return semErr(m.Attrs.PeriodPos, fmt.Sprintf("метрика '%s': размер окна слишком велик", name))
+		}
+		if n < 1 {
 			return semErr(m.Attrs.PeriodPos, fmt.Sprintf("метрика '%s': размер окна должен быть положительным", name))
 		}
 	case *ast.LastCompletedPeriodLit:

@@ -101,15 +101,20 @@ func TestPeriodWindowSliding(t *testing.T) {
 	}
 }
 
-// T013 🔒 (Phase D, §MW-D-WINDOW-EDGE, §MW-10 #4) — golden конца месяца на
-// D=2026-05-31. ЧЕСТНЫЙ нормализованный результат Go time.AddDate (НЕ «красивый»):
-//   - «последние 1мес»: d−1мес = 2026-05-31.AddDate(0,-1,0) = 2026-05-01 (апрель
+// T013 🔒 (Phase D, §MW-D-WINDOW-EDGE/§MW-D-WINDOW-COMPLETED, §MW-10 #4) — golden
+// конца месяца на D=2026-05-31. Две формы ведут себя ПО-РАЗНОМУ (суть замка после
+// фикса §MW-D-WINDOW-COMPLETED):
+//   - «последние 1мес» (СКОЛЬЗЯЩЕЕ, принятый edge §MW-D-WINDOW-EDGE): нижняя граница
+//     через сырой AddDate, d−1мес = 2026-05-31.AddDate(0,-1,0) = 2026-05-01 (апрель
 //     30 дней → 2026-04-31 нормализуется в 2026-05-01), начало = +1день = 2026-05-02,
-//     конец = 2026-05-31 → окно [2026-05-02, 2026-05-31].
-//   - «прошлый месяц»: сдвиг якоря 2026-05-31.AddDate(0,-1,0) = 2026-05-01 (МАЙ, не
-//     апрель — та же нормализация), месячное окно мая → [2026-05-01, 2026-05-31].
+//     конец = 2026-05-31 → окно [2026-05-02, 2026-05-31]. Нормализация принята.
+//   - «прошлый месяц» (ЗАВЕРШЁННЫЙ, §MW-D-WINDOW-COMPLETED «шаг назад от начала
+//     текущего периода»): начало мая 2026-05-01, минус 1 день = 2026-04-30 (АПРЕЛЬ),
+//     календарное окно апреля → [2026-04-01, 2026-04-30]. БЕЗ переполнения дня —
+//     строго ПРЕДЫДУЩИЙ месяц, в отличие от сломанного raw-AddDate (давал май).
 //
-// 🔁 краснеет, если арифметику месяцев изменить.
+// 🔁 КРАСНЕЕТ при возврате к сырому сдвигу d.AddDate(0,Offset,0) («прошлый месяц»
+// снова даст [2026-05-01, 2026-05-31] = текущий май) или при инверсии арифметики.
 func TestPeriodWindowMonthEndEdge(t *testing.T) {
 	cases := []struct {
 		name           string
@@ -118,7 +123,7 @@ func TestPeriodWindowMonthEndEdge(t *testing.T) {
 		wantStart, end value.Дата
 	}{
 		{"последние 1мес на 2026-05-31", value.Период{Name: "последние", Amount: 1, Unit: "мес"}, dt(2026, 5, 31), dt(2026, 5, 2), dt(2026, 5, 31)},
-		{"прошлый месяц на 2026-05-31", value.Период{Name: "ежемесячно", Offset: -1}, dt(2026, 5, 31), dt(2026, 5, 1), dt(2026, 5, 31)},
+		{"прошлый месяц на 2026-05-31", value.Период{Name: "ежемесячно", Offset: -1}, dt(2026, 5, 31), dt(2026, 4, 1), dt(2026, 4, 30)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -169,6 +174,61 @@ func TestPeriodWindowCompleted(t *testing.T) {
 			}
 			if end != c.end {
 				t.Errorf("конец = %+v, хотим %+v", end, c.end)
+			}
+		})
+	}
+}
+
+// TestNounToAdverbEndToEnd 🔒 (Defect 2, §MW-5/§MW-D-WINDOW-COMPLETED) — СКВОЗНОЙ
+// замок маппинга `nounToAdverb`: ПАРСИТ `период: прошлый <noun>` настоящим парсером
+// → Analyze → evalExpr(m.Period) (узел LastCompletedPeriodLit проходит nounToAdverb)
+// → periodWindow на инжектированном windowClock {2026,6,15}. Утверждает границы окна
+// для КАЖДОГО noun. Конструирует value.Период НЕ напрямую (это обошло бы nounToAdverb),
+// а через реальный конвейер парс→eval. Поэтому подмена nounToAdverb («месяц»→«ежегодно»)
+// сдвинет окно `прошлый месяц` с [2026-05-01,2026-05-31] (месяц) на [2025-01-01,
+// 2025-12-31] (год) → 🔁 КРАСНЫЙ. Дополняет periodWindow-таблицы (те строят Период
+// напрямую и nounToAdverb не покрывают).
+func TestNounToAdverbEndToEnd(t *testing.T) {
+	cases := []struct {
+		name           string
+		period         string
+		wantStart, end value.Дата
+	}{
+		// прошлый месяц: 2026-06-15 → май 2026 = [2026-05-01, 2026-05-31].
+		{"прошлый месяц", "прошлый месяц", dt(2026, 5, 1), dt(2026, 5, 31)},
+		// прошлая неделя: 2026-06-15 (пн) − 7дн → [2026-06-08, 2026-06-14].
+		{"прошлая неделя", "прошлая неделя", dt(2026, 6, 8), dt(2026, 6, 14)},
+		// прошлый квартал: 2026-06-15 → Q1 = [2026-01-01, 2026-03-31].
+		{"прошлый квартал", "прошлый квартал", dt(2026, 1, 1), dt(2026, 3, 31)},
+		// прошлый год: 2026-06-15 → [2025-01-01, 2025-12-31].
+		{"прошлый год", "прошлый год", dt(2025, 1, 1), dt(2025, 12, 31)},
+		// прошлый день: 2026-06-15 → [2026-06-14, 2026-06-14].
+		{"прошлый день", "прошлый день", dt(2026, 6, 14), dt(2026, 6, 14)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			i, _ := buildWindowBoundsInterp(t, windowBoundsSrc(c.period))
+			md, ok := i.metrics["m"]
+			if !ok {
+				t.Fatalf("метрика m не зарегистрирована Analyze")
+			}
+			// Eval период-узла m.Period в глобальной области — тот же путь, что и
+			// evalMetric (§MW-2); для `прошлый <noun>` это LastCompletedPeriodLit →
+			// nounToAdverb → value.Период.
+			pv, err := i.evalExpr(i.global, md.Period)
+			if err != nil {
+				t.Fatalf("evalExpr(m.Period) для %q: %v", c.period, err)
+			}
+			per, ok := pv.(value.Период)
+			if !ok {
+				t.Fatalf("период %q дал не value.Период: %T", c.period, pv)
+			}
+			start, end, ok := periodWindow(per, i.now())
+			if !ok {
+				t.Fatalf("periodWindow(%+v) вернул ok=false (nounToAdverb мог дать пустой адверб)", per)
+			}
+			if start != c.wantStart || end != c.end {
+				t.Errorf("период %q → окно [%+v, %+v], хотим [%+v, %+v] (проверь nounToAdverb)", c.period, start, end, c.wantStart, c.end)
 			}
 		})
 	}
