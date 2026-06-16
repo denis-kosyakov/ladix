@@ -21,8 +21,8 @@ func TestParseErrorTwoLineFormat(t *testing.T) {
 		},
 		{
 			name: "позиция в рунах (5,14)",
-			err:  ParseError{Pos: Position{Line: 5, Col: 14}, Msg: "неожиданный элемент 'значение'"},
-			want: "Ошибка в строке 5, колонка 14:\nнеожиданный элемент 'значение'",
+			err:  ParseError{Pos: Position{Line: 5, Col: 14}, Msg: "неожиданный токен 'значение'"},
+			want: "Ошибка в строке 5, колонка 14:\nнеожиданный токен 'значение'",
 		},
 	}
 	for _, tt := range tests {
@@ -50,7 +50,7 @@ func TestParseErrorAs(t *testing.T) {
 func TestParseErrorInSharedErrorList(t *testing.T) {
 	l := NewErrorList()
 	l.Add(LexError{Pos: Position{Line: 1, Col: 1}, Msg: "незакрытый строковый литерал"})
-	l.Add(ParseError{Pos: Position{Line: 2, Col: 3}, Msg: "неожиданный элемент '{'"})
+	l.Add(ParseError{Pos: Position{Line: 2, Col: 3}, Msg: "неожиданный токен '{'"})
 
 	if l.Len() != 2 {
 		t.Fatalf("Len = %d, хотим 2 (лексическая+синтаксическая в общем накопителе)", l.Len())
@@ -59,8 +59,8 @@ func TestParseErrorInSharedErrorList(t *testing.T) {
 	if !stderrors.As(l, &pe) {
 		t.Fatalf("errors.As по агрегату не нашёл ParseError")
 	}
-	if pe.Msg != "неожиданный элемент '{'" {
-		t.Errorf("Msg = %q, хотим \"неожиданный элемент '{'\"", pe.Msg)
+	if pe.Msg != "неожиданный токен '{'" {
+		t.Errorf("Msg = %q, хотим \"неожиданный токен '{'\"", pe.Msg)
 	}
 	var le LexError
 	if !stderrors.As(l, &le) {

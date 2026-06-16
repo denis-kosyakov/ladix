@@ -30,14 +30,26 @@ func TestLexErrorCatalog(t *testing.T) {
 // выпадении кода из покрытия или добавлении нового без обновления числа (образец —
 // eval/errors_golden_test.go:205 len(seen)!=28).
 func TestLexCatalogInventory(t *testing.T) {
-	const wantCodes = 11
-	seen := make(map[string]bool, wantCodes)
+	// Сверка с КАНОНИЧЕСКИМ множеством {L-1..L-11}, а не только с числом: ловит и
+	// выпадение/добавление кода, И переименование (напр. L-8→L-99) — замок «кусается»
+	// на любом дрейфе реестра, не вакуумно по кардинальности.
+	want := map[string]bool{
+		"L-1": true, "L-2": true, "L-3": true, "L-4": true, "L-5": true, "L-6": true,
+		"L-7": true, "L-8": true, "L-9": true, "L-10": true, "L-11": true,
+	}
+	seen := make(map[string]bool, len(want))
 	for _, tt := range lexCatalogCases {
 		seen[tt.code] = true
 	}
-	if len(seen) != wantCodes {
-		t.Errorf("каталог лексики покрывает кодов = %d, хотим РОВНО %d (L-1..L-11): %v",
-			len(seen), wantCodes, seen)
+	for code := range want {
+		if !seen[code] {
+			t.Errorf("каталог лексики НЕ покрывает %s (реестр L-1..L-11 неполон)", code)
+		}
+	}
+	for code := range seen {
+		if !want[code] {
+			t.Errorf("каталог лексики содержит неожиданный код %q (ожидались только L-1..L-11)", code)
+		}
 	}
 	// Замок DX2 (SC-007): scope-A лексические тексты без жаргона «литерал»/«токен»
 	// и без кодов (L-). «escape-последовательность»/«суффикс длительности» сохранены

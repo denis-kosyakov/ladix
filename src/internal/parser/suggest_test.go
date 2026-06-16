@@ -71,3 +71,22 @@ func TestUnknownAttrSuggestionIntegration(t *testing.T) {
 		t.Errorf("ожидалась подсказка про 'по_дате':\n%s", el3.Error())
 	}
 }
+
+// Hardening (self-review): настоящий tie двух РЕАЛЬНЫХ кандидатов + дубль-атрибут
+// без подсказки.
+func TestSuggestionTieAndDuplicate(t *testing.T) {
+	// «тля» равноудалён (расстояние 2) от «тип»(idx1) и «поля»(idx2) в sourceAttrVocab
+	// → детерминированно выбирается ПЕРВЫЙ по порядку словаря (тип).
+	_, el := parseProgramSrc(t, "источник з:\n    тля: 1\n")
+	if !strings.Contains(el.Error(), "возможно, вы имели в виду 'тип'?") {
+		t.Errorf("tie должен дать первый по словарю (тип):\n%s", el.Error())
+	}
+	// Дубль атрибута идёт через msgDuplicateAttr (НЕ hint) → подсказки быть НЕ должно.
+	_, el2 := parseProgramSrc(t, "источник з:\n    тип: csv\n    тип: json\n")
+	if !strings.Contains(el2.Error(), "атрибут 'тип' уже задан") {
+		t.Fatalf("нет диагностики дубля атрибута:\n%s", el2.Error())
+	}
+	if strings.Contains(el2.Error(), "возможно, вы имели в виду") {
+		t.Errorf("дубль атрибута НЕ должен нести подсказку:\n%s", el2.Error())
+	}
+}

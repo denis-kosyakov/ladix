@@ -193,9 +193,11 @@ func TestOrphanIndentAfterNonBlockBreak(t *testing.T) {
 		"Ошибка в строке 2, колонка 1:\nнеожиданный элемент 'увеличение отступа'")
 }
 
-// C-REC-6: sync-lead ведущее ключевое слово вместо шага в блоке процесса
-// (parse_decl.go) — тот же re-dispatch, что в позиции выражения; consume-before-
-// error даёт ровно 1 (было 2). Не-sync-lead не-шаг и так давал 1 (мутпроба M1).
+// C-REC-6: sync-lead ведущее ключевое слово вместо шага в блоке процесса.
+// ОХРАНЯЕМЫЙ САЙТ — parse_decl.go (process-body non-step, ветка `else { bad :=
+// p.advance(); p.error(...) }`): consume-before-error, как в parsePrimary, но это
+// ОТДЕЛЬНАЯ правка — мутация ТОЛЬКО parse_expr.go этот замок НЕ ломает (нужна и
+// правка parse_decl.go). Даёт ровно 1 (было 2). Не-sync-lead не-шаг и так давал 1.
 // NB: field-block (поля:) и metric-window (последние) каскадят ОБЩИМ образом для
 // ЛЮБОГО плохого токена (мутпроба: если≡123≡+≡)) — это пре-существующая decl-line
 // recovery, НЕ sync-lead-инвариант DX1; вне scope (см. docs/diagnostics-model.md).
