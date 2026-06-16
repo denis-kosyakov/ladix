@@ -6,9 +6,12 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/lexer"
 )
 
-// Тексты синтаксических ошибок (contracts/syntax-errors.md). Три канона —
-// ДОСЛОВНО из SPEC §13.4 (конституция VIII, FR-024); четыре эталона — по стилю
-// §13.4, зафиксированы контрактом. Переформулировать запрещено.
+// Тексты синтаксических ошибок (contracts/syntax-errors.md). Канон — docs/
+// diagnostics-model.md §MDX (DX2, фича 012): бизнес-понятные формулировки scope A
+// (де-жаргон «токен»/«литерал»), коды SE-* — внутренние, двухстрочный формат §13
+// сохранён. Код берёт тексты ДОСЛОВНО из модель-дока (конституция VIII «дословно из
+// docs»). Перенос канона в большой SPEC §13.4 — архитектором на шве (FR-013).
+// Переформулировать в обход модель-дока запрещено.
 const (
 	// Канон §13.4.
 	msgChain    = "сравнения нельзя сцеплять, используйте 'и': 1 < x и x < 10"
@@ -45,9 +48,10 @@ func msgDuplicateField(name string) string {
 	return fmt.Sprintf("поле '%s' уже объявлено", name)
 }
 
-// msgIntRange — канон §13.4 с подстановкой реальной лексемы числа целиком.
+// msgIntRange — SE-INT-RANGE. Бизнес-формулировка (DX2): «целое число» вместо
+// «целочисленный литерал», лексема числа целиком. Канон docs/diagnostics-model.md.
 func msgIntRange(lexeme string) string {
-	return fmt.Sprintf("целочисленный литерал вне диапазона типа Целое '%s'", lexeme)
+	return fmt.Sprintf("целое число '%s' вне диапазона типа Целое", lexeme)
 }
 
 // msgExpected — эталон SE-EXPECTED. expected — ожидаемая лексема/символ без
@@ -56,9 +60,11 @@ func msgExpected(expected string, got lexer.Token) string {
 	return fmt.Sprintf("ожидалось '%s', получено '%s'", expected, lexemeOf(got))
 }
 
-// msgUnexpected — эталон SE-UNEXPECTED: ведущий токен не начинает допустимый элемент.
+// msgUnexpected — эталон SE-UNEXPECTED: ведущий элемент не начинает допустимую
+// конструкцию. Бизнес-формулировка (DX2, фича 012): «элемент» вместо внутреннего
+// «токен» — канон docs/diagnostics-model.md §MDX.
 func msgUnexpected(got lexer.Token) string {
-	return fmt.Sprintf("неожиданный токен '%s'", lexemeOf(got))
+	return fmt.Sprintf("неожиданный элемент '%s'", lexemeOf(got))
 }
 
 // pseudoLexeme — описательные псевдо-лексемы виртуальных токенов (у них пустая

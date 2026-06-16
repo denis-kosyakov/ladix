@@ -25,7 +25,7 @@ func TestMultipleIndependentErrors(t *testing.T) {
 	if e0.Pos.Line != 1 || e1.Pos.Line != 2 {
 		t.Errorf("строки ошибок = %d,%d, хотим 1,2", e0.Pos.Line, e1.Pos.Line)
 	}
-	if e0.Msg != "неожиданный токен 'значение'" || e1.Msg != "неожиданный токен '{'" {
+	if e0.Msg != "неожиданный элемент 'значение'" || e1.Msg != "неожиданный элемент '{'" {
 		t.Errorf("сообщения: %q / %q", e0.Msg, e1.Msg)
 	}
 }
@@ -139,11 +139,11 @@ func assertDiagnostics(t *testing.T, el *errors.ErrorList, want ...string) {
 func TestCascadeSameLineSingleDiagnostic(t *testing.T) {
 	cases := []struct{ name, src, want string }{
 		{"пусть-если", "пусть x = если\n",
-			"Ошибка в строке 1, колонка 11:\nнеожиданный токен 'если'"},
+			"Ошибка в строке 1, колонка 11:\nнеожиданный элемент 'если'"},
 		{"пусть-пока", "пусть y = пока\n",
-			"Ошибка в строке 1, колонка 11:\nнеожиданный токен 'пока'"},
+			"Ошибка в строке 1, колонка 11:\nнеожиданный элемент 'пока'"},
 		{"печать-для", "печать(для)\n",
-			"Ошибка в строке 1, колонка 8:\nнеожиданный токен 'для'"},
+			"Ошибка в строке 1, колонка 8:\nнеожиданный элемент 'для'"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -158,9 +158,9 @@ func TestCascadeSameLineSingleDiagnostic(t *testing.T) {
 func TestCascadeBlockBleedSingleDiagnostic(t *testing.T) {
 	cases := []struct{ name, src, want string }{
 		{"если-вернуть", "если вернуть:\n    печать(1)\n",
-			"Ошибка в строке 1, колонка 6:\nнеожиданный токен 'вернуть'"},
+			"Ошибка в строке 1, колонка 6:\nнеожиданный элемент 'вернуть'"},
 		{"пока-вернуть", "пока вернуть:\n    печать(1)\n",
-			"Ошибка в строке 1, колонка 6:\nнеожиданный токен 'вернуть'"},
+			"Ошибка в строке 1, колонка 6:\nнеожиданный элемент 'вернуть'"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -177,8 +177,8 @@ func TestCascadeBlockBleedSingleDiagnostic(t *testing.T) {
 func TestIndependentErrorsNotCollapsed(t *testing.T) {
 	_, el := parseProgramSrc(t, "значение\n{\n")
 	assertDiagnostics(t, el,
-		"Ошибка в строке 1, колонка 1:\nнеожиданный токен 'значение'",
-		"Ошибка в строке 2, колонка 1:\nнеожиданный токен '{'")
+		"Ошибка в строке 1, колонка 1:\nнеожиданный элемент 'значение'",
+		"Ошибка в строке 2, колонка 1:\nнеожиданный элемент '{'")
 }
 
 // Орфан-отступ после НЕ-блок-владеющей сломки (пусть не открывает блок): сиротский
@@ -189,8 +189,8 @@ func TestIndependentErrorsNotCollapsed(t *testing.T) {
 func TestOrphanIndentAfterNonBlockBreak(t *testing.T) {
 	_, el := parseProgramSrc(t, "пусть x = если\n    печать(1)\n")
 	assertDiagnostics(t, el,
-		"Ошибка в строке 1, колонка 11:\nнеожиданный токен 'если'",
-		"Ошибка в строке 2, колонка 1:\nнеожиданный токен 'увеличение отступа'")
+		"Ошибка в строке 1, колонка 11:\nнеожиданный элемент 'если'",
+		"Ошибка в строке 2, колонка 1:\nнеожиданный элемент 'увеличение отступа'")
 }
 
 // C-REC-6: sync-lead ведущее ключевое слово вместо шага в блоке процесса
@@ -203,5 +203,5 @@ func TestProcessBlockNonStepSyncLeadSingleDiagnostic(t *testing.T) {
 	src := "процесс п:\n    шаг а:\n        исполнитель: \"x\"\n    если\n"
 	_, el := parseProgramSrc(t, src)
 	assertDiagnostics(t, el,
-		"Ошибка в строке 4, колонка 5:\nнеожиданный токен 'если'")
+		"Ошибка в строке 4, колонка 5:\nнеожиданный элемент 'если'")
 }

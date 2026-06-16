@@ -70,7 +70,7 @@ func (p *Parser) parseSourceDecl() *ast.SourceDecl {
 		attrTok := p.peek()
 		lexeme := attrTok.Lexeme
 		if !sourceAttrName(lexeme) {
-			p.error(attrTok.Pos, msgUnknownAttr(lexeme))
+			p.error(attrTok.Pos, msgUnknownAttrHint(lexeme, sourceAttrVocab))
 			break
 		}
 		if seen[lexeme] {
@@ -201,7 +201,7 @@ func (p *Parser) parseMetricDecl() *ast.MetricDecl {
 		attrTok := p.peek()
 		lexeme := attrTok.Lexeme
 		if !metricAttrName(lexeme) {
-			p.error(attrTok.Pos, msgUnknownAttr(lexeme))
+			p.error(attrTok.Pos, msgUnknownAttrHint(lexeme, metricAttrVocab))
 			break
 		}
 		if seen[lexeme] {

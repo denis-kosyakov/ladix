@@ -22,13 +22,13 @@ func TestErrorTextsVerbatim(t *testing.T) {
 	if msgNestedFn != "вложенные функции не поддерживаются в v1" {
 		t.Errorf("SE-NESTED-FN: %q", msgNestedFn)
 	}
-	if got := msgIntRange("99999999999999999999999999999999"); got != "целочисленный литерал вне диапазона типа Целое '99999999999999999999999999999999'" {
+	if got := msgIntRange("99999999999999999999999999999999"); got != "целое число '99999999999999999999999999999999' вне диапазона типа Целое" {
 		t.Errorf("SE-INT-RANGE: %q", got)
 	}
 	if got := msgExpected(":", tok(lexer.IDENT, "x")); got != "ожидалось ':', получено 'x'" {
 		t.Errorf("SE-EXPECTED (real): %q", got)
 	}
-	if got := msgUnexpected(tok(lexer.KW_VALUE, "значение")); got != "неожиданный токен 'значение'" {
+	if got := msgUnexpected(tok(lexer.KW_VALUE, "значение")); got != "неожиданный элемент 'значение'" {
 		t.Errorf("SE-UNEXPECTED: %q", got)
 	}
 	if msgEmptyBlock != "пустой блок не допускается, добавьте хотя бы один оператор" {

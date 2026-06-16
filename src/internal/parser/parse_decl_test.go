@@ -615,13 +615,13 @@ func TestTopLevelWhenValueStillUnexpected(t *testing.T) {
 		src      string
 		firstMsg string
 	}{
-		{"значение", "значение 5\n", "неожиданный токен 'значение'"},
+		{"значение", "значение 5\n", "неожиданный элемент 'значение'"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			_, el := parseProgramSrc(t, c.src)
 			if el.Empty() {
-				t.Fatalf("ожидался «неожиданный токен», ошибок нет")
+				t.Fatalf("ожидался «неожиданный элемент», ошибок нет")
 			}
 			if got := firstParseError(t, el).Msg; got != c.firstMsg {
 				t.Errorf("первая ошибка %q, хотим %q", got, c.firstMsg)
@@ -1122,7 +1122,7 @@ func TestProcessBlockNonStepUnexpected(t *testing.T) {
 		t.Fatalf("ошибок %d, хотим 1: %v", el.Len(), el.Error())
 	}
 	pe := firstParseError(t, el)
-	want := "неожиданный токен 'печать'"
+	want := "неожиданный элемент 'печать'"
 	if pe.Msg != want {
 		t.Errorf("Msg = %q, хотим %q", pe.Msg, want)
 	}
@@ -1153,7 +1153,7 @@ func TestProcessRecoveryReviewFixes(t *testing.T) {
 		{
 			name:      "M-1: шаги после ошибочной строки собираются",
 			src:       "процесс P:\n    мусор\n    шаг A:\n        печать(1)\n",
-			wantMsgs:  []string{"неожиданный токен 'мусор'"},
+			wantMsgs:  []string{"неожиданный элемент 'мусор'"},
 			wantLines: []int{2},
 			check: func(t *testing.T, prog *ast.Program) {
 				pd, ok := prog.Items[0].(*ast.ProcessDecl)
@@ -1179,7 +1179,7 @@ func TestProcessRecoveryReviewFixes(t *testing.T) {
 				"        исполнитель: \"и\"\n" +
 				"        исполнитель: \"й\"\n",
 			wantMsgs: []string{
-				"неожиданный токен ')'",
+				"неожиданный элемент ')'",
 				"атрибут 'исполнитель' уже задан",
 			},
 			wantLines: []int{3, 5},
@@ -1188,8 +1188,8 @@ func TestProcessRecoveryReviewFixes(t *testing.T) {
 			name: "m-2: подряд не-шаг строки — каждая со своей диагностикой",
 			src:  "процесс P:\n    мусор\n    хлам\n    шаг A:\n        печать(1)\n",
 			wantMsgs: []string{
-				"неожиданный токен 'мусор'",
-				"неожиданный токен 'хлам'",
+				"неожиданный элемент 'мусор'",
+				"неожиданный элемент 'хлам'",
 			},
 			wantLines: []int{2, 3},
 			check: func(t *testing.T, prog *ast.Program) {
@@ -1352,10 +1352,10 @@ func TestNestedProcessInFunctionUnexpected(t *testing.T) {
 	src := "функция f():\n    процесс Q:\n        шаг A:\n            печать(1)\n"
 	_, el := parseProgramSrc(t, src)
 	if el.Len() == 0 {
-		t.Fatalf("ожидался «неожиданный токен 'процесс'», ошибок нет")
+		t.Fatalf("ожидался «неожиданный элемент 'процесс'», ошибок нет")
 	}
 	pe := firstParseError(t, el)
-	want := "неожиданный токен 'процесс'"
+	want := "неожиданный элемент 'процесс'"
 	if pe.Msg != want {
 		t.Errorf("Msg = %q, хотим %q", pe.Msg, want)
 	}
