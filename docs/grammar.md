@@ -95,13 +95,29 @@ ParamList       ::= Ident ("," Ident)* ","?
 SourceDecl      ::= "источник" Ident ":" SourceBlock
 SourceBlock     ::= Newline Indent SourceAttr+ Dedent
 SourceAttr      ::= "файл" ":" StringLiteral Newline
+                  | "тип" ":" Ident Newline
+                  | "поля" ":" FieldBlock
+FieldBlock      ::= Newline Indent FieldDef+ Dedent
+FieldDef        ::= Ident ":" Ident Newline
 ```
 
-В v1 единственный атрибут — `файл`. Блок остаётся, чтобы в v2 расширяться (`тип`, `разделитель`, `кодировка`) без поломки совместимости.
+Атрибуты источника:
+- `файл` (обязателен) — путь к файлу.
+- `тип` (опционален) — формат: `json` (по умолчанию), `csv`, `ndjson`. Значение — голый идентификатор; допустимое множество проверяется семантикой (`тип` лексится как ключевое слово `KW_TYPE`, значение/типы полей — обычные `Ident`).
+- `поля` (опционален для `json`, обязателен для `csv`/`ndjson`) — блок объявлений схемы: каждая строка `имя: ТипПоля`, где `ТипПоля` ∈ `Целое`/`Дробное`/`Строка`/`Логическое`/`Дата`. AST: `[]FieldDef{Name, TypeName, Pos}`. Имя поля и имя типа — `Ident` (резолвятся семантикой). `поля` остаётся обычным `Ident`-атрибутом (не ключевое слово, матчится по тексту лексемы).
+
+Блок расширяем дальше (`разделитель`, `кодировка`, `адрес` — v2) без поломки совместимости.
 
 ```ladix
 источник заказы:
     файл: "data/orders.json"
+
+источник заказы_csv:
+    файл: "data/orders.csv"
+    тип:  csv
+    поля:
+        дата_заказа:  Дата
+        сумма_заказа: Дробное
 ```
 
 ## 6. Метрика
@@ -109,8 +125,14 @@ SourceAttr      ::= "файл" ":" StringLiteral Newline
 ```ebnf
 MetricDecl      ::= "метрика" Ident ":" MetricBlock
 MetricBlock     ::= Newline Indent MetricAttr+ Dedent
-MetricAttr      ::= ("источник" | "где" | "агрегат" | "период" | "по_дате") ":" Expression Newline
+MetricAttr      ::= ("источник" | "где" | "агрегат" | "по_дате") ":" Expression Newline
+                  | "период" ":" PeriodValue Newline
+PeriodValue     ::= Ident                                   (* адверб-константа: ежемесячно … → Ident *)
+                  | "последние" DurationLiteral             (* скользящее окно → WindowPeriodLit{Amount,Unit} *)
+                  | ("прошлый" | "прошлая") Ident           (* последний завершённый → LastCompletedPeriodLit{Noun} *)
 ```
+
+Значение `период:` спец-парсится (ветка `parsePeriodValue`): `последние 30дн` (слитная форма длительности) → AST-узел `WindowPeriodLit`; `прошлый месяц`/`прошлая неделя` → `LastCompletedPeriodLit` (Noun ∈ `день`/`неделя`/`месяц`/`квартал`/`год`); адвербиальная константа (`ежемесячно`/…) — обычный `Ident`, путь v1 без изменений. Слова `последние`/`прошлый`/`прошлая`/noun-периоды остаются обычными `Ident` (матч по тексту лексемы в контексте `период:`, не ключевые слова). Единица окна ∈ `дн`/`нед`/`мес`, размер `N ≥ 1` — проверяются семантикой (§10 SPEC).
 
 **Семантические правила** (проверяются после парсинга):
 - Атрибуты `источник`, `агрегат` — обязательны.
@@ -275,6 +297,6 @@ Block           ::= Newline Indent Statement Statement* Dedent
 
 Алфавитный указатель всех нетерминалов:
 
-`Additive`, `ArgList`, `AssignAction`, `AssignStmt`, `Block`, `BreakStmt`, `CallAction`, `CompOp`, `Comparison`, `ContinueStmt`, `ElseClause`, `EventTrigger`, `Expression`, `ExpressionStmt`, `ForStmt`, `FunctionDecl`, `IfStmt`, `LetStmt`, `ListLiteral`, `LogicAnd`, `LogicNot`, `LogicOr`, `MetricAttr`, `MetricBlock`, `MetricDecl`, `MetricTrigger`, `Multiplicative`, `NotifyAction`, `ParamList`, `Postfix`, `PostfixOp`, `Primary`, `ProcessBlock`, `ProcessDecl`, `Program`, `ReturnStmt`, `RunProcessExpr`, `ScheduleSpec`, `ScheduleTrigger`, `SourceAttr`, `SourceBlock`, `SourceDecl`, `Statement`, `StepAction`, `StepAfter`, `StepAttr`, `StepBlock`, `StepDecl`, `StepLine`, `TopLevelItem`, `TriggerDecl`, `TriggerSpec`, `Unary`, `WhileStmt`.
+`Additive`, `ArgList`, `AssignAction`, `AssignStmt`, `Block`, `BreakStmt`, `CallAction`, `CompOp`, `Comparison`, `ContinueStmt`, `ElseClause`, `EventTrigger`, `Expression`, `ExpressionStmt`, `FieldBlock`, `FieldDef`, `ForStmt`, `FunctionDecl`, `IfStmt`, `LetStmt`, `ListLiteral`, `LogicAnd`, `LogicNot`, `LogicOr`, `MetricAttr`, `MetricBlock`, `MetricDecl`, `MetricTrigger`, `Multiplicative`, `NotifyAction`, `ParamList`, `PeriodValue`, `Postfix`, `PostfixOp`, `Primary`, `ProcessBlock`, `ProcessDecl`, `Program`, `ReturnStmt`, `RunProcessExpr`, `ScheduleSpec`, `ScheduleTrigger`, `SourceAttr`, `SourceBlock`, `SourceDecl`, `Statement`, `StepAction`, `StepAfter`, `StepAttr`, `StepBlock`, `StepDecl`, `StepLine`, `TopLevelItem`, `TriggerDecl`, `TriggerSpec`, `Unary`, `WhileStmt`.
 
 **Терминалы из лексера:** `Ident`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `BoolLiteral`, `NoneLiteral`, `DurationLiteral`, `Newline`, `Indent`, `Dedent`, `EOF`, плюс ключевые слова и операторы/разделители из §2.
