@@ -1,24 +1,24 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-specs/009-v1-finalization/plan.md (фича 009-v1-finalization — ФИНАЛИЗАЦИЯ ПРОДУКТА v1: закрытие
-разрывов «док↔реальность», «чеклист↔факт», «витрина↔скоуп» БЕЗ новой языковой функциональности.
-Затрагиваются ТОЛЬКО доки (README/SPEC/ARCHITECTURE/docs/CHECKLIST), examples/*.ladix + MANIFEST.md,
-и Go-тесты в src/internal/* + src/cmd/ladix (golden/smoke). 0 новых зависимостей, 0 строк прод-кода
-языка. US1 воспроизводимость README из чистого клона: cd src перед build/vet/test, мост «собрать в
-корень» (cd src && go build -o ../ladix ./cmd/ladix), запуск ./ladix из корня, тесты cd src && go
-test ./...; go.mod НЕ переносить, go.work НЕ использовать. US2 CHECKLIST.md: 50× [x] с
-доказательством файл:строка, текст рубрики НЕ менять, hello.lang со сноской .lang→.ladix. US3
-витрина: 7 классов (событие/расписание-триггеры, мультиисточник/мультиметрика, полный цикл процесса
-run --db→tasks→complete, 3 негатива синтаксис/тип/процесс) + записи MANIFEST + golden/негатив-замки;
-детерминизм FixedClock + t.TempDir() (паттерн trigger_golden_test.go), пиннинг сегодня() ЗАПРЕЩЁН;
-выручка.ladix — отдельный run-golden на фикс-Clock. US4 docs/quickstart.md (пользовательский,
-русский, метрика+процесс за 5 мин) — создаёт implement. US5 выравнивание доков: «Go 1.22+»→go 1.25
-(src/go.mod), снять «Найдено K ошибок» (тест-замок отсутствия НЕ трогать), тесты в src/internal/,
-онбординг.ladix:13 под движок 006, тип(x) «зарезервировано v1» + сноска достижимости 34 БЕЗ
-активации. US6 финальная приёмка против рубрики §1–§9 + чистое дерево. Constitution 9/9 PASS,
-0 NEEDS CLARIFICATION. Связывающий якорь — docs/v1-finalization-model.md §VF-0…§VF-8 + «Предрешённые
-развилки» (любой пробел закрывается ТАМ). Дата/время builtins 008 — в specs/008-datetime-builtins/
+specs/012-mdx-diagnostics/plan.md (фича 012-mdx-diagnostics — веха M-DX «Диагностика и
+восстановление парсера», фронтенд v2 после M1, БЕЗ новой языковой функциональности. Две независимые
+US. US1 (P1) DX1 — подавление фантомного каскада: ведущее sync-lead ключевое слово в позиции
+выражения на одной/смежной строке даёт 2–4 диагностики на одну сломку → цель РОВНО 1; контроль
+`значение⏎{` = 2 (анти-over-suppress). Единственная правка — default-ветка parsePrimary
+(parse_expr.go:209): потреблять токен ДО error(), зеркально parse_stmt.go:29; synchronize/suppress-
+reset НЕ трогать; критерий смежности структурный (идентичность токена/владение блоком), НЕ Pos.Line;
+новый хелпер assertDiagnostics (упорядоченный count-exact); decl-сайты M1 — по мутпробе. ЕДИНСТВЕННЫЙ
+пункт v2, модифицирующий горячий инвариант panic-mode (FR-025@002:164). US2 (P2) DX2 — бизнес-
+формулировки scope A (лексика L-1..L-11=11 + синтаксис SE-*=14; де-жаргон: «токен»→«элемент»,
+«литерал»→«число/строка в кавычках»), коды внутренние, двухстрочный канон §13 + позиция сохранены;
+полный инвентарь каталога с count-locks (L=11, SE=14; eval=28 НЕ трогать); подсказки «возможно, вы
+имели в виду…» (Левенштейн KW+имена); витрина — НОВЫЕ файлы, ошибочная.ladix НЕ перезаписывать.
+Границы: только parser/lexer-каталог/examples; ПУСТОЙ дифф eval/engine/store; ProcessRuntime 7 /
+Store 15; 0 новых зависимостей; детерминизм. Канон новых текстов — docs/diagnostics-model.md
+(разрешает Принцип VIII; запись в Complexity Tracking), большой SPEC §13.4 синкает архитектор на шве.
+Ветка БЕЗ авто-мержа в master. Constitution 9/9 PASS. Финализация v1 009 — в
+specs/009-v1-finalization/plan.md; Дата/время builtins 008 — в specs/008-datetime-builtins/
 plan.md; Триггеры 007a — в specs/007a-trigger-frontend/plan.md; движок
 процессов 006 — в specs/006-process-engine/plan.md; фронтенд процессов 005 — в
 specs/005-process-frontend/plan.md; декларативный слой 004 — в specs/004-source-metric/plan.md;

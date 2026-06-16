@@ -77,7 +77,7 @@ func sexpr(e ast.Expression) string {
 // T008 (010-A1, §SC-D-RESERVE/§SC-10 #7, ИНВЕРСИЯ, конституция VI): ТЕСТ-ЗАМОК
 // нижнего слоя инварианта «тип(x) недостижим». KW_TYPE НЕ начинает выражение
 // (его НЕТ в parsePrimary/startsExpression) → `тип(5)` = парс-ошибка
-// «неожиданный токен 'тип'», а НЕ успешный разбор вызова builtin `тип`. Замок
+// «неожиданный элемент 'тип'», а НЕ успешный разбор вызова builtin `тип`. Замок
 // краснеет, если KW_TYPE попадёт в parsePrimary (builtin `тип` стал бы достижим).
 func TestTypeKeywordNotExpression(t *testing.T) {
 	_, el := parseExprSrc(t, "тип(5)")
@@ -88,7 +88,7 @@ func TestTypeKeywordNotExpression(t *testing.T) {
 	if !ok {
 		t.Fatalf("ошибка не ParseError: %T", el.Errors()[0])
 	}
-	want := "неожиданный токен 'тип'"
+	want := "неожиданный элемент 'тип'"
 	if pe.Msg != want {
 		t.Errorf("Msg = %q, хотим %q", pe.Msg, want)
 	}

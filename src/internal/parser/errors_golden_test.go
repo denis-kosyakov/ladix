@@ -30,7 +30,7 @@ func TestGoldenSENestedFn(t *testing.T) {
 
 func TestGoldenSEIntRange(t *testing.T) {
 	assertGolden(t, "99999999999999999999\n",
-		"Ошибка в строке 1, колонка 1:\nцелочисленный литерал вне диапазона типа Целое '99999999999999999999'")
+		"Ошибка в строке 1, колонка 1:\nцелое число '99999999999999999999' вне диапазона типа Целое")
 }
 
 func TestGoldenSEExpectedEOF(t *testing.T) {
@@ -64,7 +64,7 @@ func TestGoldenSEUnexpectedTopLevel(t *testing.T) {
 	for _, lead := range leads {
 		t.Run(lead, func(t *testing.T) {
 			assertGolden(t, lead+"\n",
-				"Ошибка в строке 1, колонка 1:\nнеожиданный токен '"+lead+"'")
+				"Ошибка в строке 1, колонка 1:\nнеожиданный элемент '"+lead+"'")
 		})
 	}
 }

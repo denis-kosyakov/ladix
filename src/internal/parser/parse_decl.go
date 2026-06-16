@@ -70,7 +70,7 @@ func (p *Parser) parseSourceDecl() *ast.SourceDecl {
 		attrTok := p.peek()
 		lexeme := attrTok.Lexeme
 		if !sourceAttrName(lexeme) {
-			p.error(attrTok.Pos, msgUnknownAttr(lexeme))
+			p.error(attrTok.Pos, msgUnknownAttrHint(lexeme, sourceAttrVocab))
 			break
 		}
 		if seen[lexeme] {
@@ -201,7 +201,7 @@ func (p *Parser) parseMetricDecl() *ast.MetricDecl {
 		attrTok := p.peek()
 		lexeme := attrTok.Lexeme
 		if !metricAttrName(lexeme) {
-			p.error(attrTok.Pos, msgUnknownAttr(lexeme))
+			p.error(attrTok.Pos, msgUnknownAttrHint(lexeme, metricAttrVocab))
 			break
 		}
 		if seen[lexeme] {
@@ -301,7 +301,13 @@ func (p *Parser) parseProcessDecl() *ast.ProcessDecl {
 				steps = append(steps, sd)
 			}
 		} else {
-			p.error(p.peek().Pos, msgUnexpected(p.peek()))
+			// Не-шаг в блоке процесса → SE-UNEXPECTED. Потребляем токен ДО error()
+			// (зеркально parse_expr.go default / parse_stmt.go:29): иначе ведущее
+			// sync-lead ключевое слово (если/…) остаётся на курсоре, synchronize
+			// стопорится на нём, и следующая итерация ре-диспетчит ТОТ ЖЕ токен →
+			// каскад same-line (DX1, фича 012; контроль: не-sync-lead и так давал 1).
+			bad := p.advance()
+			p.error(bad.Pos, msgUnexpected(bad))
 		}
 		if p.pos == before {
 			p.advance() // backstop: гарантия прогресса

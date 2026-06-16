@@ -311,7 +311,7 @@ func TestTopLevelLeadingTokenEdgeCases(t *testing.T) {
 					t.Fatalf("ошибок %d, хотим 1: %v", el.Len(), el.Error())
 				}
 				pe := firstParseError(t, el)
-				want := "неожиданный токен '" + lead + "'"
+				want := "неожиданный элемент '" + lead + "'"
 				if pe.Msg != want {
 					t.Errorf("Msg = %q, хотим %q", pe.Msg, want)
 				}
@@ -345,7 +345,7 @@ func TestTopLevelLeadingTokenEdgeCases(t *testing.T) {
 
 	// (3) Ведущий `когда` БОЛЬШЕ не отвергается isUnexpectedTopLevel — он
 	//     диспетчеризуется в parseTriggerDecl и парсится как триггер (НЕ
-	//     `неожиданный токен 'когда'`). Полный валидный триггер → 0 ошибок, узел
+	//     `неожиданный элемент 'когда'`). Полный валидный триггер → 0 ошибок, узел
 	//     *ast.TriggerDecl на верхнем уровне.
 	t.Run("когда принят как триггер", func(t *testing.T) {
 		prog, el := parseProgramSrc(t, "когда метрика m > 1:\n    печать(1)\n")
@@ -369,7 +369,7 @@ func TestTopLevelLeadingTokenEdgeCases(t *testing.T) {
 	t.Run("ведущее событие — unexpected (симметрия значение)", func(t *testing.T) {
 		_, el := parseProgramSrc(t, "событие 5\n")
 		pe := firstParseError(t, el)
-		want := "неожиданный токен 'событие'"
+		want := "неожиданный элемент 'событие'"
 		if pe.Msg != want {
 			t.Errorf("Msg = %q, хотим %q (нарушитель — ведущий 'событие', не хвост '5')", pe.Msg, want)
 		}

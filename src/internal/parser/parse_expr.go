@@ -203,11 +203,35 @@ func (p *Parser) parsePrimary() ast.Expression {
 		p.advance()
 		return ast.NewEventExpr(toASTPos(t.Pos)) // pos = токен событие; событие.поле — постфикс FieldExpr
 	default:
-		// Ведущий токен не начинает выражение → SE-UNEXPECTED; error()
-		// синхронизируется (пропускает junk до точки возобновления). Возвращаем
-		// узел-заглушку, чтобы дерево осталось валидным.
-		p.error(t.Pos, msgUnexpected(t))
-		return ast.NewNoneLit(toASTPos(t.Pos))
+		// Ведущий токен не начинает выражение → SE-UNEXPECTED.
+		if p.suppress {
+			// panic-mode: ошибка подавлена (error() — no-op). Токен НЕ потребляем —
+			// он может принадлежать ОБЪЕМЛЮЩЕЙ конструкции (напр. INDENT тела блока,
+			// который откроет parseBlock выше). Дореформенное поведение: вернуть
+			// заглушку без сдвига курсора; прогресс гарантирует backstop цикла.
+			return ast.NewNoneLit(toASTPos(t.Pos))
+		}
+		// Не-подавлено: потребляем ошибочный токен ДО error() (зеркально
+		// parse_stmt.go:29 isUnexpectedTopLevel). Иначе sync-lead ключевое слово
+		// (если/вернуть/…) в позиции выражения остаётся на курсоре: synchronize
+		// останавливается на нём, не потребляя (recover.go), а сброс suppress на
+		// границе оператора ре-диспетчит ТОТ ЖЕ токен → фантомный каскад на одной/
+		// смежной строке (DX1, фича 012-mdx-diagnostics). С потреблением synchronize
+		// идёт от следующего токена; тело блок-владеющего заголовка (если/пока/для)
+		// поглощается штатно (bleed уходит). Узел-заглушка — дерево валидно.
+		bad := p.advance()
+		if bad.Type == lexer.INDENT {
+			// Осиротевший индентный блок в позиции выражения (ни одна конструкция
+			// его не открыла, напр. отступ после сломанной не-блок-конструкции):
+			// ОДНА диагностика на весь блок — тело и парный DEDENT поглощаются, без
+			// мини-каскада «увеличение отступа»+«конец блока» (FR-001). errorLocal
+			// (без synchronize): курсор двигает skipOrphanIndentedBody сам.
+			p.errorLocal(bad.Pos, msgUnexpected(bad))
+			p.skipOrphanIndentedBody()
+			return ast.NewNoneLit(toASTPos(bad.Pos))
+		}
+		p.error(bad.Pos, msgUnexpected(bad))
+		return ast.NewNoneLit(toASTPos(bad.Pos))
 	}
 }
 

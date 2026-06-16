@@ -44,7 +44,7 @@ func TestIntLitOverflow(t *testing.T) {
 			if !errAs(el, &pe) {
 				t.Fatalf("не ParseError")
 			}
-			want := "целочисленный литерал вне диапазона типа Целое '" + tt.lexeme + "'"
+			want := "целое число '" + tt.lexeme + "' вне диапазона типа Целое"
 			if pe.Msg != want {
 				t.Errorf("Msg = %q, хотим %q", pe.Msg, want)
 			}
