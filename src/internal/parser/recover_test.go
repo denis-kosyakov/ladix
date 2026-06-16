@@ -109,3 +109,99 @@ func TestSynchronizeStopsAtLeadKeyword(t *testing.T) {
 		t.Errorf("synchronize не должен потреблять ведущее ключевое слово, peek = %s", p.peek().Type)
 	}
 }
+
+// === DX1 (фича 012-mdx-diagnostics): подавление фантомного каскада ===
+//
+// Ведущее sync-lead ключевое слово (если/пока/вернуть/…) в позиции ВЫРАЖЕНИЯ на
+// одной/смежной строке давало 2–4 диагностики на одну сломанную конструкцию
+// (ре-диспетч не-потреблённого токена после сброса suppress на границе оператора).
+// Фикс: parsePrimary default-ветка потребляет ошибочный токен ДО error()
+// (зеркально parse_stmt.go:29). Контракт — contracts/parser-recovery.md.
+
+// assertDiagnostics — упорядоченный count-exact ассерт (обобщает one-only
+// assertGolden). Сначала КОЛИЧЕСТВО (с дампом при несовпадении), затем каждая
+// диагностика по индексу байт-в-байт (двухстрочный канон §13). want — ожидаемые
+// Error()-строки в порядке регистрации.
+func assertDiagnostics(t *testing.T, el *errors.ErrorList, want ...string) {
+	t.Helper()
+	if el.Len() != len(want) {
+		t.Fatalf("диагностик %d, хотим %d:\n%s", el.Len(), len(want), el.Error())
+	}
+	for i, w := range want {
+		if got := el.Errors()[i].Error(); got != w {
+			t.Errorf("диагностика #%d:\n got  = %q\nхотим = %q", i, got, w)
+		}
+	}
+}
+
+// C-REC-1: sync-lead KW в позиции выражения на ОДНОЙ строке → ровно 1
+// диагностика (было 2). FR-001, SC-001.
+func TestCascadeSameLineSingleDiagnostic(t *testing.T) {
+	cases := []struct{ name, src, want string }{
+		{"пусть-если", "пусть x = если\n",
+			"Ошибка в строке 1, колонка 11:\nнеожиданный токен 'если'"},
+		{"пусть-пока", "пусть y = пока\n",
+			"Ошибка в строке 1, колонка 11:\nнеожиданный токен 'пока'"},
+		{"печать-для", "печать(для)\n",
+			"Ошибка в строке 1, колонка 8:\nнеожиданный токен 'для'"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, el := parseProgramSrc(t, c.src)
+			assertDiagnostics(t, el, c.want)
+		})
+	}
+}
+
+// C-REC-2: блок-владеющий заголовок (если/пока) со сломанным условием → ровно 1;
+// тело INDENT…DEDENT поглощается структурно (было 4 — multiline bleed). FR-002, SC-002.
+func TestCascadeBlockBleedSingleDiagnostic(t *testing.T) {
+	cases := []struct{ name, src, want string }{
+		{"если-вернуть", "если вернуть:\n    печать(1)\n",
+			"Ошибка в строке 1, колонка 6:\nнеожиданный токен 'вернуть'"},
+		{"пока-вернуть", "пока вернуть:\n    печать(1)\n",
+			"Ошибка в строке 1, колонка 6:\nнеожиданный токен 'вернуть'"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, el := parseProgramSrc(t, c.src)
+			assertDiagnostics(t, el, c.want)
+		})
+	}
+}
+
+// C-REC-3: N независимых ошибок на N РАЗНЫХ строках НЕ схлопываются (анти-over-
+// suppress). Контроль: значение⏎{ → ровно 2. FR-003, SC-003. (Дублирует проверку
+// TestMultipleIndependentErrors через assertDiagnostics — фиксирует, что фикс DX1
+// не превратил его в 1.)
+func TestIndependentErrorsNotCollapsed(t *testing.T) {
+	_, el := parseProgramSrc(t, "значение\n{\n")
+	assertDiagnostics(t, el,
+		"Ошибка в строке 1, колонка 1:\nнеожиданный токен 'значение'",
+		"Ошибка в строке 2, колонка 1:\nнеожиданный токен '{'")
+}
+
+// Орфан-отступ после НЕ-блок-владеющей сломки (пусть не открывает блок): сиротский
+// индентный блок поглощается как ОДНА сломанная конструкция (FR-001), без мини-
+// каскада «увеличение отступа»+«конец блока». Итог: ровно 2 диагностики —
+// (1) сломка 'если', (2) осиротевший блок. Не схлопывается в 1 (это ДВЕ разные
+// проблемы: ключевое слово в выражении И неуместный отступ), но и не каскадит до 3.
+func TestOrphanIndentAfterNonBlockBreak(t *testing.T) {
+	_, el := parseProgramSrc(t, "пусть x = если\n    печать(1)\n")
+	assertDiagnostics(t, el,
+		"Ошибка в строке 1, колонка 11:\nнеожиданный токен 'если'",
+		"Ошибка в строке 2, колонка 1:\nнеожиданный токен 'увеличение отступа'")
+}
+
+// C-REC-6: sync-lead ведущее ключевое слово вместо шага в блоке процесса
+// (parse_decl.go) — тот же re-dispatch, что в позиции выражения; consume-before-
+// error даёт ровно 1 (было 2). Не-sync-lead не-шаг и так давал 1 (мутпроба M1).
+// NB: field-block (поля:) и metric-window (последние) каскадят ОБЩИМ образом для
+// ЛЮБОГО плохого токена (мутпроба: если≡123≡+≡)) — это пре-существующая decl-line
+// recovery, НЕ sync-lead-инвариант DX1; вне scope (см. docs/diagnostics-model.md).
+func TestProcessBlockNonStepSyncLeadSingleDiagnostic(t *testing.T) {
+	src := "процесс п:\n    шаг а:\n        исполнитель: \"x\"\n    если\n"
+	_, el := parseProgramSrc(t, src)
+	assertDiagnostics(t, el,
+		"Ошибка в строке 4, колонка 5:\nнеожиданный токен 'если'")
+}
