@@ -153,14 +153,16 @@ func TestCascadeSameLineSingleDiagnostic(t *testing.T) {
 	}
 }
 
-// C-REC-2: блок-владеющий заголовок (если/пока) со сломанным условием → ровно 1;
-// тело INDENT…DEDENT поглощается структурно (было 4 — multiline bleed). FR-002, SC-002.
+// C-REC-2: блок-владеющий заголовок (если/пока/для) со сломанным условием → ровно 1;
+// тело INDENT…DEDENT поглощается структурно (было ≥3 — multiline bleed). FR-002, SC-002.
 func TestCascadeBlockBleedSingleDiagnostic(t *testing.T) {
 	cases := []struct{ name, src, want string }{
 		{"если-вернуть", "если вернуть:\n    печать(1)\n",
 			"Ошибка в строке 1, колонка 6:\nнеожиданный элемент 'вернуть'"},
 		{"пока-вернуть", "пока вернуть:\n    печать(1)\n",
 			"Ошибка в строке 1, колонка 6:\nнеожиданный элемент 'вернуть'"},
+		{"для-в-если", "для x в если:\n    печать(1)\n",
+			"Ошибка в строке 1, колонка 9:\nнеожиданный элемент 'если'"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -198,12 +200,44 @@ func TestOrphanIndentAfterNonBlockBreak(t *testing.T) {
 // p.advance(); p.error(...) }`): consume-before-error, как в parsePrimary, но это
 // ОТДЕЛЬНАЯ правка — мутация ТОЛЬКО parse_expr.go этот замок НЕ ломает (нужна и
 // правка parse_decl.go). Даёт ровно 1 (было 2). Не-sync-lead не-шаг и так давал 1.
-// NB: field-block (поля:) и metric-window (последние) каскадят ОБЩИМ образом для
-// ЛЮБОГО плохого токена (мутпроба: если≡123≡+≡)) — это пре-существующая decl-line
-// recovery, НЕ sync-lead-инвариант DX1; вне scope (см. docs/diagnostics-model.md).
+// NB: field-block (поля:) и metric-window (период: последние) каскадят
+// sync-lead-СПЕЦИФИЧНО на decl-attribute-trailing пути (если → 2-3, 123/+ → 1) —
+// ОТДЕЛЬНЫЙ путь parseSourceDecl/parseMetricDecl, который DX1 НЕ трогал; отложено
+// в decl-line recovery (характеризация ниже, *_DeferredDebt; docs/diagnostics-model.md §MDX-5).
 func TestProcessBlockNonStepSyncLeadSingleDiagnostic(t *testing.T) {
 	src := "процесс п:\n    шаг а:\n        исполнитель: \"x\"\n    если\n"
 	_, el := parseProgramSrc(t, src)
 	assertDiagnostics(t, el,
 		"Ошибка в строке 4, колонка 5:\nнеожиданный элемент 'если'")
+}
+
+// ОТЛОЖЕННЫЙ ДОЛГ — decl-line recovery (будущая фича, бэклог B). НЕ инвариант DX1.
+// Характеризация ПРЕ-СУЩЕСТВУЮЩЕГО sync-lead-зависимого каскада на decl-attribute-
+// trailing пути (parseSourceDecl/parseMetricDecl), который DX1 НЕ трогал (залоченный
+// scope DX1 = sync-lead в позиции ВЫРАЖЕНИЯ, не в хвосте атрибута декларации).
+// Ведущее `если` после атрибута даёт фантомный re-dispatch (+1 «неожиданный элемент
+// 'конец строки'») → 2 (минимал; в широком файле bleed может дать 3); не-sync-lead
+// `123`/`+` фантома НЕ дают → ровно 1 — это доказывает sync-lead-специфичность и
+// опровергает прежнее «одинаков для любого токена = 5/3». Числа залочены, чтобы
+// отложенный долг не дрейфовал молча: когда decl-line recovery будет реализован,
+// счётчики здесь ОБЯЗАНЫ измениться (red→green). См. docs/diagnostics-model.md §MDX-5.
+func TestDeclAttributeTrailingSyncLeadCascade_DeferredDebt(t *testing.T) {
+	t.Run("field-block-если", func(t *testing.T) {
+		_, el := parseProgramSrc(t, "источник з:\n    тип: csv\n    файл: \"x\"\n    поля: если\n")
+		assertDiagnostics(t, el,
+			"Ошибка в строке 4, колонка 11:\nожидалось 'конец строки', получено 'если'",
+			"Ошибка в строке 4, колонка 15:\nнеожиданный элемент 'конец строки'")
+	})
+	t.Run("metric-window-последние-если", func(t *testing.T) {
+		_, el := parseProgramSrc(t, "метрика м:\n    источник: з\n    агрегат: сумма()\n    период: последние если\n")
+		assertDiagnostics(t, el,
+			"Ошибка в строке 4, колонка 23:\nожидалось 'период вида N<ед>, например 30дн', получено 'если'",
+			"Ошибка в строке 4, колонка 27:\nнеожиданный элемент 'конец строки'")
+	})
+	// Контраст: не-sync-lead `123` НЕ рождает фантом → ровно 1 (sync-lead-специфичность).
+	t.Run("field-block-123-контраст", func(t *testing.T) {
+		_, el := parseProgramSrc(t, "источник з:\n    тип: csv\n    файл: \"x\"\n    поля: 123\n")
+		assertDiagnostics(t, el,
+			"Ошибка в строке 4, колонка 11:\nожидалось 'конец строки', получено '123'")
+	})
 }

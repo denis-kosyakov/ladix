@@ -41,8 +41,8 @@ cd ..
 ## Инвариант бэкенда (пустой дифф)
 ```bash
 git diff --stat master -- src/internal/eval src/internal/engine src/internal/store   # пусто
-grep -c 'func (.*ProcessRuntime)' src/internal/eval/*.go 2>/dev/null || true          # сверка 7 методов интерфейса
-# ProcessRuntime = 7 методов, Store = 15 методов — не изменены
+grep -n 'type ProcessRuntime interface' src/internal/eval/runtime.go 2>/dev/null || true  # интерфейс ProcessRuntime (7 методов) объявлен в eval, реализован *Engine в engine
+# ProcessRuntime = 7 методов, Store = 15 методов — не изменены (доказывается пустым дифф-стэтом выше)
 ```
 
 ## Витрина

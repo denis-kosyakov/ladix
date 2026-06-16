@@ -15,7 +15,7 @@
 
 ### Parser (`internal/parser/parser.go`)
 - Поля: `tokens`, `pos`, `errs *ErrorList`, `suppress bool`.
-- **Изменение вехи**: поведение `parsePrimary` default-ветки (`parse_expr.go:209`) — потребление токена до `error()`. Поле `suppress` и его reset-сайты НЕ меняются. **Новых полей состояния парсера НЕ вводится** (Принцип V — состояние и так инстанс-уровневое).
+- **Изменение вехи**: поведение default-ветки `parsePrimary` (`parse_expr.go`) — 3 арма (suppress-guard без потребления; потребление токена до `error()`; диспетч orphan-`INDENT` → новый метод `skipOrphanIndentedBody` в `recover.go`) + параллельный consume-before-error в `parse_decl.go` (decl-сайт). Поле `suppress` и его reset-сайты НЕ меняются. **Новых полей состояния парсера НЕ вводится** — `skipOrphanIndentedBody` это метод, не состояние (Принцип V — состояние и так инстанс-уровневое).
 
 ### Position (`internal/errors`, `internal/ast` — дублируется, листовое)
 - Не меняется (Принцип IV/VII).

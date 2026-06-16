@@ -4,7 +4,9 @@
 
 ## R1 — DX1: точка и механизм фикса каскада
 
-**Decision**: Единственная правка — default-ветка `parsePrimary` в `src/internal/parser/parse_expr.go:209`: потреблять (`bad := p.advance()`) ошибочный токен ДО вызова `p.error(bad.Pos, msgUnexpected(bad))`, **зеркально** уже существующему `parse_stmt.go:29` (`isUnexpectedTopLevel` → `bad := p.advance(); p.error(...)`). `synchronize()` и все suppress-reset сайты НЕ меняются.
+**Decision**: Ядро фикса — default-ветка `parsePrimary` в `src/internal/parser/parse_expr.go`: потреблять (`bad := p.advance()`) ошибочный токен ДО вызова `p.error(bad.Pos, msgUnexpected(bad))`, **зеркально** уже существующему `parse_stmt.go:29` (`isUnexpectedTopLevel` → `bad := p.advance(); p.error(...)`). `synchronize()` и все suppress-reset сайты НЕ меняются.
+
+**Фактический объём правки (НЕ «единственная точечная»):** default-ветка `parsePrimary` несёт **3 арма** — (1) suppress-guard (под `p.suppress` возвращает `NoneLit`, токен НЕ потребляет — может принадлежать объемлющему блоку); (2) consume-before-error (выше); (3) диспетч orphan-`INDENT` → новый хелпер `skipOrphanIndentedBody` (`recover.go`, добавлен в DX1). Плюс параллельный consume-before-error в `parse_decl.go` (decl-сайт, см. R2) и чистая правка комментария `error()` в `parser.go`. Итого 4 поведенческих сайта в 3 прод-файлах + 1 новый метод-хелпер; commit-message `981bb6a` перечисляет их все.
 
 **Rationale**: Трассировка (воспроизводимо на бинарнике) показала, что `parse_expr.go:209` — **единственная колыбель** всех фантомов:
 - `пусть x = если` (2): DIAG#1 'если' на :209; DIAG#2 — ре-диспетч **того же** не-потреблённого `KW_IF` после suppress-reset (`synchronize` останавливается на sync-lead, не потребляя его, `recover.go:52`).
@@ -23,6 +25,8 @@
 ## R2 — DX1: вторичный рычаг decl-сайтов (мутпроба M1)
 
 **Decision**: Прогнать мутпробу §7.6 хартии на M1-конструкциях (`последние если`, `поля: если`, и не-шаг в блоке процесса — `parse_decl.go:304`). Если каскад есть — применить тот же приём (consume-before-error) к аналогичному decl-сайту; если нет — зафиксировать контроль-тест «ровно 1/ровно 2» с пометкой «долга нет». Не расширять скоуп без доказательства мутпробой.
+
+**Результат мутпробы (зафиксирован живым прогоном):** не-шаг в блоке процесса — каскад 2 → **исправлен до 1** (consume-before-error в `parse_decl.go`). `поля: если`/`период: последние если` — каскад sync-lead-ЗАВИСИМ (`если` → 2 минимал / 3 bleed; не-sync-lead `123`/`+` → 1) на **отдельном** decl-attribute-trailing пути (`parseSourceDecl`/`parseMetricDecl`), вне залоченного scope DX1 (sync-lead в позиции выражения) → **отложено** в фичу «decl-line recovery» (бэклог B), залочено `TestDeclAttributeTrailingSyncLeadCascade_DeferredDebt` (2/2/1). Прежняя версия §MDX-5 ошибочно числила это «5/3, одинаково для любого токена» — опровергнуто прогоном.
 
 **Rationale**: Крит. 10 хендоффа требует проверяемого результата, не «если есть — закрой». `parse_decl.go:304` — аналогичная поверхность (`p.error` на не-шаге в блоке процесса). Решение по факту замера, без спекуляции.
 
