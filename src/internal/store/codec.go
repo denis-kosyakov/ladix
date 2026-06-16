@@ -21,7 +21,7 @@ import (
 //   Булево      → true/false
 //   Пусто       → null
 //   Длительность→ {"значение":N,"единица":"…"}
-//   Период      → строка (имя)
+//   Период      → {"имя":…,"значение":N,"единица":"…","смещение":N} (все поля окна)
 //   Дата        → строка "YYYY-MM-DD"
 //   Список      → массив (рекурсивно)
 //   Запись      → массив пар [["ключ",<значение>],…] в порядке Keys() (D-6)
@@ -90,7 +90,7 @@ func encodeValue(v value.Value) ([]byte, error) {
 	case value.Длительность:
 		return tagged(tagДлительность, durationPayload{Значение: x.Amount, Единица: x.Unit})
 	case value.Период:
-		return tagged(tagПериод, x.Name)
+		return tagged(tagПериод, periodPayload{Имя: x.Name, Значение: x.Amount, Единица: x.Unit, Смещение: x.Offset})
 	case value.Дата:
 		return tagged(tagДата, value.String(x))
 	case value.Список:
@@ -125,6 +125,16 @@ func tagged(tag string, payload any) ([]byte, error) {
 type durationPayload struct {
 	Значение int64  `json:"значение"`
 	Единица  string `json:"единица"`
+}
+
+// periodPayload — нагрузка Периода: ВСЕ поля окна (011-A2). Голая строка имени
+// теряла бы Amount/Unit/Offset скользящих/завершённых форм (тихая потеря данных).
+// 5 календарных констант → нулевые значение/единица/смещение, round-trip честен.
+type periodPayload struct {
+	Имя      string `json:"имя"`
+	Значение int64  `json:"значение"`
+	Единица  string `json:"единица"`
+	Смещение int    `json:"смещение"`
 }
 
 // encodeDrobnoe кодирует Дробное; NaN/±Inf — строками (D-5).
@@ -246,11 +256,11 @@ func decodeValue(rm json.RawMessage) (value.Value, error) {
 		}
 		return value.Длительность{Amount: dp.Значение, Unit: dp.Единица}, nil
 	case tagПериод:
-		var name string
-		if err := json.Unmarshal(tr.Зн, &name); err != nil {
+		var pp periodPayload
+		if err := json.Unmarshal(tr.Зн, &pp); err != nil {
 			return nil, fmt.Errorf("кодек: Период: %w", err)
 		}
-		return value.Период{Name: name}, nil
+		return value.Период{Name: pp.Имя, Amount: pp.Значение, Unit: pp.Единица, Offset: pp.Смещение}, nil
 	case tagДата:
 		return decodeDate(tr.Зн)
 	case tagСписок:

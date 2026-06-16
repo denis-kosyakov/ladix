@@ -112,6 +112,31 @@ func TestCodecRoundTripAllTypes(t *testing.T) {
 	}
 }
 
+// 011-A2: round-trip Периода покрывает ВСЕ поля окна (Name/Amount/Unit/Offset),
+// а не только имя. Замок обязан кусаться: убери любое поле из encode/decode
+// кодека — reflect.DeepEqual здесь покраснеет (форма потеряет Amount/Unit/Offset).
+func TestCodecPeriodWindowFields(t *testing.T) {
+	cases := []struct {
+		name string
+		p    value.Период
+	}{
+		{"скользящее-окно", value.Период{Name: "последние", Amount: 30, Unit: "дн"}},
+		{"последний-завершённый", value.Период{Name: "месяц", Offset: -1}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dec := roundTrip(t, map[string]value.Value{"k": c.p})
+			got, ok := dec["k"].(value.Период)
+			if !ok {
+				t.Fatalf("got %#v, не Период", dec["k"])
+			}
+			if !reflect.DeepEqual(got, c.p) {
+				t.Errorf("round-trip Периода по всем полям: got %#v, want %#v", got, c.p)
+			}
+		})
+	}
+}
+
 // D-5: NaN/+Inf/-Inf кодируются строками и честно восстанавливаются.
 func TestCodecDrobnoeSpecials(t *testing.T) {
 	cases := []struct {
