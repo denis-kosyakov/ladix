@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     deadline     TEXT,
     status       TEXT NOT NULL,
     created_at   TEXT NOT NULL,
-    completed_at TEXT
+    completed_at TEXT,
+    escalated    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_pending ON tasks(assignee, status);
 CREATE TABLE IF NOT EXISTS counters (
@@ -160,8 +161,8 @@ func (s *SQLiteStore) LoadInstance(id string) (*ProcessInstance, error) {
 
 func (s *SQLiteStore) SaveTask(t *Task) error {
 	_, err := s.db.Exec(
-		`INSERT INTO tasks (id, instance_id, step_name, assignee, deadline, status, created_at, completed_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO tasks (id, instance_id, step_name, assignee, deadline, status, created_at, completed_at, escalated)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   instance_id  = excluded.instance_id,
 		   step_name    = excluded.step_name,
@@ -169,16 +170,18 @@ func (s *SQLiteStore) SaveTask(t *Task) error {
 		   deadline     = excluded.deadline,
 		   status       = excluded.status,
 		   created_at   = excluded.created_at,
-		   completed_at = excluded.completed_at`,
+		   completed_at = excluded.completed_at,
+		   escalated    = excluded.escalated`,
 		t.ID, t.InstanceID, t.StepName, t.Assignee, nullableTime(t.Deadline),
 		string(t.Status), t.CreatedAt.Format(time.RFC3339), nullableTime(t.CompletedAt),
+		boolToInt(t.Escalated),
 	)
 	return err
 }
 
 func (s *SQLiteStore) LoadTask(id string) (*Task, error) {
 	row := s.db.QueryRow(
-		`SELECT instance_id, step_name, assignee, deadline, status, created_at, completed_at
+		`SELECT instance_id, step_name, assignee, deadline, status, created_at, completed_at, escalated
 		 FROM tasks WHERE id = ?`, id)
 	return scanTask(id, row)
 }
@@ -190,11 +193,11 @@ func (s *SQLiteStore) ListPendingTasks(assignee string) ([]*Task, error) {
 	)
 	if assignee == "" {
 		rows, err = s.db.Query(
-			`SELECT id, instance_id, step_name, assignee, deadline, status, created_at, completed_at
+			`SELECT id, instance_id, step_name, assignee, deadline, status, created_at, completed_at, escalated
 			 FROM tasks WHERE status = ? ORDER BY id ASC`, string(TaskPending))
 	} else {
 		rows, err = s.db.Query(
-			`SELECT id, instance_id, step_name, assignee, deadline, status, created_at, completed_at
+			`SELECT id, instance_id, step_name, assignee, deadline, status, created_at, completed_at, escalated
 			 FROM tasks WHERE status = ? AND assignee = ? ORDER BY id ASC`, string(TaskPending), assignee)
 	}
 	if err != nil {
@@ -207,11 +210,12 @@ func (s *SQLiteStore) ListPendingTasks(assignee string) ([]*Task, error) {
 		var (
 			tid, instanceID, stepName, asg, status, createdAt string
 			deadline, completedAt                             sql.NullString
+			escalated                                         int64
 		)
-		if err := rows.Scan(&tid, &instanceID, &stepName, &asg, &deadline, &status, &createdAt, &completedAt); err != nil {
+		if err := rows.Scan(&tid, &instanceID, &stepName, &asg, &deadline, &status, &createdAt, &completedAt, &escalated); err != nil {
 			return nil, err
 		}
-		t, err := buildTask(tid, instanceID, stepName, asg, deadline, status, createdAt, completedAt)
+		t, err := buildTask(tid, instanceID, stepName, asg, deadline, status, createdAt, completedAt, escalated)
 		if err != nil {
 			return nil, err
 		}
@@ -297,17 +301,18 @@ func scanTask(id string, row rowScanner) (*Task, error) {
 	var (
 		instanceID, stepName, assignee, status, createdAt string
 		deadline, completedAt                             sql.NullString
+		escalated                                         int64
 	)
-	if err := row.Scan(&instanceID, &stepName, &assignee, &deadline, &status, &createdAt, &completedAt); err != nil {
+	if err := row.Scan(&instanceID, &stepName, &assignee, &deadline, &status, &createdAt, &completedAt, &escalated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTaskNotFound
 		}
 		return nil, err
 	}
-	return buildTask(id, instanceID, stepName, assignee, deadline, status, createdAt, completedAt)
+	return buildTask(id, instanceID, stepName, assignee, deadline, status, createdAt, completedAt, escalated)
 }
 
-func buildTask(id, instanceID, stepName, assignee string, deadline sql.NullString, status, createdAt string, completedAt sql.NullString) (*Task, error) {
+func buildTask(id, instanceID, stepName, assignee string, deadline sql.NullString, status, createdAt string, completedAt sql.NullString, escalated int64) (*Task, error) {
 	created, err := parseTime(createdAt)
 	if err != nil {
 		return nil, err
@@ -319,6 +324,7 @@ func buildTask(id, instanceID, stepName, assignee string, deadline sql.NullStrin
 		Assignee:   assignee,
 		Status:     TaskStatus(status),
 		CreatedAt:  created,
+		Escalated:  escalated != 0,
 	}
 	if deadline.Valid {
 		d, err := parseTime(deadline.String)
@@ -509,6 +515,14 @@ func (s *SQLiteStore) ListInstancesByStatus(status string) ([]*ProcessInstance, 
 		return nil, err
 	}
 	return out, nil
+}
+
+// boolToInt кодирует bool в 0/1 для NOT NULL INTEGER-колонки (Task.Escalated, 016 B4b).
+func boolToInt(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // nullableBool превращает *bool в sql-аргумент: nil → NULL, иначе 0/1.
