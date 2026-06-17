@@ -23,6 +23,12 @@ func (e *Engine) StartProcess(name string, args []value.Value) (string, error) {
 // processEnv интерпретатором; движок обновляет Variables активного инстанса (вершина
 // стека active) и персистит (▼SaveInstance).
 func (e *Engine) AssignProcessVar(name string, v value.Value) error {
+	if name == payloadName {
+		// payload «данные» (B3, §AU-5.3) read-only: присвоить данные = … запрещено
+		// (как тело триггера). Чтобы сохранить — присвоить факт = данные.поле (своя
+		// переменная). Ошибка всплывает как ОшибкаВыполнения шага (D-14, провален).
+		return fmt.Errorf("'%s' доступно только для чтения (payload задачи): присвойте свою переменную, напр. присвоить факт = %s.поле", payloadName, payloadName)
+	}
 	if len(e.active) == 0 {
 		// Защитно: присвоить вне тела шага невозможно (семпроход, §PM-1).
 		return fmt.Errorf("присвоить вне активного инстанса")
