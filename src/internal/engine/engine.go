@@ -20,6 +20,11 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
+// payloadName — предопределённое имя payload задачи (B3, §AU-5.3): значение --данные
+// инжектится под этим именем в пер-шаг stepEnv первого шага догона. Read-only:
+// присвоить данные = … отвергается в AssignProcessVar по этому же имени.
+const payloadName = "данные"
+
 // activeFrame — пара «инстанс + его processEnv» в стеке активных инстансов
 // (атрибуция хука присвоить, §EN-3/§EN-4). Push при входе в advance, pop при выходе;
 // вложенный «запустить процесс» из тела шага кладёт новый кадр поверх.
@@ -79,7 +84,9 @@ func (e *Engine) Start(name string, args []value.Value) (string, error) {
 	if err := e.save(inst); err != nil {
 		return "", err
 	}
-	if err := e.advance(inst); err != nil {
+	// Запуск процесса не несёт payload (его несёт только complete --данные, §AU-5.3):
+	// пустая Запись по умолчанию.
+	if err := e.advance(inst, value.NewRecord(nil, nil)); err != nil {
 		return id, err
 	}
 	return id, nil
@@ -105,7 +112,7 @@ type CompleteResult struct {
 // префикс) И инстанс НЕ тронут (до мутаций). Сбой Store на этом CLI-пути → *StoreError
 // (CLI → B9, exit 2). Runtime-ошибка тела/атрибута из advance — как есть (канон §13,
 // exit 1, D-14). Владелец печати строк 7-10 (§EN-7) — сам Complete (пишет в e.out).
-func (e *Engine) Complete(taskID string) (CompleteResult, error) {
+func (e *Engine) Complete(taskID string, data value.Запись) (CompleteResult, error) {
 	t, err := e.st.LoadTask(taskID)
 	if err != nil {
 		if stderrors.Is(err, store.ErrTaskNotFound) {
@@ -137,7 +144,7 @@ func (e *Engine) Complete(taskID string) (CompleteResult, error) {
 	// Гард-догон D-4: задача УЖЕ завершена. Если инстанс ожидает на том же шаге —
 	// хвост сбойного окна: идемпотентное до-продвижение БЕЗ MarkTaskCompleted, строка 8.
 	if t.Status == store.TaskCompleted {
-		return e.catchUp(inst, t)
+		return e.catchUp(inst, data, t)
 	}
 
 	// Гарды D-8 (открытая задача): статус ожидает; соответствие текущему шагу.
@@ -161,32 +168,32 @@ func (e *Engine) Complete(taskID string) (CompleteResult, error) {
 				return CompleteResult{}, NewStoreError(lerr)
 			}
 			t.Status = store.TaskCompleted
-			return e.catchUp(fresh, t)
+			return e.catchUp(fresh, data, t)
 		}
 		return CompleteResult{}, NewStoreError(err)
 	}
 	// Печать строки 7 ДО продвижения: задача уже завершена фактом (§EN-7 строка 7).
 	fmt.Fprintf(e.out, "задача %s завершена\n", taskID)
-	return e.advanceAfterComplete(inst, false)
+	return e.advanceAfterComplete(inst, data, false)
 }
 
 // catchUp — ветка гард-догона D-4: задача УЖЕ была завершена. Применима, только если
 // инстанс ожидает на том же шаге (хвост сбойного окна «MarkTaskCompleted прошёл,
 // advance не успел»); иначе → «уже завершена», exit 2. Печатает строку 8 §EN-7 ВМЕСТО
 // строки 7, далее до-продвигает БЕЗ повторного MarkTaskCompleted (CaughtUp=true).
-func (e *Engine) catchUp(inst *store.ProcessInstance, t *store.Task) (CompleteResult, error) {
+func (e *Engine) catchUp(inst *store.ProcessInstance, data value.Запись, t *store.Task) (CompleteResult, error) {
 	if inst.Status != store.StatusWaiting || inst.CurrentStep != t.StepName {
 		return CompleteResult{}, &GuardError{Kind: GuardAlreadyCompletedKind, TaskID: t.ID}
 	}
 	// Строка 8 §EN-7 (вместо строки 7).
 	fmt.Fprintf(e.out, "задача %s уже была завершена, инстанс до-продвинут\n", t.ID)
-	return e.advanceAfterComplete(inst, true)
+	return e.advanceAfterComplete(inst, data, true)
 }
 
 // advanceAfterComplete продвигает инстанс после (до-)завершения задачи и печатает
 // итоговую строку §EN-7 (9 или 10). next==∅ → выполнен (строка 10); иначе advance
 // (может снова заснуть → строка 9, или провалиться → D-14, итоговой строки НЕТ).
-func (e *Engine) advanceAfterComplete(inst *store.ProcessInstance, caughtUp bool) (CompleteResult, error) {
+func (e *Engine) advanceAfterComplete(inst *store.ProcessInstance, data value.Запись, caughtUp bool) (CompleteResult, error) {
 	next, ok := e.nextStep(inst.ProcessName, inst.CurrentStep)
 	if !ok {
 		// Терминал: следующего шага нет → выполнен (§EN-7 строка 10).
@@ -199,7 +206,7 @@ func (e *Engine) advanceAfterComplete(inst *store.ProcessInstance, caughtUp bool
 	}
 	// Есть следующий шаг: продвигаемся (advance может снова заснуть или провалиться).
 	inst.CurrentStep = next
-	if err := e.advance(inst); err != nil {
+	if err := e.advance(inst, data); err != nil {
 		// Провал продвижения (D-14): инстанс уже провален внутри advance; итоговой
 		// строки 9/10 НЕТ. Сбой Store → *StoreError (CLI → B9); runtime → канон §13.
 		return CompleteResult{Instance: inst, CaughtUp: caughtUp}, err
@@ -239,7 +246,7 @@ func bindParams(params []ast.Ident, args []value.Value) map[string]value.Value {
 // advance крутит шаги до ожидания/терминала (машина состояний §EN-3). processEnv —
 // ОДИН на весь прогон; stepEnv — свой на каждый шаг. Перед каждым ▼ выставляется
 // UpdatedAt = clock.Now().
-func (e *Engine) advance(inst *store.ProcessInstance) error {
+func (e *Engine) advance(inst *store.ProcessInstance, data value.Запись) error {
 	processEnv := eval.NewEnvironment(e.interp.GlobalEnv())
 	for name, v := range inst.Variables {
 		processEnv.Define(name, v)
@@ -249,6 +256,9 @@ func (e *Engine) advance(inst *store.ProcessInstance) error {
 	e.active = append(e.active, frame)
 	defer func() { e.active = e.active[:len(e.active)-1] }()
 
+	// payload «данные» (B3, §AU-5.3): доступен ТОЛЬКО первому шагу этого догона;
+	// после первой итерации цикла cur становится пустой Записью (эфемерность D-AU-3).
+	cur := data
 	for {
 		step, ok := e.lookupStep(inst.ProcessName, inst.CurrentStep)
 		if !ok {
@@ -260,6 +270,11 @@ func (e *Engine) advance(inst *store.ProcessInstance) error {
 			return err
 		}
 		stepEnv := eval.NewEnvironment(processEnv)
+		// payload «данные» инжектится в ПЕР-ШАГ stepEnv (НЕ processEnv — иначе пережил
+		// бы догон через персист Variables, нарушив эфемерность §AU-5.3). Read-only:
+		// чтение данные.поле разрешено, присвоить данные = … отвергает движок в
+		// AssignProcessVar по имени payloadName.
+		stepEnv.Define(payloadName, cur)
 
 		// (1) фаза атрибутов ДО тела (D-9): исполнитель → Строка, срок → Длительность.
 		assignee, hasAssignee, err := e.evalAssignee(step, stepEnv)
@@ -275,6 +290,9 @@ func (e *Engine) advance(inst *store.ProcessInstance) error {
 		if _, err := e.interp.ExecStepBody(processEnv, stepEnv, step.Body); err != nil {
 			return e.fail(inst, err)
 		}
+		// После первого шага догона payload «гаснет»: следующие шаги того же
+		// прогона advance видят пустую Запись (§AU-5.3, эфемерность).
+		cur = value.NewRecord(nil, nil)
 
 		// (3) развилка: человеческий шаг → заснуть; иначе продвижение/терминал.
 		if hasAssignee {
@@ -434,7 +452,9 @@ func (e *Engine) ReactivateInstance(inst *store.ProcessInstance) error {
 	if !ok || !stepInDef(pd, inst.CurrentStep) {
 		return ErrInstanceDrift
 	}
-	return e.advance(inst)
+	// Реактивация при подъёме демона (рестарт-скан 007b) — без payload: --данные
+	// эфемерен и не воскрешается рестартом (§AU-5.3 / D-AU-3).
+	return e.advance(inst, value.NewRecord(nil, nil))
 }
 
 // printTaskCreated печатает строку создания задачи (§EN-7, строки 3/4).

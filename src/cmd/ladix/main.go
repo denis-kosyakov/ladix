@@ -24,6 +24,7 @@ import (
 
 	"github.com/denis-kosyakov/ladix/internal/engine"
 	"github.com/denis-kosyakov/ladix/internal/eval"
+	"github.com/denis-kosyakov/ladix/internal/jsonval"
 	"github.com/denis-kosyakov/ladix/internal/lexer"
 	"github.com/denis-kosyakov/ladix/internal/parser"
 	"github.com/denis-kosyakov/ladix/internal/store"
@@ -334,6 +335,7 @@ func completeMain(rest []string, stdout, stderr io.Writer) int {
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := defaultDBPath
 	webhook := ""
+	payloadRaw := "" // сырое значение --данные (декод в completeTask через jsonval)
 	var positional []string
 	for k := 0; k < len(rest); k++ {
 		a := rest[k]
@@ -375,6 +377,15 @@ func completeMain(rest []string, stdout, stderr io.Writer) int {
 			k++
 		case strings.HasPrefix(a, "--вебхук="):
 			webhook = strings.TrimPrefix(a, "--вебхук=")
+		case a == "--данные":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --данные требует значение")
+				return 2
+			}
+			payloadRaw = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--данные="):
+			payloadRaw = strings.TrimPrefix(a, "--данные=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -391,7 +402,7 @@ func completeMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
 		return 2
 	}
-	return completeTask(positional[0], positional[1], dbPath, maxDepth, caller, stdout, stderr)
+	return completeTask(positional[0], positional[1], dbPath, maxDepth, payloadRaw, caller, stdout, stderr)
 }
 
 // completeTask компилирует файл, собирает стек (SQLiteStore) и завершает задачу
@@ -399,7 +410,16 @@ func completeMain(rest []string, stdout, stderr io.Writer) int {
 // §13, exit 1); interp.Run НЕ вызывается. eng.Complete печатает строки 7-10 сам.
 // Ошибки-гарды Store (§EN-8.B) → exit 2; runtime-ошибка продвижения (D-14) → канон
 // §13, exit 1. Подкоманда обёрнута guard/recover-барьером (конституция III).
-func completeTask(path, taskID, dbPath string, maxDepth int, caller engine.ExternalCaller, stdout, stderr io.Writer) int {
+func completeTask(path, taskID, dbPath string, maxDepth int, payloadRaw string, caller engine.ExternalCaller, stdout, stderr io.Writer) int {
+	// Декод --данные (B3, §AU-5.3) на CLI — корень композиции, импорт jsonval допустим;
+	// движок получает уже готовую value.Запись. Пустой payload → пустая Запись без
+	// ошибки (поведение jsonval). Невалидный JSON / не-объект → дословная ошибка exit 2
+	// ДО любой мутации Store (валидация прежде Engine).
+	data, derr := jsonval.PayloadToRecord(payloadRaw)
+	if derr != nil {
+		fmt.Fprintf(stderr, "ladix: неверный JSON в --данные: %s\n", derr.Error())
+		return 2
+	}
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -429,7 +449,7 @@ func completeTask(path, taskID, dbPath string, maxDepth int, caller engine.Exter
 		// interp.Run НЕ вызывается (Q3): top-level не исполняется, чтобы complete не
 		// плодил новые инстансы. Печать строк 7-10 (§EN-7) делает сам Complete.
 		// Эффекты вызвать/уведомить на догоне дедлайнов идут через eng (вебхук под флагом).
-		if _, cerr := eng.Complete(taskID); cerr != nil {
+		if _, cerr := eng.Complete(taskID, data); cerr != nil {
 			return completeError(cerr, taskID, stderr)
 		}
 		return 0

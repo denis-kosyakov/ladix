@@ -18,6 +18,21 @@ import (
 // argsInt — список аргументов из одного Целое (для прямых вызовов Start в тестах).
 func argsInt(n int64) []value.Value { return []value.Value{value.Целое{V: n}} }
 
+// emptyRec — пустая Запись для вызовов Complete без payload (регресс-путь B3, §AU-5.3):
+// существующие complete-сценарии передают пустую Запись по умолчанию.
+func emptyRec() value.Запись { return value.NewRecord(nil, nil) }
+
+// recOf — Запись из упорядоченных пар (хелпер B3-тестов payload).
+func recOf(pairs ...[2]string) value.Запись {
+	keys := make([]string, 0, len(pairs))
+	fields := make(map[string]value.Value, len(pairs))
+	for _, p := range pairs {
+		keys = append(keys, p[0])
+		fields[p[0]] = value.Строка{V: p[1]}
+	}
+	return value.NewRecord(keys, fields)
+}
+
 // fixedClock — детерминированные часы движка для golden-сценариев (D-2, §EN-9).
 type fixedClock struct{ t time.Time }
 
