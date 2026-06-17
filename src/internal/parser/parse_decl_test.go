@@ -1546,7 +1546,7 @@ func TestTriggerSyntaxDiagnostics(t *testing.T) {
 		{
 			name: "SE-TRIGGER-KIND",
 			src:  "когда x > 1:\n    печать(1)\n",
-			want: "ожидалось 'метрика, событие или расписание', получено 'x'",
+			want: "ожидалось 'метрика, событие, расписание или задача', получено 'x'",
 		},
 		{
 			name: "SE-EXPECT-COMPOP",
@@ -1619,7 +1619,7 @@ func TestTriggerNegativesExactPos(t *testing.T) {
 			// производные «увеличение отступа»/«конец блока» (не одна ошибка).
 			name: "SE-TRIGGER-KIND нет вида после когда",
 			src:  "когда X:\n",
-			want: "ожидалось 'метрика, событие или расписание', получено 'X'",
+			want: "ожидалось 'метрика, событие, расписание или задача', получено 'X'",
 			line: 1, col: 7, // токен 'X' после 'когда '
 		},
 		{
@@ -1663,7 +1663,7 @@ func TestTriggerNegativesExactPos(t *testing.T) {
 // errors_golden_test.go) — БАЙТ-В-БАЙТ из contracts/diagnostics.md §TR-7.F.
 func TestGoldenTriggerSyntaxDiagnostics(t *testing.T) {
 	assertGolden(t, "когда X:\n",
-		"Ошибка в строке 1, колонка 7:\nожидалось 'метрика, событие или расписание', получено 'X'")
+		"Ошибка в строке 1, колонка 7:\nожидалось 'метрика, событие, расписание или задача', получено 'X'")
 	assertGolden(t, "когда метрика m:\n    печать(1)\n",
 		"Ошибка в строке 1, колонка 16:\nожидалось 'оператор сравнения', получено ':'")
 	assertGolden(t, "когда расписание X:\n    печать(1)\n",
@@ -1671,3 +1671,111 @@ func TestGoldenTriggerSyntaxDiagnostics(t *testing.T) {
 	assertGolden(t, "когда метрика m > 1:\nпечать(1)\n",
 		"Ошибка в строке 2, колонка 1:\nпустой блок не допускается, добавьте хотя бы один оператор")
 }
+
+// T005 (016 B4a, §AU-6.1.1): эскалация-триггер `когда задача просрочена в P.S:`
+// парсится в *ast.DeadlineTrigger{Process:"P", Step:"S"}; Pos() узла = токен «задача».
+// «задача»/«просрочена» — IDENT-лексемы (D-AU-4), контекст применяет парсер по лексеме
+// после «когда».
+func TestParseDeadlineTrigger(t *testing.T) {
+	td := triggerDecl(t, "когда задача просрочена в P.S:\n    печать(1)\n")
+	if td.Pos() != (ast.Position{Line: 1, Col: 1}) {
+		t.Errorf("Pos() = %+v, хотим {1,1} (токен когда)", td.Pos())
+	}
+	dt, ok := td.Spec.(*ast.DeadlineTrigger)
+	if !ok {
+		t.Fatalf("Spec = %T, хотим *DeadlineTrigger", td.Spec)
+	}
+	if dt.Process.Name != "P" {
+		t.Errorf("Process = %q, хотим \"P\"", dt.Process.Name)
+	}
+	if dt.Step.Name != "S" {
+		t.Errorf("Step = %q, хотим \"S\"", dt.Step.Name)
+	}
+	// Pos() формы = токен «задача» (после «когда »: строка 1, колонка 7).
+	if dt.Pos() != (ast.Position{Line: 1, Col: 7}) {
+		t.Errorf("Spec.Pos() = %+v, хотим {1,7} (токен задача)", dt.Pos())
+	}
+}
+
+// T006 (016 B4a, §AU-6.1.1): малформенный эскалация-триггер → SE-EXPECTED через
+// msgExpected, exact-match payload + позиция нарушителя. 5 негативов: каждый шаг
+// грамматики `задача просрочена в Ident . Ident` несёт собственную диагностику.
+func TestDeadlineTriggerMalformed(t *testing.T) {
+	cases := []struct {
+		name      string
+		src       string
+		want      string
+		line, col int
+	}{
+		{
+			name: "нет просрочена",
+			src:  "когда задача X в P.S:\n    печать(1)\n",
+			want: "ожидалось 'просрочена', получено 'X'",
+			line: 1, col: 14, // токен 'X' после 'когда задача '
+		},
+		{
+			name: "нет в",
+			src:  "когда задача просрочена P.S:\n    печать(1)\n",
+			want: "ожидалось 'в', получено 'P'",
+			line: 1, col: 25, // токен 'P' там, где ожидалось 'в'
+		},
+		{
+			name: "нет процесса",
+			src:  "когда задача просрочена в .S:\n    печать(1)\n",
+			want: "ожидалось 'имя процесса', получено '.'",
+			line: 1, col: 27, // токен '.' там, где ожидалось имя процесса
+		},
+		{
+			name: "нет точки",
+			src:  "когда задача просрочена в P S:\n    печать(1)\n",
+			want: "ожидалось '.', получено 'S'",
+			line: 1, col: 29, // токен 'S' там, где ожидалась '.'
+		},
+		{
+			name: "нет шага",
+			src:  "когда задача просрочена в P.:\n    печать(1)\n",
+			want: "ожидалось 'имя шага', получено ':'",
+			line: 1, col: 29, // токен ':' там, где ожидался шаг
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, el := parseProgramSrc(t, c.src)
+			if el.Len() == 0 {
+				t.Fatalf("ожидалась ошибка %q, ошибок нет", c.want)
+			}
+			pe := firstParseError(t, el)
+			if pe.Msg != c.want {
+				t.Errorf("Msg = %q, хотим %q", pe.Msg, c.want)
+			}
+			if pe.Pos.Line != c.line || pe.Pos.Col != c.col {
+				t.Errorf("позиция = %+v, хотим {%d,%d}", pe.Pos, c.line, c.col)
+			}
+		})
+	}
+}
+
+// T012 (016 B4a, INV-3, D-AU-4): v1-замок — «задача» остаётся IDENT, НЕ глобальное
+// ключевое слово. `пусть задача = 10` и `задача()` ВНЕ позиции триггера парсятся
+// чисто (IDENT, не эскалация-триггер). Если «задача» стала бы KW (лексер L≠11),
+// `пусть задача = 10` упал бы — этот тест ловит регресс.
+func TestTaskIdentNotKeyword(t *testing.T) {
+	srcs := []string{
+		"пусть задача = 10\n",
+		"задача()\n",
+		"пусть x = задача + 1\n",
+		"печать(задача)\n",
+	}
+	for _, src := range srcs {
+		t.Run(src, func(t *testing.T) {
+			_, el := parseProgramSrc(t, src)
+			if !el.Empty() {
+				t.Errorf("«задача» вне позиции триггера должна парситься чисто, ошибки: %v", el.Error())
+			}
+		})
+	}
+}
+
+// T009 hook (016 B4a): инверсия парсера живёт в тестах через TestDeadlineTriggerMalformed
+// (нет просрочена) — если убрать expectLexeme("просрочена"), `когда задача X в P.S:`
+// ложно парсится и кейс «нет просрочена» краснеет. См. tasks.md T009.

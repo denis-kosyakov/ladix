@@ -67,6 +67,23 @@ func NewScheduleTrigger(pos Position, spec ScheduleSpec) *ScheduleTrigger {
 	return &ScheduleTrigger{specBase: specBase{base{pos}}, Spec: spec}
 }
 
+// DeadlineTrigger — «задача просрочена в Process.Step» (016 B4a, §AU-6.1.1):
+// эскалация дедлайна задачи. Pos() = ведущий токен формы (IDENT-лексема «задача»;
+// D-AU-4: «задача»/«просрочена» — НЕ ключевые слова, контекст применяет парсер по
+// лексеме после «когда», лексер L=11 не растёт). Process/Step — имена процесса и
+// шага; резолвятся семпроходом против реестра процессов. Тело (TriggerDecl.Body)
+// исполняется демоном на просрочке задачи (B4b).
+type DeadlineTrigger struct {
+	specBase
+	Process Ident // имя процесса
+	Step    Ident // имя шага в процессе
+}
+
+// NewDeadlineTrigger строит форму эскалация-триггера; pos — позиция токена «задача».
+func NewDeadlineTrigger(pos Position, process, step Ident) *DeadlineTrigger {
+	return &DeadlineTrigger{specBase: specBase{base{pos}}, Process: process, Step: step}
+}
+
 // ScheduleSpec — спецификация расписания: интервал ИЛИ время суток.
 // Реализуется EverySchedule («каждые») и AtSchedule («в»). Маркер scheduleSpec()
 // — пустой метод; дискриминация подформ через Go type-switch.

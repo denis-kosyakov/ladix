@@ -44,7 +44,7 @@ const (
 	TaskCompleted TaskStatus = "завершена"
 )
 
-// Task — задача человека-в-цикле (EM-3, §EN-2; 8 полей, без изменений).
+// Task — задача человека-в-цикле (EM-3, §EN-2; 9 полей — +Escalated 016 B4b).
 type Task struct {
 	ID          string     // "t-NNNNNN" (D-10)
 	InstanceID  string     // → ProcessInstance.ID
@@ -54,6 +54,7 @@ type Task struct {
 	Status      TaskStatus //
 	CreatedAt   time.Time  //
 	CompletedAt *time.Time // nil, пока открыта; выставляет MarkTaskCompleted (D-12)
+	Escalated   bool       // НОВОЕ (016 B4b, D-AU-5): задача уже эскалирована — durable, одноразово
 }
 
 // TriggerState — durable-состояние триггера между тиками и рестартами (EM-17.2,

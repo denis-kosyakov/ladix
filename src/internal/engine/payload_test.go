@@ -213,12 +213,14 @@ func TestPayloadNotPersisted(t *testing.T) {
 		}
 	}
 	// White-box (D-AU-3): схема Store не несёт payload-поля. reflect.NumField фиксирует
-	// форму ProcessInstance(7)/Task(8); добавление payload-колонки → красный.
+	// форму ProcessInstance(7)/Task(9); добавление payload-колонки → красный. Task=9 после
+	// 016 B4b: +поле Escalated (bool, durable-флаг эскалации, D-AU-5) — НЕ payload (страж
+	// против payload-Записи — цикл по Variables выше). B3 payload по-прежнему не несёт поля.
 	if n := reflect.TypeOf(store.ProcessInstance{}).NumField(); n != 7 {
 		t.Fatalf("store.ProcessInstance имеет %d полей, хотим 7 (B3 НЕ добавляет payload-поле)", n)
 	}
-	if n := reflect.TypeOf(store.Task{}).NumField(); n != 8 {
-		t.Fatalf("store.Task имеет %d полей, хотим 8 (B3 НЕ добавляет payload-поле)", n)
+	if n := reflect.TypeOf(store.Task{}).NumField(); n != 9 {
+		t.Fatalf("store.Task имеет %d полей, хотим 9 (B3 НЕ добавляет payload-поле; 9-е = Escalated 016 B4b)", n)
 	}
 }
 

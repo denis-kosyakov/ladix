@@ -413,6 +413,16 @@ func (p *Parser) parseTriggerDecl() *ast.TriggerDecl {
 		spec = p.parseEventTrigger()
 	case lexer.KW_SCHEDULE:
 		spec = p.parseScheduleTrigger()
+	case lexer.IDENT:
+		// Эскалация-триггер (016 B4a, §AU-6.1.1): IDENT-лексема «задача» в позиции
+		// вида триггера → DeadlineTrigger. «задача» — НЕ ключевое слово (D-AU-4),
+		// контекст применяет ПАРСЕР по лексеме; любой иной ведущий IDENT → SE-TRIGGER-KIND.
+		if p.peek().Lexeme == "задача" {
+			spec = p.parseDeadlineTrigger()
+		} else {
+			p.error(p.peek().Pos, msgExpected(msgTriggerKind, p.peek()))
+			return nil
+		}
 	default:
 		p.error(p.peek().Pos, msgExpected(msgTriggerKind, p.peek()))
 		return nil // поглощённая ошибочная конструкция (synchronize в error)
@@ -446,6 +456,35 @@ func (p *Parser) expectCompOp() ast.CompOp {
 	}
 	p.advance()
 	return ast.CompOp(binop)
+}
+
+// parseDeadlineTrigger: задача просрочена в Ident . Ident (016 B4a, §AU-6.1.1).
+// Грамматика контекстная (D-AU-4): «задача»/«просрочена» — IDENT-лексемы, не
+// ключевые слова. Ведущий токен «задача» уже опознан в parseTriggerDecl. Pos()
+// спеки = токен «задача». Каждый шаг несёт собственную SE-EXPECTED при сломке:
+// просрочена/в/имя процесса/./имя шага (без новых SE-кодов, счёт SE=14 цел).
+func (p *Parser) parseDeadlineTrigger() ast.TriggerSpec {
+	taskTok := p.advance() // задача (IDENT)
+	p.expectLexeme("просрочена")
+	p.expect(lexer.KW_IN, "в")
+	procTok, _ := p.expect(lexer.IDENT, "имя процесса")
+	p.expect(lexer.DOT, ".")
+	stepTok, _ := p.expect(lexer.IDENT, "имя шага")
+	return ast.NewDeadlineTrigger(toASTPos(taskTok.Pos), *p.identFrom(procTok), *p.identFrom(stepTok))
+}
+
+// expectLexeme сверяет, что текущий токен — IDENT с заданной лексемой want, и
+// потребляет его; иначе эмитит SE-EXPECTED (ожидалось '<want>'). Нужен, т.к.
+// expect(IDENT,…) матчит ЛЮБУЮ идентификатор-лексему, а «просрочена» — конкретная
+// IDENT-лексема (D-AU-4: не ключевое слово). Образец — expectCompOp.
+func (p *Parser) expectLexeme(want string) (lexer.Token, bool) {
+	tok := p.peek()
+	if tok.Type == lexer.IDENT && tok.Lexeme == want {
+		p.advance()
+		return tok, true
+	}
+	p.error(tok.Pos, msgExpected(want, tok))
+	return tok, false
 }
 
 // parseEventTrigger: событие Ident (§TR-1). Pos() спеки = токен событие.

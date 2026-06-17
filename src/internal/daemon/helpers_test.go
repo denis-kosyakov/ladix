@@ -73,6 +73,14 @@ func (w *countWriter) contains(sub string) bool {
 	return strings.Contains(w.buf.String(), sub)
 }
 
+// reset очищает буфер (отбросить системные строки движка, напечатанные при setup-
+// eng.Start, до первого тика — чтобы порядок-замок видел только вывод фаз тика).
+func (w *countWriter) reset() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.buf.Reset()
+}
+
 // panicStore оборачивает Store и паникует на NextInstanceID (моделирует сбой тела
 // триггера, чьё «запустить процесс» доходит до движка): per-триггер recover демона
 // должен изолировать панику. Прочие методы делегируются.

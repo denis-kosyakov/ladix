@@ -49,6 +49,11 @@ func (i *Interpreter) RunTriggers(w io.Writer) error {
 			fmt.Fprintf(w, "событие триггер '%s' требует serve (фича 007b)\n", spec.Event.Name)
 		case *ast.ScheduleTrigger:
 			fmt.Fprintf(w, "расписание триггер '%s' требует serve (фича 007b)\n", scheduleName(spec.Spec))
+		case *ast.DeadlineTrigger:
+			// Эскалация-триггер (016 B4a, §AU-6.1): под `run` тело НЕ исполняется
+			// (просрочка — рантайм демона, B4b); печатается одна строка-заглушка
+			// в порядке объявления, зеркало событие/расписание.
+			fmt.Fprintf(w, "задача триггер '%s.%s' требует serve (фича 007b)\n", spec.Process.Name, spec.Step.Name)
 		}
 	}
 	return nil
