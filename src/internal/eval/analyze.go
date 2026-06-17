@@ -366,6 +366,26 @@ func (i *Interpreter) checkTrigger(td *ast.TriggerDecl) error {
 			}
 		}
 		return i.checkTriggerBody(td.Body, false, false)
+	case *ast.DeadlineTrigger:
+		// Эскалация-триггер (016 B4a, §AU-6.1.3): (а) процесс объявлен; (б) шаг
+		// существует в процессе; (в) тело — как РАСПИСАНИЕ (lenient-scope, D-AU-6):
+		// оба контекст-флага false. Свободный `факт` в теле статической ошибки не
+		// даёт — резолвится в рантайме против инжекта InstanceVariables (B4b).
+		pd, ok := i.processes[spec.Process.Name]
+		if !ok {
+			return semErr(spec.Process.Pos(), fmt.Sprintf("процесс '%s' не объявлен", spec.Process.Name))
+		}
+		found := false
+		for _, st := range pd.Steps {
+			if st.Name.Name == spec.Step.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return semErr(spec.Step.Pos(), fmt.Sprintf("шаг '%s' не найден в процессе '%s'", spec.Step.Name, spec.Process.Name))
+		}
+		return i.checkTriggerBody(td.Body, false, false)
 	}
 	return nil
 }
