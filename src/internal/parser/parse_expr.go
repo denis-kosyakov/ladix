@@ -19,7 +19,7 @@ func startsExpression(t lexer.TokenType) bool {
 	switch t {
 	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BOOL, lexer.NONE, lexer.DURATION,
 		lexer.IDENT, lexer.KW_NOT, lexer.MINUS, lexer.LPAREN, lexer.LBRACKET, lexer.KW_RUN,
-		lexer.KW_VALUE, lexer.KW_EVENT:
+		lexer.KW_CALL, lexer.KW_VALUE, lexer.KW_EVENT:
 		return true
 	default:
 		return false
@@ -196,6 +196,8 @@ func (p *Parser) parsePrimary() ast.Expression {
 		return p.parseList(lbracket)
 	case lexer.KW_RUN:
 		return p.parseRunProcess()
+	case lexer.KW_CALL:
+		return p.parseCallExternalExpr()
 	case lexer.KW_VALUE:
 		p.advance()
 		return ast.NewValueExpr(toASTPos(t.Pos)) // pos = токен значение; контекст-гард — семпроход
@@ -249,6 +251,26 @@ func (p *Parser) parseRunProcess() ast.Expression {
 		p.expect(lexer.RPAREN, ")")
 	}
 	return ast.NewRunProcessExpr(toASTPos(runTok.Pos), *process, args)
+}
+
+// parseCallExternalExpr: вызвать IDENT ("(" ArgList? ")")? — CallExternalExpr
+// (B1, §AU-3). Зеркалит parseRunProcess, но без служебного слова (вызвать сразу
+// перед именем цели). Скобки — часть узла (не постфикс-вызов; постфикс на
+// результат навешивает parsePostfix). Pos() = токен вызвать. Развязка с
+// statement-формой (CallAction) — структурная: ведущий вызвать ловит
+// parseStatement до parseExpression, сюда попадает лишь вызвать в позиции
+// выражения (RHS присвоить/пусть, аргумент, элемент списка).
+func (p *Parser) parseCallExternalExpr() ast.Expression {
+	callTok := p.advance() // вызвать
+	nameTok, _ := p.expect(lexer.IDENT, "имя цели")
+	target := p.identFrom(nameTok)
+	var args []ast.Expression
+	if p.check(lexer.LPAREN) {
+		p.advance()
+		args = p.parseArgList(lexer.RPAREN)
+		p.expect(lexer.RPAREN, ")")
+	}
+	return ast.NewCallExternalExpr(toASTPos(callTok.Pos), *target, args)
 }
 
 // parseArgList разбирает позиционные аргументы до closer (висящая запятая).

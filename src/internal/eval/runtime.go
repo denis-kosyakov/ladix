@@ -19,7 +19,15 @@ type ProcessRuntime interface {
 
 	// CallExternal — стаб «вызвать» (D-13): одна строка в stdout; в v1 всегда nil.
 	// Контракт на будущее: не-nil ошибка → шаг провален (D-14, недостижимо в v1).
+	// Делегирует CallExternalResult, отбрасывая значение (эффект один раз).
 	CallExternal(target string, args []value.Value) error
+
+	// CallExternalResult — выражение-форма «вызвать» (B1, §AU-3): эффект внешнего
+	// вызова + захват результата как value.Value. Под дефолт-стабом печатает ту же
+	// строку, что CallExternal, и возвращает (value.None, nil); под HTTP-драйвером
+	// (B2, вне scope) — декодированный ответ (§AU-4.3). Аргументы уже вычислены
+	// eval'ом слева направо.
+	CallExternalResult(target string, args []value.Value) (value.Value, error)
 
 	// Notify — стаб «уведомить» (D-13): одна строка в stdout; всегда nil (best-effort).
 	Notify(target string, args []value.Value) error

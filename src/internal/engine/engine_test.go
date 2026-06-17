@@ -196,6 +196,42 @@ func TestNotifyCallFormats(t *testing.T) {
 	}
 }
 
+// TestCallExternalDelegatesToResult — C-SEAM-2.1 (B1): statement-форма
+// CallExternal делегирует CallExternalResult; печать «[вызов] …» происходит РОВНО
+// один раз (нет двойного эффекта). Инверсия: вернуть CallExternal к собственной
+// Fprintf И вызову CallExternalResult → две строки.
+func TestCallExternalDelegatesToResult(t *testing.T) {
+	_, _, eng, out := buildStack(t, onboardingSrc, goldenMoment())
+
+	out.Reset()
+	if err := eng.CallExternal("crm", []value.Value{value.Строка{V: "к"}}); err != nil {
+		t.Fatalf("CallExternal: %v", err)
+	}
+	if got, want := out.String(), "[вызов] crm(к)\n"; got != want {
+		t.Errorf("CallExternal печать = %q, хотим РОВНО одну строку %q (делегирование)", got, want)
+	}
+}
+
+// TestCallExternalResultStubPrintsAndReturnsNone — C-SEAM-2.3/2.4 (B1):
+// выражение-форма CallExternalResult печатает ту же строку [вызов] (§EN-7 байт-в-
+// байт) и возвращает (value.None, nil). Инверсия: вернуть не-None → значение ≠
+// Пусто; изменить строку → golden red.
+func TestCallExternalResultStubPrintsAndReturnsNone(t *testing.T) {
+	_, _, eng, out := buildStack(t, onboardingSrc, goldenMoment())
+
+	out.Reset()
+	v, err := eng.CallExternalResult("отправить", []value.Value{value.Строка{V: "адрес"}, value.Целое{V: 7}})
+	if err != nil {
+		t.Fatalf("CallExternalResult: %v", err)
+	}
+	if v != value.None {
+		t.Errorf("результат = %v (%s), хотим value.None (Пусто)", v, v.TypeName())
+	}
+	if got, want := out.String(), "[вызов] отправить(адрес, 7)\n"; got != want {
+		t.Errorf("печать = %q, хотим %q (§EN-7 байт-в-байт)", got, want)
+	}
+}
+
 // TestAttributeTypeGuard — фаза атрибутов: исполнитель не Строка → ОшибкаТипа §EN-8.A,
 // инстанс провален (D-18/D-14).
 func TestAttributeTypeGuard(t *testing.T) {

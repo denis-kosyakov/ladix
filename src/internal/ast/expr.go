@@ -77,6 +77,23 @@ func NewRunProcessExpr(pos Position, process Ident, args []Expression) *RunProce
 	return &RunProcessExpr{exprBase: exprBase{base{pos}}, Process: process, Args: args}
 }
 
+// CallExternalExpr — захват результата внешнего вызова: вызвать Target(Args) как
+// ВЫРАЖЕНИЕ (B1, §AU-3). Имя CallExpr занято постфикс-вызовом f(args) (:31) →
+// узел B1 называется CallExternalExpr. Цель — логическое имя (строка), не символ
+// программы (не резолвится, арность не проверяется). Скобки — часть узла (как у
+// RunProcessExpr), постфикс на результат — отдельной цепочкой parsePostfix.
+// Pos() = токен вызвать.
+type CallExternalExpr struct {
+	exprBase
+	Target Ident        // логическое имя цели (crm, ИТ, …)
+	Args   []Expression // позиционные аргументы (могут быть пусты)
+}
+
+// NewCallExternalExpr строит узел захвата результата; pos — позиция токена вызвать.
+func NewCallExternalExpr(pos Position, target Ident, args []Expression) *CallExternalExpr {
+	return &CallExternalExpr{exprBase: exprBase{base{pos}}, Target: target, Args: args}
+}
+
 // ValueExpr — выражение «значение» (предопределённое имя метрика-триггера).
 // Беспараметрическое первичное выражение (зеркало NoneLit). Pos() = токен
 // «значение». Допустимо только в теле метрика-триггера (гард семпрохода).

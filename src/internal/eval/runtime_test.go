@@ -24,6 +24,10 @@ type fakeRuntime struct {
 	statusErr  error // ошибка InstanceStatus (имитация StoreError движка)
 	varsErr    error // ошибка InstanceVariables
 	tasksErr   error // ошибка UserTasks
+	// B1 (013): выражение-форма «вызвать». callResult — значение, отдаваемое
+	// CallExternalResult (по умолчанию value.None); callResultErr — ошибка шва.
+	callResult    value.Value
+	callResultErr error
 	// process-builtins (D-15): сценарные ответы для InstanceStatus/InstanceVariables/UserTasks.
 	statusByID map[string]string // id → статус (отсутствует → ok=false)
 	varsByID   map[string]value.Запись
@@ -55,8 +59,22 @@ func (f *fakeRuntime) AssignProcessVar(name string, v value.Value) error {
 	return f.assignErr
 }
 func (f *fakeRuntime) CallExternal(target string, args []value.Value) error {
+	_, err := f.CallExternalResult(target, args)
+	return err
+}
+
+// CallExternalResult — B1 (013): записывает вызов (как CallExternal), отдаёт
+// заданное значение/ошибку. По умолчанию (callResult==nil, callResultErr==nil)
+// возвращает (value.None, nil) — зеркало дефолт-стаба движка.
+func (f *fakeRuntime) CallExternalResult(target string, args []value.Value) (value.Value, error) {
 	f.calls = append(f.calls, callRec{target, args})
-	return nil
+	if f.callResultErr != nil {
+		return nil, f.callResultErr
+	}
+	if f.callResult != nil {
+		return f.callResult, nil
+	}
+	return value.None, nil
 }
 func (f *fakeRuntime) Notify(target string, args []value.Value) error {
 	f.notifies = append(f.notifies, callRec{target, args})

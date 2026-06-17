@@ -378,3 +378,38 @@ func TestTopLevelLeadingTokenEdgeCases(t *testing.T) {
 		}
 	})
 }
+
+// C-PARSE-3 развязка (B1, 013): ведущий вызвать (statement-токен шага) остаётся
+// CallAction — parseStatement ловит KW_CALL до parseExpression, новый case в
+// parsePrimary его НЕ перехватывает. Инверсия: если правка перехватит ведущий
+// вызвать в выражение → Items[0] ≠ CallAction.
+func TestLeadingCallStaysStatement(t *testing.T) {
+	prog, el := parseProgramSrc(t, `вызвать ИТ("з")`+"\n")
+	if !el.Empty() {
+		t.Fatalf("неожиданные ошибки разбора: %v", el.Error())
+	}
+	if len(prog.Items) != 1 {
+		t.Fatalf("Items = %d, хотим 1", len(prog.Items))
+	}
+	ca, ok := prog.Items[0].(*ast.CallAction)
+	if !ok {
+		t.Fatalf("Items[0] = %T, хотим *ast.CallAction (statement-форма цела)", prog.Items[0])
+	}
+	if ca.Name.Name != "ИТ" || len(ca.Args) != 1 {
+		t.Errorf("CallAction поля = {%q, %d арг}, хотим {ИТ, 1}", ca.Name.Name, len(ca.Args))
+	}
+}
+
+// C-PARSE-3 (B1, 013): уведомить НЕ выражение — KW_NOTIFY нет в parsePrimary/
+// startsExpression. присвоить x = уведомить кто("a") → синтаксическая ошибка.
+// Инверсия: добавить case KW_NOTIFY в primary → уведомить парсится как выражение,
+// ошибки нет → red.
+func TestNotifyNotExpression(t *testing.T) {
+	if startsExpression(lexer.KW_NOTIFY) {
+		t.Fatalf("startsExpression(KW_NOTIFY) = true, хотим false (уведомить только statement)")
+	}
+	_, el := parseProgramSrc(t, `присвоить x = уведомить кто("a")`+"\n")
+	if el.Empty() {
+		t.Fatalf("ожидалась синтаксическая ошибка: уведомить не выражение")
+	}
+}

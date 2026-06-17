@@ -50,6 +50,8 @@ func (i *Interpreter) evalExpr(env *Environment, e ast.Expression) (value.Value,
 		return i.evalField(env, ex)
 	case *ast.RunProcessExpr:
 		return i.evalRunProcess(env, ex)
+	case *ast.CallExternalExpr:
+		return i.evalCallExternal(env, ex)
 	case *ast.DurationLit:
 		return i.evalDurationLit(ex)
 	case *ast.WindowPeriodLit:
@@ -218,6 +220,27 @@ func (i *Interpreter) evalRunProcess(env *Environment, r *ast.RunProcessExpr) (v
 		return nil, runtimeErrWrap(r.Pos(), err)
 	}
 	return value.Строка{V: id}, nil
+}
+
+// evalCallExternal активирует «вызвать Цель(args)» как ВЫРАЖЕНИЕ (B1, §AU-3):
+// вычисляет аргументы слева направо → runtime.CallExternalResult(Цель, args) →
+// захваченное value.Value (под дефолт-стабом — value.None). Имя цели — Ident как
+// строка, НЕ резолвится как переменная (FR-008). Ошибка шва заворачивается
+// runtimeErrWrap(c.Pos(), err) → единая категория ОшибкаВыполнения (§AU-3.3),
+// сохраняя Cause/Unwrap. nil-runtime → §EN-8.A (как evalRunProcess).
+func (i *Interpreter) evalCallExternal(env *Environment, c *ast.CallExternalExpr) (value.Value, error) {
+	if i.runtime == nil {
+		return nil, runtimeErr(c.Pos(), "внутренняя ошибка: движок процессов не подключён")
+	}
+	args, err := i.evalArgs(env, c.Args)
+	if err != nil {
+		return nil, err
+	}
+	v, err := i.runtime.CallExternalResult(c.Target.Name, args)
+	if err != nil {
+		return nil, runtimeErrWrap(c.Pos(), err)
+	}
+	return v, nil
 }
 
 // evalDurationLit активирует литерал длительности (006, §EN-5, D-7/D-16): парсит

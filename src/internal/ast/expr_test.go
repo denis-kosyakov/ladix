@@ -96,3 +96,24 @@ func TestEventExprPos(t *testing.T) {
 	}
 	var _ Expression = ee
 }
+
+// C-AST-1 (B1, 013): CallExternalExpr — Pos() = токен вызвать; Target/Args
+// сохранены; реализует Expression. Имя узла — CallExternalExpr (НЕ CallExpr,
+// :31 занят) — фиксируется самим фактом компиляции (отдельный тип).
+func TestNewCallExternalExpr(t *testing.T) {
+	callPos := Position{Line: 1, Col: 15}
+	target := *NewIdent(Position{Line: 1, Col: 23}, "crm")
+	args := []Expression{NewStringLit(Position{Line: 1, Col: 27}, "к")}
+	ce := NewCallExternalExpr(callPos, target, args)
+
+	if ce.Pos() != callPos {
+		t.Errorf("CallExternalExpr.Pos() = %+v, хотим токен вызвать %+v", ce.Pos(), callPos)
+	}
+	if ce.Target.Name != "crm" {
+		t.Errorf("Target.Name = %q, хотим \"crm\"", ce.Target.Name)
+	}
+	if len(ce.Args) != 1 {
+		t.Errorf("Args = %d, хотим 1 (сохранены, не потеряны)", len(ce.Args))
+	}
+	var _ Expression = ce // реализует Expression через exprBase
+}
