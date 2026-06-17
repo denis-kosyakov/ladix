@@ -99,7 +99,8 @@ B4a). `[P]` — разные файлы, без зависимостей.
 - [ ] **T016** [Тест ДО] `TestDeadlineTriggerRunStub` (`eval/trigger_run_test.go` или
   `cmd/ladix/golden_test.go`): `ladix run` файла с эскалация-триггером → exit 0 + stdout `задача
   триггер 'P.S' требует serve (фича 007b)`, тело НЕ исполнено. RED.
-- [ ] **T017** Реализовать run-заглушку (`eval/trigger_run.go`, ветка `*ast.DeadlineTrigger`):
+- [ ] **T017** Реализовать run-заглушку (`eval/trigger_run.go`, кейс `*ast.DeadlineTrigger` в
+  switch `RunTriggers` — экспортный метод `*Interpreter`, рядом с событие/расписание `:49/:51`):
   `fmt.Fprintf(w, "задача триггер '%s.%s' требует serve (фича 007b)\n", spec.Process.Name,
   spec.Step.Name)`. T016 → GREEN. **Инверсия: исполнять тело под run → тест ловит побочный вывод.**
 - [ ] **T018** [P, опц.] Витрина B4a: новый чисто-парсящийся `examples/контроль_плана.ladix` (срез §2:

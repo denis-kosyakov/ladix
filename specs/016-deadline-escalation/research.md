@@ -68,7 +68,9 @@ TR-VAL-CTX/TR-EVT-CTX). Перед телом: проверка процесса
 
 ### Прецедент: run-заглушка
 
-`internal/eval/trigger_run.go` — `runTriggers`, печатает заглушки в порядке объявления:
+`internal/eval/trigger_run.go` — `RunTriggers` (экспортный метод `*Interpreter`; §AU-6.1.4 якорь
+пишет `runTriggers` строчными, реальный символ — `RunTriggers`), диспетчер `switch td.Spec.(type)`,
+печатает заглушки в порядке объявления:
 - событие: `fmt.Fprintf(w, "событие триггер '%s' требует serve (фича 007b)\n", spec.Event.Name)` (`:49`)
 - расписание: `fmt.Fprintf(w, "расписание триггер '%s' требует serve (фича 007b)\n", scheduleName(spec.Spec))` (`:51`)
 
