@@ -36,8 +36,10 @@ description: "Task list — 014-real-effects (веха M2, B2)"
 - [ ] T004 [P] Red→green C-JSONVAL-2 (новый энкодер) в `src/internal/jsonval/encode_test.go`: `TestEncodeBodyPlainJSON` — `EncodeBody("crm", []value.Value{value.Строка("клиент")})` == `{"цель":"crm","данные":["клиент"]}` байт-в-байт; и `TestEncodeValueTypes` по таблице (Целое→число, Дробное→число, Строка→quoted, Булево→true/false, Пусто→null, Список→array, Запись→object с порядком ключей); БЕЗ обёртки `{"т","зн"}`. Критерий: red (энкодера нет).
   **Инверсия:** энкодер пишет тегированный `{"т":"Строка","зн":"клиент"}` (как `store/codec`) → тело ≠ plain-JSON → red; ИЛИ `Запись` теряет порядок ключей → детерминизм-замок red.
 - [ ] T005 Реализация `internal/jsonval`: создать пакет — `decode.go` (лифт `PayloadToRecord`/`DecodeValue`/`decodeObject`/`decodeArray`/`numberToValue` из `daemon/events.go:95-206`, экспортировать нужное) + `encode.go` (новый `EncodeBody(target, args)` и `encodeValue(v)` — нетегированный; `Дата`/`Длительность`/`Период`→строковая форма, ЗАДОКУМЕНТИРОВАТЬ выбор в doc-комментарии). Импортировать только `value`+stdlib. Критерий: T003/T004 зеленеют.
-- [ ] T006 Co-land `daemon`: переписать `src/internal/daemon/events.go` на делегирование `jsonval` (удалить лифтнутые функции, импортировать `jsonval`); убрать осиротевший `TestPayloadToRecordValueTypes` из `daemon/events_test.go` (переехал в T003). Критерий: `cd src && go test ./internal/daemon/... -count=1` зелёный; импорт-граф без циклов.
-- [ ] T007 Инвариант листовости `jsonval`: `cd src && go list -deps ./internal/jsonval | grep -E 'internal/(eval|engine|store|ast|parser|lexer)$'` — пусто (импортирует только `value`+stdlib). И `go list -deps ./internal/eval | grep 'internal/jsonval$'` — пусто (eval не тянет jsonval). Критерий: обе команды без вывода.
+- [ ] T006 **Замок лифта (007b golden цел) C-JSONVAL-3** — Co-land `daemon`: переписать `src/internal/daemon/events.go` на ДЕЛЕГИРОВАНИЕ `jsonval` — `jsonval` становится ЕДИНСТВЕННЫМ источником декодера, лифтнутые функции из `daemon` УДАЛЕНЫ (БЕЗ дубля), `daemon` импортирует `jsonval`; убрать осиротевший `TestPayloadToRecordValueTypes` из `daemon/events_test.go` (переехал в T003). Критерий: событийные тесты декодера 007b — `events_test.go` (`TestDrainEvents*` + `TestPayloadToRecordValueTypes`, прямо упражняющий лифтнутый декодер) — и весь пакет `cd src && go test ./internal/daemon/... -count=1` остаются ЗЕЛЁНЫМИ после переноса (golden событий байт-точен); импорт-граф без циклов.
+  **Инверсия:** оставить дублирующий декодер в `daemon` (не делегировать в `jsonval`) ИЛИ сломать делегирование → событийные тесты `daemon` краснеют (расхождение поведения/осиротевший символ).
+- [ ] T007 Инвариант листовости `jsonval` + **граница source_loader**: (a) `cd src && go list -deps ./internal/jsonval | grep -E 'internal/(eval|engine|store|ast|parser|lexer)$'` — пусто (импортирует только `value`+stdlib); (b) `go list -deps ./internal/eval | grep 'internal/jsonval$'` — пусто (eval/source_loader НЕ тянет jsonval); (c) `git diff --stat src/internal/eval/source_loader.go` — ПУСТО (второй JSON-декодер источников M1 §SM-9.B не трогается, НЕ сливается с `jsonval` — другая семантика overflow/дат). Критерий: (a)/(b) без вывода, (c) пустой дифф.
+  **Инверсия:** слить декодер источников в `jsonval` ИЛИ заставить `source_loader` звать `jsonval` → (b) даёт вывод ИЛИ (c) непустой дифф → замок краснеет; толерантная деградация payload утекла бы в строгие источники.
 
 **Checkpoint**: кодек готов; можно начинать US1-US4.
 
@@ -173,7 +175,7 @@ description: "Task list — 014-real-effects (веха M2, B2)"
 | FR-007 энкодер value→plain-JSON | T004, T019, T005 |
 | FR-008 декод ответа + пустое тело→Пусто | T018, T020 |
 | FR-009 `Notify` best-effort | T017, T020 |
-| FR-010 `internal/jsonval` нейтральный | T003, T005, T007 |
+| FR-010 `internal/jsonval` нейтральный (B2 создаёт: лифт+энкодер; B3 потребляет) | T003, T005, T006, T007 |
 | FR-011 httpClient timeout + httptest | T017, T036 |
 | FR-012 сбой→`ОшибкаВыполнения` с `Cause` | T022, T023, T025 |
 | FR-013 `runtimeErrWrap` 3 точки | T022, T025, T026 |
@@ -197,7 +199,7 @@ description: "Task list — 014-real-effects (веха M2, B2)"
 
 **39 задач** (T001-T039). Фазы: Setup (1), Foundational/кодек (6: T002-T007, из них 2 тест-замка кодека), US1-дефолт-стаб (9: T008-T016, 4 теста + 5 импл/инвариант), US2-вебхук (5: T017-T021, 3 теста + 2 импл), US3-ошибки (5: T022-T026, 3 теста + 2 импл), US4-CLI (8: T027-T034, 4 теста + 4 импл), Интеграция/инварианты (5: T035-T039).
 
-**Тест-замков — 16**: кодек T003/T004 (2); US1 T008/T009/T010/T011 (4); US2 T017/T018/T019 (3); US3 T022/T023/T024 (3); US4 T027/T028/T029/T030 (4). Каждый с явной инверсной мутацией. **Мутант-доказательств — 4** (T015 §EN-7-дефолт-якорь, T021 провод, T026 обёртка, T034 CLI).
+**Тест-замков — 16**: кодек T003/T004 (2); US1 T008/T009/T010/T011 (4); US2 T017/T018/T019 (3); US3 T022/T023/T024 (3); US4 T027/T028/T029/T030 (4). Каждый с явной инверсной мутацией. **Структурных замков `jsonval` — 2** (с инверсиями): T006 C-JSONVAL-3 (лифт-делегирование, 007b golden байт-зелёный — инверсия: дубль декодера в `daemon` → событийные тесты краснеют), T007 (граница `source_loader` — инверсия: слить/импортировать → дифф/импорт-граф краснеет). **Мутант-доказательств — 4** (T015 §EN-7-дефолт-якорь, T021 провод, T026 обёртка, T034 CLI).
 
 **Ключевые инверсии (по заданию дирижёра)**:
 - **(a) golden-дефолт**: T015 — дефолт = `webhookCaller` вместо `printCaller` → §EN-7 golden КРАСНЕЕТ (якорный анти-регресс B2).

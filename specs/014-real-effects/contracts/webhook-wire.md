@@ -38,8 +38,8 @@ Content-Type: application/json
 | W-3 | ответ-объект `{"статус":"ок"}` → `Call` вернул `Запись{статус:"ок"}` | присвоить + проверка значения |
 | W-4 | пустое тело ответа → `Call` вернул `Пусто` (`value.None`) | присвоить + проверка `value.None` |
 | W-5 | каждый тип `value` сериализуется в plain-JSON БЕЗ обёртки `{"т","зн"}` | unit-тест энкодера по таблице типов |
-| W-6 | `DecodeValue`/`PayloadToRecord` лифтнуты в `jsonval`; `daemon` импортирует `jsonval` | перенос `TestPayloadToRecordValueTypes`; импорт-граф |
-| W-7 | `jsonval` импортирует только `value`+stdlib (листовой-совместим) | импорт-граф; НЕ из `eval` |
+| W-6 | `DecodeValue`/`PayloadToRecord` лифтнуты в `jsonval` (B2 создаёт пакет); `daemon` ДЕЛЕГИРУЕТ `jsonval` (БЕЗ дубля), golden событий 007b байт-зелёный | перенос `TestPayloadToRecordValueTypes`; `go test ./internal/daemon/...` зелёный; импорт-граф |
+| W-7 | `jsonval` импортирует только `value`+stdlib (листовой-совместим); `eval/source_loader.go` НЕ сливается и НЕ зовёт `jsonval` (пустой дифф) | импорт-граф; НЕ из `eval`; `git diff source_loader.go` пуст |
 | W-8 | реальный POST — только под `net/http/httptest`; конечный `httpClient.Timeout` | тест без живой сети |
 
 ## Инверсные мутпробы
@@ -49,8 +49,11 @@ Content-Type: application/json
 - W-4: пустое тело идёт прямо в `DecodeValue` (без guard) → возвращает ошибку вместо `Пусто` → W-4 КРАСНЕЕТ.
 - W-3: ответ декодируется через `PayloadToRecord` (требует объект) на скаляре → паника/ошибка на скалярном ответе → красная ветка.
 - W-5: энкодер `Запись` теряет порядок ключей → детерминизм-замок КРАСНЕЕТ.
+- W-6: оставить дублирующий декодер в `daemon` (не делегировать в `jsonval`) → событийные тесты `daemon` краснеют (расхождение/осиротевший символ).
+- W-7: слить декодер источников в `jsonval` ИЛИ заставить `source_loader` звать `jsonval` → импорт-граф / дифф `source_loader.go` КРАСНЕЕТ.
 
 ## Границы
 
 - `webhookCaller` — единственный потребитель сети; изолирован за `ExternalCaller`.
-- Второй декодер источников M1 (`eval/source_loader.go`) НЕ сливается с `jsonval` (другая семантика overflow/дат).
+- Пакет `internal/jsonval` СОЗДАЁТ B2 (014): лифт декодера из `daemon` + новый энкодер. **B3 (015) его НЕ создаёт и НЕ лифтит повторно** — только потребитель (`PayloadToRecord` для `--данные`→`Запись`, §AU-5.3). Мнимое дублирование scope B2↔B3 снято.
+- Второй декодер источников M1 (`eval/source_loader.go`) НЕ сливается с `jsonval` (другая семантика overflow/дат: int-overflow → ОШИБКА §SM-9.B vs толерантная деградация payload).
