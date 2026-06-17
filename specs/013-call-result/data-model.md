@@ -43,14 +43,14 @@ func NewCallExternalExpr(pos Position, target Ident, args []Expression) *CallExt
 
 ```go
 type ProcessRuntime interface {
-    StartProcess(name string, args []value.Value) (string, error)              // существ. (1)
-    AssignProcessVar(name string, v value.Value) error                         // существ. (2)
-    CallExternal(target string, args []value.Value) error                      // существ. (3) — statement-форма (СОХРАНЯЕТСЯ)
-    CallExternalResult(target string, args []value.Value) (value.Value, error) // НОВЫЙ  (4) — выражение-форма (B1)
-    Notify(target string, args []value.Value) error                            // существ. (5)
-    InstanceStatus(id string) (status string, ok bool, err error)              // существ. (6)
-    InstanceVariables(id string) (vars value.Запись, ok bool, err error)       // существ. (7)
-    UserTasks(assignee string) ([]value.Запись, error)                         // существ. (8 в нумерации интерфейса)
+    StartProcess(name string, args []value.Value) (string, error)              // существ. 1/7
+    AssignProcessVar(name string, v value.Value) error                         // существ. 2/7
+    CallExternal(target string, args []value.Value) error                      // существ. 3/7 — statement-форма (СОХРАНЯЕТСЯ)
+    CallExternalResult(target string, args []value.Value) (value.Value, error) // ★ НОВЫЙ (B1) — выражение-форма; вставлен рядом с CallExternal
+    Notify(target string, args []value.Value) error                            // существ. 4/7
+    InstanceStatus(id string) (status string, ok bool, err error)              // существ. 5/7
+    InstanceVariables(id string) (vars value.Запись, ok bool, err error)       // существ. 6/7
+    UserTasks(assignee string) ([]value.Запись, error)                         // существ. 7/7 — итого 7 старых + 1 новый = 8
 }
 ```
 
