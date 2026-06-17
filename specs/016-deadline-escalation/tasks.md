@@ -31,13 +31,13 @@ B4a). `[P]` — разные файлы, без зависимостей.
 
 ## Phase 1: Setup (общий)
 
-- [ ] **T001** Сверить базу @a92ad50: `parseTriggerDecl` диспетчер (`parse_decl.go:406-417`),
+- [x] **T001** Сверить базу @a92ad50: `parseTriggerDecl` диспетчер (`parse_decl.go:406-417`),
   `msgTriggerKind` (`errors.go:29`)/коммент `:26`, `checkTrigger` (`analyze.go:319`)+расписание-кейс
   `checkTriggerBody(…,false,false)` (`:368`), run-заглушки (`trigger_run.go:49/51`), `tick()` 3 фазы
   (`tick.go:10-16`), `Task` struct (`types.go:48-57`), кодек (`sqlite.go:33/161/165/179/186/296/310`),
   `fireBody`/`NewTriggerBodyEnv` (`fire.go:22-27`), `RunRestartScan` (`restart.go:28`), `engine.Overdue`
   (`format.go:35`), clean[] (`examples_test.go:12-35` — 24 файла). `ProcessRuntime`=8, Store=15.
-- [ ] **T002** `go test ./...` + `go vet ./...` + `-race` на чистом дереве — зелёные (база регресса).
+- [x] **T002** `go test ./...` + `go vet ./...` + `-race` на чистом дереве — зелёные (база регресса).
   Зафиксировать счётчики: lexer L=11, parser SE=14, errors_golden eval=28, §EN-7 пины.
 
 ---
@@ -46,71 +46,71 @@ B4a). `[P]` — разные файлы, без зависимостей.
 
 ## Phase 2: B4a Foundational — AST-узел (блокирует парсер/семпроход B4a)
 
-- [ ] **T003** [Тест ДО, P] `TestDeadlineTriggerNode` (`ast/trigger_test.go`): `NewDeadlineTrigger(pos,
+- [x] **T003** [Тест ДО, P] `TestDeadlineTriggerNode` (`ast/trigger_test.go`): `NewDeadlineTrigger(pos,
   proc, step)` → поля `Process`/`Step`, `Pos()==pos`, реализует `TriggerSpec` (`var _ ast.TriggerSpec
   = (*ast.DeadlineTrigger)(nil)`). Сейчас RED (узла нет).
-- [ ] **T004** Добавить `ast.DeadlineTrigger{specBase; Process, Step Ident}` + `NewDeadlineTrigger`
+- [x] **T004** Добавить `ast.DeadlineTrigger{specBase; Process, Step Ident}` + `NewDeadlineTrigger`
   + `func (*DeadlineTrigger) triggerSpec() {}` (`ast/trigger.go`, рядом с Metric/Event/Schedule).
   T003 → GREEN. **Инверсия: убрать `triggerSpec()` → compile-fail (не реализует TriggerSpec).**
 
 ## Phase 3: B4a Парсер — parseDeadlineTrigger + expectLexeme + SE-каскад
 
-- [ ] **T005** [Тест ДО] `TestParseDeadlineTrigger` (`parser/parse_decl_test.go`): `когда задача
+- [x] **T005** [Тест ДО] `TestParseDeadlineTrigger` (`parser/parse_decl_test.go`): `когда задача
   просрочена в P.S:\n    печать(1)` → `*ast.DeadlineTrigger{Process:"P",Step:"S"}`, `Pos()`=токен
   `задача` (line/col). RED.
-- [ ] **T006** [Тест ДО] `TestDeadlineTriggerMalformed` (`parser/parse_decl_test.go`): 5 негативов
+- [x] **T006** [Тест ДО] `TestDeadlineTriggerMalformed` (`parser/parse_decl_test.go`): 5 негативов
   SE-EXPECTED (exact+pos) — `задача X`→`ожидалось 'просрочена', получено 'X'`; нет `в`→`ожидалось
   'в', получено 'P'`; нет процесса (`в .S`)→`ожидалось 'имя процесса', получено '.'`; нет `.`→`ожидалось
   '.', получено 'S'`; нет шага (`в P.`)→`ожидалось 'имя шага', получено '<лексема>'`. RED.
-- [ ] **T007** Реализовать `expectLexeme(want string)` (`parser/parse_decl.go`, по образцу `expectCompOp`
+- [x] **T007** Реализовать `expectLexeme(want string)` (`parser/parse_decl.go`, по образцу `expectCompOp`
   `:441`): `tok.Type==IDENT && tok.Lexeme==want` → advance; иначе `p.error(tok.Pos, msgExpected(want, tok))`.
-- [ ] **T008** Реализовать `parseDeadlineTrigger` (`parser/parse_decl.go`): advance `задача`;
+- [x] **T008** Реализовать `parseDeadlineTrigger` (`parser/parse_decl.go`): advance `задача`;
   `expectLexeme("просрочена")`; `expect(KW_IN,"в")`; `expect(IDENT,"имя процесса")`; `expect(DOT,".")`;
   `expect(IDENT,"имя шага")` → `NewDeadlineTrigger`. Ветка в `parseTriggerDecl` (`:406`): IDENT-лексема
   `задача` → `parseDeadlineTrigger`, иначе default → SE-TRIGGER-KIND. T005/T006 → GREEN.
-- [ ] **T009** **Инверсия парсера**: временно убрать `expectLexeme("просрочена")` → `когда задача в P.S:`
+- [x] **T009** **Инверсия парсера**: временно убрать `expectLexeme("просрочена")` → `когда задача в P.S:`
   ложно парсится → T006 красный. Восстановить. Доказывает, что хелпер несёт проверку.
-- [ ] **T010** [SE-TRIGGER-KIND каскад, Тест ДО→ИСТОЧНИК] Расширить `msgTriggerKind` (`errors.go:29`)
+- [x] **T010** [SE-TRIGGER-KIND каскад, Тест ДО→ИСТОЧНИК] Расширить `msgTriggerKind` (`errors.go:29`)
   `"метрика, событие или расписание"` → `"метрика, событие, расписание или задача"` + коммент `:26`.
   Со-обновить ВСЕ зеркала: `inventory_test.go:34`; ТРИ exact-match golden `parse_decl_test.go:1549`
   (`TestTriggerSyntaxDiagnostics`), `:1622` (`TestTriggerNegativesExactPos`), `:1666`
   (`TestGoldenTriggerSyntaxDiagnostics` двухстрочная). `когда мусор:` → новый текст.
-- [ ] **T011** **Инверсия каскада**: оставить старый текст в `errors.go:29`, но обновить только
+- [x] **T011** **Инверсия каскада**: оставить старый текст в `errors.go:29`, но обновить только
   тесты → зеркало `inventory_test.go:34`/golden `:1549` красное (текст разошёлся). Доказывает, что
   правят ИСТОЧНИК. Восстановить. Счётный замок `inventory_test.go:38` `wantCodes=14` НЕ менялся.
-- [ ] **T012** **v1-замок (INV-3)** [P] `TestTaskIdentNotKeyword` (`parser/parse_decl_test.go` или
+- [x] **T012** **v1-замок (INV-3)** [P] `TestTaskIdentNotKeyword` (`parser/parse_decl_test.go` или
   `examples_test`): `пусть задача = 10`, `задача()` вне позиции триггера → parse-clean (IDENT, не
   триггер). **Инверсия: если `задача` стала бы глобальным KW — `пусть задача = 10` падает → этот тест
   ловит. Подтверждает D-AU-4 (лексер L=11 не тронут).**
 
 ## Phase 4: B4a Семпроход + run-заглушка
 
-- [ ] **T013** [Тест ДО] `TestDeadlineTriggerSemantics` (`eval/analyze_trigger_test.go`): позитив
+- [x] **T013** [Тест ДО] `TestDeadlineTriggerSemantics` (`eval/analyze_trigger_test.go`): позитив
   (процесс+шаг объявлены, тело со свободным `факт`) → analyze OK; негатив-а неизв. процесс →
   `процесс '<имя>' не объявлен` (exact+pos `Process`); негатив-б неизв. шаг → `шаг '<шаг>' не найден в
   процессе '<процесс>'`; негатив-в `значение`/`событие` в теле → наследуемый TR-VAL-CTX/TR-EVT-CTX. RED.
-- [ ] **T014** Реализовать кейс `*ast.DeadlineTrigger` в `checkTrigger` (`eval/analyze.go:319`):
+- [x] **T014** Реализовать кейс `*ast.DeadlineTrigger` в `checkTrigger` (`eval/analyze.go:319`):
   (а) процесс объявлен (переиспользовать `процесс '%s' не объявлен` `:729`); (б) шаг существует в
   `pd.Steps`; (в) `checkTriggerBody(td.Body, false, false)` (как расписание, lenient-scope D-AU-6).
   T013 → GREEN.
-- [ ] **T015** **eval=28 замок (INV-5)**: `errors_golden_test.go` len(seen)==28 НЕ изменилось
+- [x] **T015** **eval=28 замок (INV-5)**: `errors_golden_test.go` len(seen)==28 НЕ изменилось
   (семантические триггерные коды — в `analyze_trigger_test.go`-семействе, не инкрементят 28).
   **Инверсия: если новый код попал в errors_golden → 28 ломается → ловит.**
-- [ ] **T016** [Тест ДО] `TestDeadlineTriggerRunStub` (`eval/trigger_run_test.go` или
+- [x] **T016** [Тест ДО] `TestDeadlineTriggerRunStub` (`eval/trigger_run_test.go` или
   `cmd/ladix/golden_test.go`): `ladix run` файла с эскалация-триггером → exit 0 + stdout `задача
   триггер 'P.S' требует serve (фича 007b)`, тело НЕ исполнено. RED.
-- [ ] **T017** Реализовать run-заглушку (`eval/trigger_run.go`, кейс `*ast.DeadlineTrigger` в
+- [x] **T017** Реализовать run-заглушку (`eval/trigger_run.go`, кейс `*ast.DeadlineTrigger` в
   switch `RunTriggers` — экспортный метод `*Interpreter`, рядом с событие/расписание `:49/:51`):
   `fmt.Fprintf(w, "задача триггер '%s.%s' требует serve (фича 007b)\n", spec.Process.Name,
   spec.Step.Name)`. T016 → GREEN. **Инверсия: исполнять тело под run → тест ловит побочный вывод.**
-- [ ] **T018** [P, опц.] Витрина B4a: новый чисто-парсящийся `examples/контроль_плана.ladix` (срез §2:
+- [x] **T018** [P, опц.] Витрина B4a: новый чисто-парсящийся `examples/контроль_плана.ladix` (срез §2:
   процесс+человеческий шаг+`срок:`+эскалация-триггер) → добавить в `clean[]` (`examples_test.go`,
   ЖИВОЙ набор 24→25) + `examples/MANIFEST.md`. Негативный `examples/ошибка_эскалация.ladix`
   (малформенный) → golden-замок `cmd/ladix/golden_test.go`, НЕ в clean[]. **`ошибочная.ladix` НЕ
   перезаписывать.**
 
 ### B4a GATE
-- [ ] **T019** B4a-гейт: `go test ./...` + `vet` + race зелёные; L=11, SE=14, eval=28 целы; §EN-7
+- [x] **T019** B4a-гейт: `go test ./...` + `vet` + race зелёные; L=11, SE=14, eval=28 целы; §EN-7
   пины целы; все зеркала SE-TRIGGER-KIND зелёные; v1-замок зелёный. Фронтенд готов под B4b.
 
 ---
