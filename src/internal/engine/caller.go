@@ -62,6 +62,13 @@ type webhookCaller struct {
 	httpClient *http.Client
 }
 
+// NewWebhookCaller строит реальный драйвер вебхука для CLI-проводки (B2, §AU-4.5):
+// baseURL валидирован вызывающим (корень композиции), httpClient несёт конечный
+// таймаут. Конструктор экспортирован, тип webhookCaller — нет (инкапсуляция провода).
+func NewWebhookCaller(baseURL string, httpClient *http.Client) ExternalCaller {
+	return webhookCaller{baseURL: baseURL, httpClient: httpClient}
+}
+
 // Call делает POST тела вебхука и декодирует ответ (§AU-4.3): тело —
 // jsonval.EncodeBody (нетегированный plain-JSON); сетевой/HTTP-сбой → error (несётся
 // наверх, оборачивается в ОшибкаВыполнения на eval-точке). ПУСТОЕ тело ответа → Пусто

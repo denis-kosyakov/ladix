@@ -15,9 +15,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/denis-kosyakov/ladix/internal/engine"
 	"github.com/denis-kosyakov/ladix/internal/eval"
@@ -27,11 +30,44 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
+// webhookTimeout — конечный таймаут HTTP-клиента вебхука (FR-011: реальный драйвер
+// не висит на неотвечающем адресе). Композиционный корень — единственное место выбора.
+const webhookTimeout = 30 * time.Second
+
+// openExternalCaller разрешает драйвер внешних эффектов из CLI (B2, §AU-4.5 / §AU-10.C):
+// URL = флаг --вебхук, иначе env LADIX_WEBHOOK, иначе пусто → (nil, nil) (движок берёт
+// дефолт-стаб printCaller). Невалидный URL → ошибка (движок НЕ строится). Валидный →
+// webhookCaller с конечным таймаутом. Чтение env — в корне композиции, передача
+// параметром (Принцип V). Вызывающий применяет WithExternalCaller только при c != nil.
+func openExternalCaller(webhookFlag string) (engine.ExternalCaller, error) {
+	raw := webhookFlag
+	if raw == "" {
+		raw = os.Getenv("LADIX_WEBHOOK")
+	}
+	if raw == "" {
+		return nil, nil // нет вебхука → дефолт-стаб
+	}
+	if _, err := url.ParseRequestURI(raw); err != nil {
+		return nil, fmt.Errorf("неверный URL вебхука '%s'", raw)
+	}
+	return engine.NewWebhookCaller(raw, &http.Client{Timeout: webhookTimeout}), nil
+}
+
+// withExternalCallerOpt — список Option для NewEngine: WithExternalCaller(caller) только
+// при caller != nil, иначе пусто (движок берёт дефолт-стаб printCaller). Так дефолтный
+// §EN-7 путь не зависит от вебхука (FR-002).
+func withExternalCallerOpt(caller engine.ExternalCaller) []engine.Option {
+	if caller == nil {
+		return nil
+	}
+	return []engine.Option{engine.WithExternalCaller(caller)}
+}
+
 func main() {
 	os.Exit(realMain(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-const usage = "использование: ladix run [--max-depth N] [--db путь] <файл> | ladix metric [--max-depth N] <файл> <имя> | ladix complete [--db путь] [--max-depth N] <файл> <task-id> | ladix tasks [--db путь] [исполнитель] | ladix serve [--db путь] [--interval D] [--max-depth N] <файл> | ladix emit <событие> [json] [--db путь]"
+const usage = "использование: ladix run [--max-depth N] [--db путь] [--вебхук URL] <файл> | ladix metric [--max-depth N] <файл> <имя> | ladix complete [--db путь] [--max-depth N] [--вебхук URL] <файл> <task-id> | ladix tasks [--db путь] [исполнитель] | ladix serve [--db путь] [--interval D] [--max-depth N] [--вебхук URL] <файл> | ladix emit <событие> [json] [--db путь]"
 
 // realMain — диспетчер подкоманд (§SM-11 CM-2): ветвление по args[0]. Возвращает
 // код возврата. Вынесен из main и параметризован вводом/выводом для тестируемости.
@@ -69,6 +105,7 @@ const defaultDBPath = "ladix.db"
 func runMain(rest []string, stdout, stderr io.Writer) int {
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := ""
+	webhook := ""
 	file := ""
 	for k := 0; k < len(rest); k++ {
 		a := rest[k]
@@ -101,6 +138,15 @@ func runMain(rest []string, stdout, stderr io.Writer) int {
 			k++
 		case strings.HasPrefix(a, "--db="):
 			dbPath = strings.TrimPrefix(a, "--db=")
+		case a == "--вебхук":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --вебхук требует значение")
+				return 2
+			}
+			webhook = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--вебхук="):
+			webhook = strings.TrimPrefix(a, "--вебхук=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -116,7 +162,12 @@ func runMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
-	return runFile(file, dbPath, maxDepth, stdout, stderr)
+	caller, err := openExternalCaller(webhook)
+	if err != nil {
+		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
+		return 2
+	}
+	return runFile(file, dbPath, maxDepth, caller, stdout, stderr)
 }
 
 // metricMain разбирает аргументы подкоманды metric и вычисляет одну метрику (§SM-11
@@ -165,7 +216,7 @@ func metricMain(rest []string, stdout, stderr io.Writer) int {
 // runFile исполняет один файл и возвращает код возврата (0/1/2). dbPath=="" —
 // MemoryStore (эфемерно, как 003); иначе SQLiteStore (Q2, §EN-6). Открытие/инициа-
 // лизация SQLite вне guard: ошибка → «не удалось открыть хранилище», exit 2.
-func runFile(path, dbPath string, maxDepth int, stdout, stderr io.Writer) int {
+func runFile(path, dbPath string, maxDepth int, caller engine.ExternalCaller, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -194,8 +245,9 @@ func runFile(path, dbPath string, maxDepth int, stdout, stderr io.Writer) int {
 	return guard(stderr, func() int {
 		interp := eval.NewInterpreter(stdout, maxDepth, eval.SystemClock{})
 		// Стек движка процессов (006, §EN-6): Store + Engine + инъекция
-		// ProcessRuntime, чтобы «запустить процесс» исполнялся.
-		eng := engine.NewEngine(st, interp, stdout)
+		// ProcessRuntime, чтобы «запустить процесс» исполнялся. Драйвер внешних эффектов
+		// (B2): webhookCaller под --вебхук/env, иначе дефолт-стаб (caller == nil).
+		eng := engine.NewEngine(st, interp, stdout, withExternalCallerOpt(caller)...)
 		interp.SetProcessRuntime(eng)
 		if err := interp.Run(prog); err != nil {
 			// Все типы eval/lexer/parser реализуют канонический двухстрочный Error() (§8.1).
@@ -281,6 +333,7 @@ func runMetric(path, metricName string, maxDepth int, clock eval.Clock, stdout, 
 func completeMain(rest []string, stdout, stderr io.Writer) int {
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := defaultDBPath
+	webhook := ""
 	var positional []string
 	for k := 0; k < len(rest); k++ {
 		a := rest[k]
@@ -313,6 +366,15 @@ func completeMain(rest []string, stdout, stderr io.Writer) int {
 			k++
 		case strings.HasPrefix(a, "--db="):
 			dbPath = strings.TrimPrefix(a, "--db=")
+		case a == "--вебхук":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --вебхук требует значение")
+				return 2
+			}
+			webhook = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--вебхук="):
+			webhook = strings.TrimPrefix(a, "--вебхук=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -324,7 +386,12 @@ func completeMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
-	return completeTask(positional[0], positional[1], dbPath, maxDepth, stdout, stderr)
+	caller, err := openExternalCaller(webhook)
+	if err != nil {
+		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
+		return 2
+	}
+	return completeTask(positional[0], positional[1], dbPath, maxDepth, caller, stdout, stderr)
 }
 
 // completeTask компилирует файл, собирает стек (SQLiteStore) и завершает задачу
@@ -332,7 +399,7 @@ func completeMain(rest []string, stdout, stderr io.Writer) int {
 // §13, exit 1); interp.Run НЕ вызывается. eng.Complete печатает строки 7-10 сам.
 // Ошибки-гарды Store (§EN-8.B) → exit 2; runtime-ошибка продвижения (D-14) → канон
 // §13, exit 1. Подкоманда обёрнута guard/recover-барьером (конституция III).
-func completeTask(path, taskID, dbPath string, maxDepth int, stdout, stderr io.Writer) int {
+func completeTask(path, taskID, dbPath string, maxDepth int, caller engine.ExternalCaller, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -357,10 +424,11 @@ func completeTask(path, taskID, dbPath string, maxDepth int, stdout, stderr io.W
 			fmt.Fprintln(stderr, err.Error())
 			return 1 // семпроход (§SM-9.A) — компиляция обязана пройти чисто
 		}
-		eng := engine.NewEngine(sq, interp, stdout)
+		eng := engine.NewEngine(sq, interp, stdout, withExternalCallerOpt(caller)...)
 		interp.SetProcessRuntime(eng)
 		// interp.Run НЕ вызывается (Q3): top-level не исполняется, чтобы complete не
 		// плодил новые инстансы. Печать строк 7-10 (§EN-7) делает сам Complete.
+		// Эффекты вызвать/уведомить на догоне дедлайнов идут через eng (вебхук под флагом).
 		if _, cerr := eng.Complete(taskID); cerr != nil {
 			return completeError(cerr, taskID, stderr)
 		}
