@@ -4,7 +4,6 @@ import (
 	stderrors "errors"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/denis-kosyakov/ladix/internal/eval"
 	"github.com/denis-kosyakov/ladix/internal/store"
@@ -36,42 +35,24 @@ func (e *Engine) AssignProcessVar(name string, v value.Value) error {
 	return e.save(frame.inst)
 }
 
-// CallExternalResult — стаб выражения-формы «вызвать» (B1, §AU-3 / §EN-7.2): одна
-// строка в stdout; возвращает (value.None, nil) — захват результата под дефолт-
-// стабом даёт Пусто. Разделитель аргументов — ", "; без аргументов —
-// «[вызов] <имя>()». Под HTTP-драйвером (B2) вернёт декодированный ответ.
+// CallExternalResult — выражение-форма «вызвать» (B1, §AU-3): ДЕЛЕГИРУЕТ драйверу
+// e.caller.Call (B2, §AU-4.1). Под дефолт-стабом — печать §EN-7.2 + (value.None, nil);
+// под webhookCaller — POST + декодированный ответ (или ошибка доставки).
 func (e *Engine) CallExternalResult(target string, args []value.Value) (value.Value, error) {
-	parts := make([]string, len(args))
-	for k, a := range args {
-		parts[k] = value.String(a)
-	}
-	fmt.Fprintf(e.out, "[вызов] %s(%s)\n", target, strings.Join(parts, ", "))
-	return value.None, nil
+	return e.caller.Call(target, args)
 }
 
-// CallExternal — стаб statement-формы «вызвать» (D-13, §EN-7.2): делегирует
-// CallExternalResult, отбрасывая значение (печать [вызов] происходит РОВНО один
-// раз). В v1 всегда nil.
+// CallExternal — statement-форма «вызвать» (D-13): делегирует e.caller.Call, отбрасывая
+// значение (эффект РОВНО один раз — нет двойной печати/POST).
 func (e *Engine) CallExternal(target string, args []value.Value) error {
-	_, err := e.CallExternalResult(target, args)
+	_, err := e.caller.Call(target, args)
 	return err
 }
 
-// Notify — стаб «уведомить» (D-13, §EN-7.1/1а): одна строка в stdout; всегда nil
-// (best-effort). С ≥1 аргументом — «[уведомление] <получатель>: <арг1 арг2 …>»
-// (разделитель — один пробел, как печать); без аргументов — «[уведомление]
-// <получатель>» (без двоеточия и хвостовых пробелов).
+// Notify — «уведомить» (D-13, §EN-7.1/1а): ДЕЛЕГИРУЕТ e.caller.Notify (best-effort).
+// Под дефолт-стабом — печать; под webhookCaller — POST (ответ игнорируется).
 func (e *Engine) Notify(target string, args []value.Value) error {
-	if len(args) == 0 {
-		fmt.Fprintf(e.out, "[уведомление] %s\n", target)
-		return nil
-	}
-	parts := make([]string, len(args))
-	for k, a := range args {
-		parts[k] = value.String(a)
-	}
-	fmt.Fprintf(e.out, "[уведомление] %s: %s\n", target, strings.Join(parts, " "))
-	return nil
+	return e.caller.Notify(target, args)
 }
 
 // InstanceStatus — статус инстанса по id (§EN-4); ok=false → builtin даёт «процесс

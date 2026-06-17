@@ -22,3 +22,10 @@ type Option func(*Engine)
 func WithClock(c Clock) Option {
 	return func(e *Engine) { e.clock = c }
 }
+
+// WithExternalCaller подменяет драйвер внешних эффектов «вызвать»/«уведомить»
+// (B2, §AU-4.1): прод — webhookCaller (CLI под --вебхук/LADIX_WEBHOOK), тесты —
+// фейк/httptest. Применяется в NewEngine ПОСЛЕ дефолта printCaller.
+func WithExternalCaller(c ExternalCaller) Option {
+	return func(e *Engine) { e.caller = c }
+}
