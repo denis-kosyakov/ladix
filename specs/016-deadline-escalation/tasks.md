@@ -132,65 +132,65 @@ B4a). `[P]` — разные файлы, без зависимостей.
 
 ## Phase 5: B4b Store — Task.Escalated + 4 точки кодека
 
-- [ ] **T020** [Тест ДО] `TestTaskEscalatedCodec` (`store/sqlite_test.go`): round-trip
+- [x] **T020** [Тест ДО] `TestTaskEscalatedCodec` (`store/sqlite_test.go`): round-trip
   `SaveTask{Escalated:true}` → новый `SQLiteStore` на той же `--db` → `ListPendingTasks`/`LoadTask` →
   `Escalated==true`; UPSERT `false`→`true` (тот же ID) → перечитать → `true`. RED (поля/колонки нет).
-- [ ] **T021** Добавить `Task.Escalated bool` (`store/types.go`, после `CompletedAt`). 4 точки
+- [x] **T021** Добавить `Task.Escalated bool` (`store/types.go`, после `CompletedAt`). 4 точки
   SQLite-кодека (`sqlite.go`): (1) DDL `:33` +`escalated INTEGER NOT NULL DEFAULT 0`; (2) `SaveTask`
   INSERT-список `:161`; (3) `ON CONFLICT … DO UPDATE SET escalated=…` `:165`; (4) SELECT-читатели
   `buildTask`/`scanTask` `:296/310` (+`LoadTask :179`, `ListPendingTasks :186`). `memory.go` copyTask
   несёт bool тривиально. T020 → GREEN.
-- [ ] **T022** **Инверсии 4 точек (мутпробы)** [P]: (точка 3) убрать `escalated` из ON CONFLICT →
+- [x] **T022** **Инверсии 4 точек (мутпробы)** [P]: (точка 3) убрать `escalated` из ON CONFLICT →
   UPSERT-тест красный; (точка 4) убрать `escalated` из SELECT/scanTask → round-trip даёт `false` →
   красный. Восстановить. Доказывает целостность всех точек.
-- [ ] **T023** **Store=15 замок (INV-4)**: интерфейс `Store` НЕ растёт (`ListTasksByInstance` — B6,
+- [x] **T023** **Store=15 замок (INV-4)**: интерфейс `Store` НЕ растёт (`ListTasksByInstance` — B6,
   НЕ здесь). Тест-компиляция `var _ store.Store = (*store.SQLiteStore)(nil)` + ручной счёт методов.
 
 ## Phase 6: B4b Daemon — 4-я фаза tick + checkDeadlines + fireDeadlineBody
 
-- [ ] **T024** [Тест ДО, INV-1] `TestTickFourPhasesOrder` (`daemon/tick_test.go`): живой daemon-тест
+- [x] **T024** [Тест ДО, INV-1] `TestTickFourPhasesOrder` (`daemon/tick_test.go`): живой daemon-тест
   с метрика+расписание+эскалация в одном `tick()`; первые три фазы (`ResetRunState→drainEvents→
   evalMetrics→checkSchedules`) отрабатывают как до B4 (порядок/идемпотентность), `checkDeadlines` —
   в хвосте под тем же `d.mu`. RED (фазы нет).
-- [ ] **T025** [Тест ДО] `TestCheckDeadlinesFire` (`daemon/checkdeadlines_test.go`): инстанс+задача с
+- [x] **T025** [Тест ДО] `TestCheckDeadlinesFire` (`daemon/checkdeadlines_test.go`): инстанс+задача с
   дедлайном, эскалация-триггер; Clock до срока → тишина; Clock за срок → `fireDeadlineBody` исполнено
   `[уведомление] руководитель: <факт>`, `Escalated=true`; нет эскалация-триггеров → ранний `return`
   без `ListPendingTasks`; инжект `факт` из `inst.Variables`. RED.
-- [ ] **T026** Добавить 4-ю фазу `d.checkDeadlines()` в хвост `tick()` (`daemon/tick.go:10`) под тем
+- [x] **T026** Добавить 4-ю фазу `d.checkDeadlines()` в хвост `tick()` (`daemon/tick.go:10`) под тем
   же `d.mu`, ПОСЛЕ `checkSchedules`; первые три НЕ трогать. T024 → GREEN.
-- [ ] **T027** Реализовать `checkDeadlines` + `fireDeadlineBody` (новый `daemon/checkdeadlines.go`)
+- [x] **T027** Реализовать `checkDeadlines` + `fireDeadlineBody` (новый `daemon/checkdeadlines.go`)
   по контракту `tick-phase-checkdeadlines.md`: фильтр триггеров → ранний return → ОДИН
   `ListPendingTasks("")` → `if t.Escalated continue` → `if !engine.Overdue(t,now) continue` →
   `LoadInstance` → совпадение шаг/процесс → `safeFire(fireDeadlineBody(td.Body, inst.Variables))` →
   `t.Escalated=true; SaveTask(t)` → `break`. `fireDeadlineBody`: `NewTriggerBodyEnv` + цикл `Define`
   по ВСЕМ `vars` (D-AU-6) + `EvalBlockInTrigger`. T025 → GREEN.
-- [ ] **T028** **Инверсия INV-1**: переставить `checkDeadlines` ПЕРЕД `checkSchedules` → если есть
+- [x] **T028** **Инверсия INV-1**: переставить `checkDeadlines` ПЕРЕД `checkSchedules` → если есть
   зависимость по кешам/порядку, живой daemon-тест T024 ловит сдвиг; либо порядок-замок красный.
   Восстановить хвостовую позицию.
 
 ## Phase 7: B4b Durable × рестарт (ОБЯЗАТЕЛЬНЫЙ golden + мутпроба)
 
-- [ ] **T029** [Тест ДО, INV-2] `TestDeadlineDurableRestart` (`daemon/checkdeadlines_test.go`,
+- [x] **T029** [Тест ДО, INV-2] `TestDeadlineDurableRestart` (`daemon/checkdeadlines_test.go`,
   Go-API §AU-12.B): SQLiteStore(demo.db) + `engine.Start("эскалация_плана",[2500000])`; FixedClock=
   created → tick → тишина; Clock+=3дн → tick → РОВНО одна эскалация (`[уведомление] руководитель:
   2500000`), `Escalated` персистнут; tick снова → нет повтора; РЕСТАРТ (новый SQLiteStore на той же
   `--db`) + `RunRestartScan` + tick → нет повтора; assert уведомление РОВНО один раз за все прогоны.
   Замки (а) единичность, (б) персист SQLite, (в) аддитивность 4-й фазы. RED.
-- [ ] **T030** Прогнать T029 на реализации (T021+T027) → GREEN. Граничные: задача завершена до
+- [x] **T030** Прогнать T029 на реализации (T021+T027) → GREEN. Граничные: задача завершена до
   просрочки → нет эскалации; задача эскалирована→завершена → штатно.
-- [ ] **T031** **МУТПРОБА durable (INV-2, несущая, замок г §AU-12.B)**: снять `if t.Escalated {
+- [x] **T031** **МУТПРОБА durable (INV-2, несущая, замок г §AU-12.B)**: снять `if t.Escalated {
   continue }` в `checkDeadlines` → T029 КРАСНЕЕТ (двойная эскалация на шаге «tick снова»/«после
   рестарта»). Восстановить фильтр. Это главный замок одноразовости×рестарта.
-- [ ] **T032** **Мутпробы кодек→durable (доп.)**: пропуск точки 3 (ON CONFLICT escalated) → на
+- [x] **T032** **Мутпробы кодек→durable (доп.)**: пропуск точки 3 (ON CONFLICT escalated) → на
   рестарте `Escalated=false` → T029 красный; пропуск точки 4 (SELECT escalated) → уже без рестарта
   `false` → красный. Подтверждает: durable-golden = интегральный замок 4 точек кодека.
-- [ ] **T033** [P, опц.] Не-молчащее демо (§AU-12.A, INV-1/риск #4): живой daemon-тест с метрикой
+- [x] **T033** [P, опц.] Не-молчащее демо (§AU-12.A, INV-1/риск #4): живой daemon-тест с метрикой
   «выше порога → падает ниже во время демона» → до пересечения тишина, на пересечении РОВНО одно
   edge-fire (`LastBool != nil && !*LastBool && cur`), re-arm не повторяет. (Полный CLI end-to-end
   §AU-12.C — на M2-гейте после B5.)
 
 ### B4b GATE
-- [ ] **T034** B4b-гейт: `go test ./...` + `vet` + `-race` зелёные; durable-golden зелёный +
+- [x] **T034** B4b-гейт: `go test ./...` + `vet` + `-race` зелёные; durable-golden зелёный +
   мутпробы кусают; ProcessRuntime=8, Store=15; §EN-7/007b golden целы; детерминизм (FixedClock).
   Зафиксировать осознанную последовательность: CLI §AU-12.B/§AU-12.C — на M2-гейте ПОСЛЕ B5/B6.
 
