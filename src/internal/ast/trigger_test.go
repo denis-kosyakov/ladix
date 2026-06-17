@@ -13,6 +13,7 @@ var (
 	_ TriggerSpec = (*MetricTrigger)(nil)
 	_ TriggerSpec = (*EventTrigger)(nil)
 	_ TriggerSpec = (*ScheduleTrigger)(nil)
+	_ TriggerSpec = (*DeadlineTrigger)(nil)
 
 	_ ScheduleSpec = (*EverySchedule)(nil)
 	_ ScheduleSpec = (*AtSchedule)(nil)
@@ -92,6 +93,27 @@ func TestScheduleTriggerPos(t *testing.T) {
 		t.Errorf("ScheduleTrigger.Spec заполнено неверно: %+v", st.Spec)
 	}
 	var _ TriggerSpec = st
+}
+
+// T003 (016 B4a, §AU-6.1.1): эскалация-триггер — узел DeadlineTrigger{Process, Step}.
+// Pos() = ведущий токен формы (IDENT-лексема «задача»). Реализует TriggerSpec, как
+// прочие три формы.
+func TestDeadlineTriggerNode(t *testing.T) {
+	taskPos := Position{Line: 1, Col: 7}
+	dt := NewDeadlineTrigger(taskPos,
+		*NewIdent(Position{Line: 1, Col: 27}, "согласование"),
+		*NewIdent(Position{Line: 1, Col: 40}, "проверка"))
+
+	if dt.Pos() != taskPos {
+		t.Errorf("DeadlineTrigger.Pos() = %+v, хотим токен задача %+v", dt.Pos(), taskPos)
+	}
+	if dt.Process.Name != "согласование" {
+		t.Errorf("DeadlineTrigger.Process = %q, хотим \"согласование\"", dt.Process.Name)
+	}
+	if dt.Step.Name != "проверка" {
+		t.Errorf("DeadlineTrigger.Step = %q, хотим \"проверка\"", dt.Step.Name)
+	}
+	var _ TriggerSpec = dt
 }
 
 func TestEverySchedulePos(t *testing.T) {
