@@ -87,7 +87,7 @@ src/internal/jsonval/ (НОВЫЙ пакет)
 src/internal/daemon/
 │   └── events.go                # ← делегирует jsonval (декодер лифтнут; импорт jsonval) — co-land, не «без изменений»
 src/internal/eval/
-│   └── stmt.go                  # ← :118 evalCallAction runtimeErr→runtimeErrWrap; :138 evalNotifyAction то же; удалить TODO :113-115/:133-136 [FR-013]
+│   └── stmt.go                  # ← :118 evalCallAction runtimeErr→runtimeErrWrap; :138 evalNotifyAction то же; удалить TODO :113-115/:133-135 [FR-013]
 src/cmd/ladix/
 │   ├── main.go                  # ← run/complete: флаг --вебхук + env LADIX_WEBHOOK; валидация URL→ошибка; openExternalCaller хелпер [FR-015/016]
 │   ├── serve.go                 # ← serve: --вебхук в ТОТ ЖЕ движок (догон дедлайнов + триггеры) [FR-017]

@@ -203,3 +203,5 @@ description: "Task list — 014-real-effects (веха M2, B2)"
 - **(a) golden-дефолт**: T015 — дефолт = `webhookCaller` вместо `printCaller` → §EN-7 golden КРАСНЕЕТ (якорный анти-регресс B2).
 - **(b) httptest-POST**: T017/T021 — `webhookCaller` не шлёт POST / шлёт не туда / тегированное тело → httptest-замок КРАСНЕЕТ.
 - **(c) CLI-ошибка URL**: T028 — текст изменён / валидация пропущена → exact-match `ladix: неверный URL вебхука '<URL>'` КРАСНЕЕТ.
+
+**Трассировка SC → задачи**: SC-001 T015/T016 · SC-002 T017/T019 · SC-003 T018 · SC-004 T022/T023/T024 · SC-005 T027/T029/T032 · SC-006 T028 · SC-007 T007/T035/T036/T037.
