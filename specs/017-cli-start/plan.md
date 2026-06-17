@@ -127,9 +127,11 @@ src/cmd/ladix/
 
 src/internal/engine/  store/  eval/  value/   # ПУСТОЙ дифф (CLI потребляет существующий API)
 
-src/examples/
-├── эскалация_плана.ladix  # НОВАЯ фикстура (или переиспользовать существующую из 016) для start-golden
-└── MANIFEST.md            # регистрация новой фикстуры (если добавлена)
+examples/  (РЕПО-КОРЕНЬ, не src/)
+└── контроль_плана.ladix   # ПЕРЕИСПОЛЬЗУЕТСЯ (уже есть: эскалация_плана(факт)+связаться_с_клиентом+срок;
+                           # уже в clean[] src/internal/parser/examples_test.go:25 — НЕ дублировать)
+
+src/cmd/ladix/testdata/    # CLI-golden-фикстуры; копия контроль_плана только при нужде изоляции golden
 ```
 
 **Structure Decision**: single project, весь новый код — в `cmd/ladix/`. Несущий инвариант:
