@@ -36,15 +36,25 @@ func (e *Engine) AssignProcessVar(name string, v value.Value) error {
 	return e.save(frame.inst)
 }
 
-// CallExternal — стаб «вызвать» (D-13, §EN-7.2): одна строка в stdout; в v1 всегда
-// nil. Разделитель аргументов — ", "; без аргументов — «[вызов] <имя>()».
-func (e *Engine) CallExternal(target string, args []value.Value) error {
+// CallExternalResult — стаб выражения-формы «вызвать» (B1, §AU-3 / §EN-7.2): одна
+// строка в stdout; возвращает (value.None, nil) — захват результата под дефолт-
+// стабом даёт Пусто. Разделитель аргументов — ", "; без аргументов —
+// «[вызов] <имя>()». Под HTTP-драйвером (B2) вернёт декодированный ответ.
+func (e *Engine) CallExternalResult(target string, args []value.Value) (value.Value, error) {
 	parts := make([]string, len(args))
 	for k, a := range args {
 		parts[k] = value.String(a)
 	}
 	fmt.Fprintf(e.out, "[вызов] %s(%s)\n", target, strings.Join(parts, ", "))
-	return nil
+	return value.None, nil
+}
+
+// CallExternal — стаб statement-формы «вызвать» (D-13, §EN-7.2): делегирует
+// CallExternalResult, отбрасывая значение (печать [вызов] происходит РОВНО один
+// раз). В v1 всегда nil.
+func (e *Engine) CallExternal(target string, args []value.Value) error {
+	_, err := e.CallExternalResult(target, args)
+	return err
 }
 
 // Notify — стаб «уведомить» (D-13, §EN-7.1/1а): одна строка в stdout; всегда nil
