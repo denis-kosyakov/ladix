@@ -227,6 +227,41 @@ func (s *SQLiteStore) ListPendingTasks(assignee string) ([]*Task, error) {
 	return out, nil
 }
 
+// ListTasksByInstance — открытые И завершённые задачи инстанса, порядок ID ASC
+// (read-only; 018 B6). Зеркало ListPendingTasks, фильтр по instance_id БЕЗ статуса.
+// escalated ОБЯЗАН быть в SELECT-списке и пройти через buildTask, иначе поле теряется
+// (FR-013). Схема НЕ меняется (колонка escalated уже есть с B4b).
+func (s *SQLiteStore) ListTasksByInstance(instanceID string) ([]*Task, error) {
+	rows, err := s.db.Query(
+		`SELECT id, instance_id, step_name, assignee, deadline, status, created_at, completed_at, escalated
+		 FROM tasks WHERE instance_id = ? ORDER BY id ASC`, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*Task
+	for rows.Next() {
+		var (
+			tid, iid, stepName, asg, status, createdAt string
+			deadline, completedAt                      sql.NullString
+			escalated                                  int64
+		)
+		if err := rows.Scan(&tid, &iid, &stepName, &asg, &deadline, &status, &createdAt, &completedAt, &escalated); err != nil {
+			return nil, err
+		}
+		t, err := buildTask(tid, iid, stepName, asg, deadline, status, createdAt, completedAt, escalated)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (s *SQLiteStore) MarkTaskCompleted(id string, completedAt time.Time) error {
 	res, err := s.db.Exec(
 		`UPDATE tasks SET status = ?, completed_at = ? WHERE id = ? AND status = ?`,

@@ -68,7 +68,7 @@ func main() {
 	os.Exit(realMain(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-const usage = "использование: ladix run [--max-depth N] [--db путь] [--вебхук URL] <файл> | ladix metric [--max-depth N] <файл> <имя> | ladix start [--db путь] [--вебхук URL] [--max-depth N] <файл> <процесс> [аргументы...] | ladix complete [--db путь] [--max-depth N] [--вебхук URL] <файл> <task-id> | ladix tasks [--db путь] [исполнитель] | ladix serve [--db путь] [--interval D] [--max-depth N] [--вебхук URL] <файл> | ladix emit <событие> [json] [--db путь]"
+const usage = "использование: ladix run [--max-depth N] [--db путь] [--вебхук URL] <файл> | ladix metric [--max-depth N] <файл> <имя> | ladix start [--db путь] [--вебхук URL] [--max-depth N] <файл> <процесс> [аргументы...] | ladix complete [--db путь] [--max-depth N] [--вебхук URL] <файл> <task-id> | ladix tasks [--db путь] [исполнитель] | ladix inspect <id> [--db путь] | ladix serve [--db путь] [--interval D] [--max-depth N] [--вебхук URL] <файл> | ladix emit <событие> [json] [--db путь]"
 
 // realMain — диспетчер подкоманд (§SM-11 CM-2): ветвление по args[0]. Возвращает
 // код возврата. Вынесен из main и параметризован вводом/выводом для тестируемости.
@@ -88,6 +88,8 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 		return completeMain(args[1:], stdout, stderr)
 	case "tasks":
 		return tasksMain(args[1:], stdout, stderr)
+	case "inspect":
+		return inspectMain(args[1:], stdout, stderr)
 	case "serve":
 		return serveMain(args[1:], stdout, stderr)
 	case "emit":
