@@ -22,10 +22,10 @@ contracts/inspect-cli.md, quickstart.md.
 
 ## Фаза 0 — Базлайн и регресс-якоря (до изменений)
 
-- [ ] **T001** Зафиксировать зелёный базлайн: `cd src && go build ./... && go test ./...` (все пакеты),
+- [x] **T001** Зафиксировать зелёный базлайн: `cd src && go build ./... && go test ./...` (все пакеты),
   `go test -race ./internal/daemon/... ./cmd/...` (демон/CLI). Записать в PR-черновик: каталог
   `L=11`/`SE=14`/`eval=28` зелён, durable(B4)/§EN-7/007b golden зелены. Это анти-регресс якорь INV-4.
-- [ ] **T002** [P] Снять текущее число методов `Store` (=15) перед изменением — для замка перехода 15→16
+- [x] **T002** [P] Снять текущее число методов `Store` (=15) перед изменением — для замка перехода 15→16
   (зафиксировать в комментарии теста T003).
 
 ---
@@ -36,11 +36,11 @@ contracts/inspect-cli.md, quickstart.md.
 
 ### Тесты (красные до impl)
 
-- [ ] **T003** [P] [US3] **Счётный замок Store=16**: тест (reflect)
+- [x] **T003** [P] [US3] **Счётный замок Store=16**: тест (reflect)
   `reflect.TypeOf((*store.Store)(nil)).Elem().NumMethod() == 16` в `src/internal/store/contract_test.go`
   (или `store_test.go`). **Инверсия (e)**: до добавления метода — НЕ компилируется/красный (15≠16);
   удаление любого старого метода ломает компиляцию (15 старых не тронуты).
-- [ ] **T004** [US3] **Контракт-тест MemoryStore** `ListTasksByInstance` в
+- [x] **T004** [US3] **Контракт-тест MemoryStore** `ListTasksByInstance` в
   `src/internal/store/memory_test.go` (table-driven по C1–C6):
   - **(a) ORDER**: сохранить `t-000003`,`t-000001`,`t-000002` инстанса `p-000001` вперемешку →
     результат РОВНО `[t-000001,t-000002,t-000003]` (ID ASC). Инверсия: порядок вставки/обратный → красный.
@@ -49,23 +49,23 @@ contracts/inspect-cli.md, quickstart.md.
     `ListPendingTasks` — только открытые).
   - **EMPTY**: инстанс без задач → `len==0`, `err==nil` (без паники).
   - **ESCALATED**: задача `Escalated=true` → поле сохранено в возвращённом `*Task`.
-- [ ] **T005** [US3] **Контракт-тест SQLiteStore** `ListTasksByInstance` в
+- [x] **T005** [US3] **Контракт-тест SQLiteStore** `ListTasksByInstance` в
   `src/internal/store/sqlite_test.go` — зеркало T004 (a/FILTER/MIXED/EMPTY) + **ESCALATED через
   персист**: сохранить задачу `Escalated=true`, прочитать `ListTasksByInstance` → `Escalated==true`
   (замок FR-013: `escalated` в SELECT). Инверсия: убрать `escalated` из SELECT → `false` → красный.
 
 ### Реализация (после красных тестов)
 
-- [ ] **T006** [US3] Добавить сигнатуру в интерфейс `src/internal/store/store.go` после
+- [x] **T006** [US3] Добавить сигнатуру в интерфейс `src/internal/store/store.go` после
   `ListInstancesByStatus`: `ListTasksByInstance(instanceID string) ([]*Task, error)` (read-only, ID ASC).
   15 старых сигнатур (`store.go:12-34`) НЕ трогать. Обновить doc-комментарий счёта (15→16, аддитивно §AU-2).
-- [ ] **T007** [P] [US3] Реализовать `MemoryStore.ListTasksByInstance` в `src/internal/store/memory.go`
+- [x] **T007** [P] [US3] Реализовать `MemoryStore.ListTasksByInstance` в `src/internal/store/memory.go`
   (зеркало `ListPendingTasks`): фильтр `t.InstanceID == instanceID`, `copyTask`, `sort.Slice` по ID ASC.
-- [ ] **T008** [P] [US3] Реализовать `SQLiteStore.ListTasksByInstance` в `src/internal/store/sqlite.go`:
+- [x] **T008** [P] [US3] Реализовать `SQLiteStore.ListTasksByInstance` в `src/internal/store/sqlite.go`:
   `SELECT id, instance_id, step_name, assignee, deadline, status, created_at, completed_at, escalated
   FROM tasks WHERE instance_id = ? ORDER BY id ASC` → `scanTask`/`buildTask`. **`escalated` в SELECT-списке**.
   Схему НЕ менять (read-only).
-- [ ] **T009** [US3] Прогнать T003–T005 зелёными; `var _ Store = …` компилируется в обоих бэкендах.
+- [x] **T009** [US3] Прогнать T003–T005 зелёными; `var _ Store = …` компилируется в обоих бэкендах.
 
 ---
 
@@ -75,7 +75,7 @@ contracts/inspect-cli.md, quickstart.md.
 
 ### Golden-тесты (красные до impl)
 
-- [ ] **T010** [US1] **Golden снимок+история** в `src/cmd/ladix/inspect_golden_test.go`:
+- [x] **T010** [US1] **Golden снимок+история** в `src/cmd/ladix/inspect_golden_test.go`:
   построить фикстуру (через `ladix start` ИЛИ прямой `SaveInstance`/`SaveTask` в tmp SQLite) — инстанс
   `p-000001` процесса `эскалация_плана`, статус `ожидает`, шаг `'связаться_с_клиентом'`, переменная
   `факт = 2500000`, открытая НЕ эскалированная задача `t-000001` с дедлайном. Запустить `inspectMain`
@@ -88,66 +88,66 @@ contracts/inspect-cli.md, quickstart.md.
     t-000001 шаг 'связаться_с_клиентом' → менеджер, срок до <время>, открыта
   ```
   exit 0. **Инверсия (b)**: любой сдвиг разделителя/слова/отступа → красный (exact-match).
-- [ ] **T011** [US1] **Замок суффикса `, эскалирована`** (тот же файл): две под-проверки —
+- [x] **T011** [US1] **Замок суффикса `, эскалирована`** (тот же файл): две под-проверки —
   - **(c1) эскалированная**: `t.Escalated=true` → строка задачи оканчивается `, открыта, эскалирована`.
   - **(c2) инверсия суффикса**: `t.Escalated=false` → строка оканчивается `, открыта` БЕЗ `, эскалирована`.
   Замок ловит и пропуск суффикса, и его ложное появление.
-- [ ] **T012** [P] [US1] **Завершённая задача**: задача `MarkTaskCompleted` → строка содержит
+- [x] **T012** [P] [US1] **Завершённая задача**: задача `MarkTaskCompleted` → строка содержит
   `, завершена` (НЕ `, открыта`); порядок задач — ID ASC независимо от статуса (открытая + завершённая
   в одном выводе). Инверсия: статус `открыта` у завершённой → красный.
-- [ ] **T013** [P] [US1] **Edge — без дедлайна**: задача `Deadline==nil` → строка
+- [x] **T013** [P] [US1] **Edge — без дедлайна**: задача `Deadline==nil` → строка
   `  t-000001 шаг '…' → менеджер, открыта` (хвост `, срок до <время>` ОТСУТСТВУЕТ). Инверсия: лишний
   `срок до` → красный.
-- [ ] **T014** [P] [US1] **Edge — пустые переменные/задачи**: инстанс без переменных и без задач →
+- [x] **T014** [P] [US1] **Edge — пустые переменные/задачи**: инстанс без переменных и без задач →
   блоки `переменные:` и `задачи:` печатаются БЕЗ строк под ними (форма по §AU-10.D). exit 0.
 
 ### Реализация (после красных тестов)
 
-- [ ] **T015** [US1] Создать `src/cmd/ladix/inspect.go`: `func inspectMain(rest []string, stdout, stderr
+- [x] **T015** [US1] Создать `src/cmd/ladix/inspect.go`: `func inspectMain(rest []string, stdout, stderr
   io.Writer) int` — разбор `--db`/`--db=` (дефолт `defaultDBPath`) + один позиционный `<id>`; нет
   `<id>` → `usage` exit 2; неизв.флаг/флаг-без-значения → паритетные тексты exit 2.
-- [ ] **T016** [US1] В `inspectMain`: `openStore(dbPath)` (defer close, §AU-9). Ошибка открытия →
+- [x] **T016** [US1] В `inspectMain`: `openStore(dbPath)` (defer close, §AU-9). Ошибка открытия →
   `ladix: не удалось открыть хранилище '<path>': <err>` exit 2 (паритет start). Обернуть тело в
   `guard(stderr, …)`. **БЕЗ** `NewEngine`/`NewInterpreter` (INV-1; FR-005).
-- [ ] **T017** [US1] Чтение: `st.LoadInstance(id)` (`errors.Is ErrInstanceNotFound` → US2 ветка) +
+- [x] **T017** [US1] Чтение: `st.LoadInstance(id)` (`errors.Is ErrInstanceNotFound` → US2 ветка) +
   `st.ListTasksByInstance(id)`. read-only: НИКАКИХ `SaveInstance`/`SaveTask` (FR-014).
-- [ ] **T018** [US1] Принтер снимка (в `inspect.go`, СВОЙ формат — НЕ `FormatTaskLine`): 1-я строка
+- [x] **T018** [US1] Принтер снимка (в `inspect.go`, СВОЙ формат — НЕ `FormatTaskLine`): 1-я строка
   `инстанс <id>: процесс <ProcessName>, статус <Status>, шаг '<CurrentStep>'`; блок `переменные:` +
   `  имя = value.String(v)` (порядок `inst.Variables`); блок `задачи:` + строка задачи
   `  <t-id> шаг '<StepName>' → <Assignee>[, срок до <время>], <открыта|завершена>[, эскалирована]`
   (дедлайн только при `!= nil`, layout `2006-01-02 15:04`; суффикс только при `Escalated`).
-- [ ] **T019** [US1] `cmd/ladix/main.go`: switch `case "inspect": return inspectMain(args[1:], stdout,
+- [x] **T019** [US1] `cmd/ladix/main.go`: switch `case "inspect": return inspectMain(args[1:], stdout,
   stderr)`; РАСШИРИТЬ `usage`-строку записью `ladix inspect <id> [--db путь]`.
-- [ ] **T020** [US1] Прогнать T010–T014 зелёными.
+- [x] **T020** [US1] Прогнать T010–T014 зелёными.
 
 ---
 
 ## Фаза 3 — US2: неизвестный инстанс (тесты ПЕРВЫМИ) — P1
 
-- [ ] **T021** [US2] **Golden неизв.инстанс** в `inspect_golden_test.go`: `inspectMain ["p-999999",
+- [x] **T021** [US2] **Golden неизв.инстанс** в `inspect_golden_test.go`: `inspectMain ["p-999999",
   "--db", <db>]` над БД без `p-999999` → stderr РОВНО `ladix: инстанс 'p-999999' не найден\n`, exit 2,
   stdout пуст. **Инверсия (d)**: иной текст/код/непустой stdout → красный. (Импл — в T017: ветка
   `errors.Is(err, store.ErrInstanceNotFound)` → `fmt.Fprintf(stderr, "ladix: инстанс '%s' не найден\n", id)`.)
-- [ ] **T022** [US2] Подтвердить трансляцию сентинела: английский `ErrInstanceNotFound` НЕ печатается
+- [x] **T022** [US2] Подтвердить трансляцию сентинела: английский `ErrInstanceNotFound` НЕ печатается
   (только русский §AU-10.C). Прогнать T021 зелёным.
 
 ---
 
 ## Фаза 4 — Регресс, инварианты, полировка
 
-- [ ] **T023** **(f) Единая `--db` без регресса**: прогнать `go test ./...` целиком + существующие
+- [x] **T023** **(f) Единая `--db` без регресса**: прогнать `go test ./...` целиком + существующие
   golden (`start_golden_test`, `trigger_golden_test`, `serve_golden_test`, durable B4, emit/tasks) —
   все зелёные, БЕЗ изменений их golden. INV-4. Если `inspect` использует `openStore`, проверить, что
   `start`/прочие команды не задеты.
-- [ ] **T024** [P] **Замки каталога/инвариантов**: подтвердить `L=11`/`SE=14`/`eval=28` не изменились
+- [x] **T024** [P] **Замки каталога/инвариантов**: подтвердить `L=11`/`SE=14`/`eval=28` не изменились
   (INV-3); `ProcessRuntime`=8 (eval/runtime.go) не тронут; пустой дифф `internal/eval`/`internal/engine`
   (INV-1). `git diff --stat` по этим путям = пусто (кроме, возможно, ничего).
-- [ ] **T025** [P] **Read-only замок** (INV-5): тест/проверка, что после `inspect` число записей/строк
+- [x] **T025** [P] **Read-only замок** (INV-5): тест/проверка, что после `inspect` число записей/строк
   Store не изменилось (например, снимок `tasks`/`instances` до и после inspect идентичен) ИЛИ
   ревью-аргумент, что `inspectMain` не вызывает пишущих методов.
-- [ ] **T026** quickstart-смоук: воспроизвести демо-пару B5→B6 (`ladix start … --db demo.db` →
+- [x] **T026** quickstart-смоук: воспроизвести демо-пару B5→B6 (`ladix start … --db demo.db` →
   `ladix inspect p-000001 --db demo.db`) — соответствие quickstart.md (опц. как smoke-тест).
-- [ ] **T027** Финал: `go build ./... && go vet ./... && go test ./...` зелёные; нет новых зависимостей
+- [x] **T027** Финал: `go build ./... && go vet ./... && go test ./...` зелёные; нет новых зависимостей
   (`go.mod`/`go.sum` без изменений); детерминизм golden (повторный прогон стабилен).
 
 ---
