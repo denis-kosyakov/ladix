@@ -4,7 +4,8 @@ import "time"
 
 // Store — нарезанный контракт хранилища состояния движка (D-3, §EN-2). 8 методов
 // 006 над ProcessInstance/Task + 6 триггерных методов и ListInstancesByStatus
-// (рестарт-скан, осознанное отступление «+6→+7», deviation FR-022, 007b).
+// (рестарт-скан, осознанное отступление «+6→+7», deviation FR-022, 007b) +
+// ListTasksByInstance (read-only история инстанса для inspect, 018 B6, §AU-2 15→16).
 // Две реализации за одним интерфейсом — MemoryStore и SQLiteStore.
 //
 // Транзакционного комбо-метода «завершить + продвинуть» нет: корректность сбойного
@@ -31,6 +32,11 @@ type Store interface {
 
 	// --- рестарт-скан (007b, ОСОЗНАННОЕ ОТСТУПЛЕНИЕ «+6→+7», FR-022) ---
 	ListInstancesByStatus(status string) ([]*ProcessInstance, error) // по возрастанию ID; пусто → []
+
+	// --- история инстанса (018 B6, аддитивно §AU-2 15→16) ---
+	// ListTasksByInstance — открытые И завершённые задачи инстанса, порядок ID ASC
+	// (read-only; не найден/без задач → []/nil, error==nil). Источник истории для inspect.
+	ListTasksByInstance(instanceID string) ([]*Task, error)
 }
 
 // Проверки соответствия реализаций контракту (compile-time).

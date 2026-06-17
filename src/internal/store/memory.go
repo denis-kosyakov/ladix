@@ -89,6 +89,23 @@ func (s *MemoryStore) ListPendingTasks(assignee string) ([]*Task, error) {
 	return out, nil
 }
 
+// ListTasksByInstance — открытые И завершённые задачи инстанса, порядок ID ASC
+// (read-only; 018 B6). Зеркало ListPendingTasks, но фильтр по InstanceID, БЕЗ фильтра
+// статуса. copyTask копирует Escalated тривиально (cp := *t). Без задач → nil, nil.
+func (s *MemoryStore) ListTasksByInstance(instanceID string) ([]*Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Task
+	for _, t := range s.tasks {
+		if t.InstanceID != instanceID {
+			continue
+		}
+		out = append(out, copyTask(t))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
 func (s *MemoryStore) MarkTaskCompleted(id string, completedAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
