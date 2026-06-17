@@ -28,6 +28,8 @@ type fakeRuntime struct {
 	// CallExternalResult (по умолчанию value.None); callResultErr — ошибка шва.
 	callResult    value.Value
 	callResultErr error
+	// B2 (014): ошибка хука Notify (имитация сбоя реального драйвера на «уведомить»).
+	notifyErr error
 	// process-builtins (D-15): сценарные ответы для InstanceStatus/InstanceVariables/UserTasks.
 	statusByID map[string]string // id → статус (отсутствует → ok=false)
 	varsByID   map[string]value.Запись
@@ -78,7 +80,7 @@ func (f *fakeRuntime) CallExternalResult(target string, args []value.Value) (val
 }
 func (f *fakeRuntime) Notify(target string, args []value.Value) error {
 	f.notifies = append(f.notifies, callRec{target, args})
-	return nil
+	return f.notifyErr
 }
 func (f *fakeRuntime) InstanceStatus(id string) (string, bool, error) {
 	if f.statusErr != nil {
