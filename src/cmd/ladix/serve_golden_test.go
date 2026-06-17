@@ -123,7 +123,7 @@ func TestServeEmitDrainFires(t *testing.T) {
 	var out bytes.Buffer
 	prog := parseServeSrc(t, src)
 	d, code := buildServeDaemon(prog, sq, 5*time.Millisecond, 0,
-		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, &out, &out)
+		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, nil, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon вернул nil, код=%d; out=%q", code, out.String())
 	}
@@ -172,7 +172,7 @@ func TestServeMetricPrimingNoFalsePositive(t *testing.T) {
 	var out bytes.Buffer
 	prog := parseServeSrc(t, src)
 	d, code := buildServeDaemon(prog, st, 5*time.Millisecond, 0,
-		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, &out, &out)
+		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, nil, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon вернул nil, код=%d; out=%q", code, out.String())
 	}
@@ -228,7 +228,7 @@ func TestServeMetricDateFollowsSchedulerClock(t *testing.T) {
 	var out bytes.Buffer
 	prog := parseServeSrc(t, src)
 	d, code := buildServeDaemon(prog, st, 5*time.Millisecond, 0,
-		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, &out, &out)
+		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, nil, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon вернул nil, код=%d; out=%q", code, out.String())
 	}
@@ -287,7 +287,7 @@ func TestServeRestartScanLiftsStuck(t *testing.T) {
 	var out bytes.Buffer
 	prog := parseServeSrc(t, src)
 	d, _ := buildServeDaemon(prog, sq, time.Minute, 0,
-		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, &out, &out)
+		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, nil, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon вернул nil; out=%q", out.String())
 	}
@@ -312,7 +312,7 @@ func TestServeGracefulShutdownNoLeak(t *testing.T) {
 	var out bytes.Buffer
 	prog := parseServeSrc(t, src)
 	d, _ := buildServeDaemon(prog, store.NewMemoryStore(), 5*time.Millisecond, 0,
-		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, &out, &out)
+		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, nil, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon вернул nil; out=%q", out.String())
 	}

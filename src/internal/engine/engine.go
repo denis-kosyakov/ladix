@@ -34,6 +34,7 @@ type Engine struct {
 	interp *eval.Interpreter
 	out    io.Writer
 	clock  Clock
+	caller ExternalCaller // драйвер внешних эффектов «вызвать»/«уведомить» (B2, §AU-4.1)
 	active []*activeFrame // стек активных инстансов (атрибуция хука присвоить)
 }
 
@@ -42,6 +43,10 @@ type Engine struct {
 // перемешиваются в порядке исполнения — всё синхронно). Дефолтные часы — SystemClock.
 func NewEngine(st store.Store, interp *eval.Interpreter, out io.Writer, opts ...Option) *Engine {
 	e := &Engine{st: st, interp: interp, out: out, clock: SystemClock{}}
+	// Дефолтный драйвер внешних эффектов — печать-стаб (§AU-4.2 / §EN-7); ставится ДО
+	// opts, чтобы WithExternalCaller мог его подменить. Под дефолтом наблюдаемый вывод
+	// «вызвать»/«уведомить» байт-в-байт §EN-7 (главный несущий инвариант B2).
+	e.caller = printCaller{out: e.out}
 	for _, opt := range opts {
 		opt(e)
 	}

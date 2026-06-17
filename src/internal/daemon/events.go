@@ -1,13 +1,8 @@
 package daemon
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"strings"
-
 	"github.com/denis-kosyakov/ladix/internal/ast"
-	"github.com/denis-kosyakov/ladix/internal/value"
+	"github.com/denis-kosyakov/ladix/internal/jsonval"
 )
 
 // eventName — предопределённое имя, инжектируемое в тело событие-триггера на момент
@@ -41,7 +36,7 @@ func (d *Daemon) drainEvents() {
 			continue
 		}
 
-		rec, perr := payloadToRecord(e.PayloadJSON)
+		rec, perr := jsonval.PayloadToRecord(e.PayloadJSON)
 		if perr != nil {
 			// Невалидный payload не роняет доставку: пустая Запись + лог (импл-факт).
 			d.logf("событие '%s': некорректный payload, поля пусты: %s", e.Name, perr.Error())
@@ -87,120 +82,8 @@ func (d *Daemon) markProcessed(id, name string) {
 	}
 }
 
-// payloadToRecord конвертирует сырой JSON-payload события в value.Запись с сохранением
-// порядка ключей (маппинг источников §9: null→Пусто, bool→Булево, строка→Строка,
-// число без '.'/'e'/'E' → Целое, иначе Дробное, массив→Список, объект→Запись).
-// Пустой payload → пустая Запись (не ошибка). Верхний уровень обязан быть JSON-объектом;
-// иначе — ошибка (поля события доступны через событие.поле, §TR-5).
-func payloadToRecord(payload string) (value.Запись, error) {
-	if strings.TrimSpace(payload) == "" {
-		return value.NewRecord(nil, map[string]value.Value{}), nil
-	}
-	dec := json.NewDecoder(bytes.NewReader([]byte(payload)))
-	dec.UseNumber()
-
-	tok, err := dec.Token()
-	if err != nil {
-		return value.NewRecord(nil, map[string]value.Value{}), err
-	}
-	d, ok := tok.(json.Delim)
-	if !ok || d != '{' {
-		return value.NewRecord(nil, map[string]value.Value{}),
-			fmt.Errorf("payload не является JSON-объектом")
-	}
-	rec, err := decodeObject(dec)
-	if err != nil {
-		return value.NewRecord(nil, map[string]value.Value{}), err
-	}
-	return rec, nil
-}
-
-// decodeObject читает тело JSON-объекта (открывающая «{» уже прочитана) → value.Запись,
-// сохраняя порядок ключей (дубликат ключа — побеждает последний, как §9.2).
-func decodeObject(dec *json.Decoder) (value.Запись, error) {
-	keys := []string{}
-	fields := map[string]value.Value{}
-	for dec.More() {
-		keyTok, err := dec.Token()
-		if err != nil {
-			return value.Запись{}, err
-		}
-		key, ok := keyTok.(string)
-		if !ok {
-			return value.Запись{}, fmt.Errorf("ожидался ключ объекта")
-		}
-		v, err := decodeValue(dec)
-		if err != nil {
-			return value.Запись{}, err
-		}
-		if _, exists := fields[key]; !exists {
-			keys = append(keys, key)
-		}
-		fields[key] = v
-	}
-	if _, err := dec.Token(); err != nil { // закрывающая «}»
-		return value.Запись{}, err
-	}
-	return value.NewRecord(keys, fields), nil
-}
-
-// decodeValue читает одно JSON-значение (§9.3) из потокового декодера.
-func decodeValue(dec *json.Decoder) (value.Value, error) {
-	tok, err := dec.Token()
-	if err != nil {
-		return nil, err
-	}
-	switch t := tok.(type) {
-	case json.Delim:
-		switch t {
-		case '{':
-			return decodeObject(dec)
-		case '[':
-			return decodeArray(dec)
-		default:
-			return nil, fmt.Errorf("неожиданный токен '%c'", rune(t))
-		}
-	case nil:
-		return value.None, nil // null
-	case bool:
-		return value.Булево{V: t}, nil
-	case string:
-		return value.Строка{V: t}, nil
-	case json.Number:
-		return numberToValue(t), nil
-	default:
-		return nil, fmt.Errorf("неподдерживаемое значение")
-	}
-}
-
-// decodeArray читает тело JSON-массива (открывающая «[» уже прочитана) → value.Список.
-func decodeArray(dec *json.Decoder) (value.Value, error) {
-	elems := []value.Value{}
-	for dec.More() {
-		ev, err := decodeValue(dec)
-		if err != nil {
-			return nil, err
-		}
-		elems = append(elems, ev)
-	}
-	if _, err := dec.Token(); err != nil { // закрывающая «]»
-		return nil, err
-	}
-	return value.NewList(elems), nil
-}
-
-// numberToValue различает Целое/Дробное по форме токена JSON (§9.3): наличие
-// '.'/'e'/'E' → Дробное; иначе Целое. Целое вне int64 деградирует в Дробное
-// (payload толерантен: лучше приблизительное число, чем сбой доставки события).
-func numberToValue(n json.Number) value.Value {
-	s := string(n)
-	if !strings.ContainsAny(s, ".eE") {
-		if v, err := n.Int64(); err == nil {
-			return value.Целое{V: v}
-		}
-	}
-	if f, err := n.Float64(); err == nil {
-		return value.Дробное{V: f}
-	}
-	return value.None
-}
+// Декодер payload (payloadToRecord/decodeObject/decodeValue/decodeArray/numberToValue)
+// ЛИФТНУТ в internal/jsonval (B2, §AU-5.2): daemon делегирует туда (jsonval.PayloadToRecord
+// в drainEvents), дубля декодера здесь больше нет. jsonval — листовой (value+stdlib),
+// engine/cmd тоже потребляют его без цикла engine→daemon. Маппинг §9 неизменен; golden
+// событий 007b байт-точен (TestPayloadToRecordValueTypes переехал в jsonval/decode_test.go).

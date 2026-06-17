@@ -49,6 +49,7 @@ const defaultInterval = time.Minute
 func serveMain(rest []string, stdout, stderr io.Writer) int {
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := ""
+	webhook := ""
 	interval := defaultInterval
 	file := ""
 	for k := 0; k < len(rest); k++ {
@@ -82,6 +83,15 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 			k++
 		case strings.HasPrefix(a, "--db="):
 			dbPath = strings.TrimPrefix(a, "--db=")
+		case a == "--вебхук":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --вебхук требует значение")
+				return 2
+			}
+			webhook = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--вебхук="):
+			webhook = strings.TrimPrefix(a, "--вебхук=")
 		case a == "--interval":
 			if k+1 >= len(rest) {
 				fmt.Fprintln(stderr, "ladix: флаг --interval требует значение")
@@ -116,7 +126,12 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
-	return serveFile(file, dbPath, interval, maxDepth, stdout, stderr)
+	caller, err := openExternalCaller(webhook)
+	if err != nil {
+		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
+		return 2
+	}
+	return serveFile(file, dbPath, interval, maxDepth, caller, stdout, stderr)
 }
 
 // serveFile читает+компилирует файл и поднимает демон (serve-command.md §жизненный цикл).
@@ -126,7 +141,7 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 // стартует), Run (связать глобалы), рестарт-скан ДО тиков, затем блокирующий Run(ctx) с
 // грациозной остановкой по SIGINT/SIGTERM (выход 0). Часы планировщика — прод
 // engine.SystemClock (отсюда же дата метрик интерпретатора, FR-024, см. buildServeDaemon).
-func serveFile(path, dbPath string, interval time.Duration, maxDepth int, stdout, stderr io.Writer) int {
+func serveFile(path, dbPath string, interval time.Duration, maxDepth int, caller engine.ExternalCaller, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -153,7 +168,7 @@ func serveFile(path, dbPath string, interval time.Duration, maxDepth int, stdout
 		st = store.NewMemoryStore()
 	}
 	return guard(stderr, func() int {
-		d, code := buildServeDaemon(prog, st, interval, maxDepth, engine.SystemClock{}, stdout, stderr)
+		d, code := buildServeDaemon(prog, st, interval, maxDepth, engine.SystemClock{}, caller, stdout, stderr)
 		if d == nil {
 			return code // ошибка компиляции/семпрохода (exit 1)
 		}
@@ -183,13 +198,16 @@ func serveFile(path, dbPath string, interval time.Duration, maxDepth int, stdout
 // инъекция часов планировщика (прод engine.SystemClock; тест — фиксированные):
 // одни и те же часы идут И в движок (WithClock), И в интерпретатор (через адаптер
 // evalClockFromEngine), И в демон — двойные часы едины (FR-024).
-func buildServeDaemon(prog *ast.Program, st store.Store, interval time.Duration, maxDepth int, clock engine.Clock, stdout, stderr io.Writer) (*daemon.Daemon, int) {
+func buildServeDaemon(prog *ast.Program, st store.Store, interval time.Duration, maxDepth int, clock engine.Clock, caller engine.ExternalCaller, stdout, stderr io.Writer) (*daemon.Daemon, int) {
 	// Интерпретатор читает дату метрик ОТ инъектированных часов планировщика
 	// (через адаптер engine.Clock→eval.Clock), а не из независимого eval.SystemClock:
 	// иначе ResetRunState на тике перевычислял бы дату от собственных часов
 	// интерпретатора, расходясь с движком и планировщиком (FR-024, двойные часы).
+	// Драйвер внешних эффектов (B2): ОДИН eng на демон — догон дедлайнов, тела
+	// триггеров и эскалации идут через ЭТОТ движок (FR-017, единый вебхук под флагом).
 	interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
-	eng := engine.NewEngine(st, interp, stdout, engine.WithClock(clock))
+	opts := append([]engine.Option{engine.WithClock(clock)}, withExternalCallerOpt(caller)...)
+	eng := engine.NewEngine(st, interp, stdout, opts...)
 	interp.SetProcessRuntime(eng)
 	if err := interp.Analyze(prog); err != nil {
 		// Семпроход: вкл. новую семош формата "ЧЧ:ММ" (SE-TIME-FORMAT, FR-014) — демон
