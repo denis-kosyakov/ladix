@@ -76,7 +76,7 @@ func TestCompleteNestedStartProcessStoreFailureB9(t *testing.T) {
 
 	// Complete задачи внешнего процесса → advance в авто-шаг → тело → вложенный
 	// StartProcess(вло) → NextInstanceID вызов №2 ловит сбой Store.
-	_, completeErr := eng.Complete("t-000001")
+	_, completeErr := eng.Complete("t-000001", emptyRec())
 	if completeErr == nil {
 		t.Fatalf("ожидали сбой Store на старте вложенного процесса, получили nil")
 	}
@@ -144,7 +144,7 @@ func TestCompleteAssignProcessVarStoreFailureB9(t *testing.T) {
 		t.Fatalf("Start не должен падать (целевой шаг ещё не достигнут): %v", err)
 	}
 
-	_, completeErr := eng.Complete("t-000001")
+	_, completeErr := eng.Complete("t-000001", emptyRec())
 	if completeErr == nil {
 		t.Fatalf("ожидали сбой Store в AssignProcessVar на пути complete, получили nil")
 	}

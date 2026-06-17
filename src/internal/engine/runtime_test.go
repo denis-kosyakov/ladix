@@ -223,7 +223,7 @@ func TestCompleteLoadTaskStoreFailure(t *testing.T) {
 	st := loadTaskFail{Store: store.NewMemoryStore(), err: stderrors.New("бд повреждена")}
 	eng := bareEngine(t, now, st)
 
-	_, err := eng.Complete("t-000001")
+	_, err := eng.Complete("t-000001", emptyRec())
 	if err == nil {
 		t.Fatalf("ожидали *engine.StoreError, получили nil")
 	}

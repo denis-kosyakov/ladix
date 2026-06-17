@@ -42,7 +42,7 @@ func TestCompleteChain(t *testing.T) {
 
 	// Complete t-000001: задача завершена → продвижение к шагу 'второй' (есть
 	// следующий шаг) → новая задача t-000002 → инстанс снова ожидает.
-	res, err := eng.Complete("t-000001")
+	res, err := eng.Complete("t-000001", emptyRec())
 	if err != nil {
 		t.Fatalf("Complete t-000001: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestCompleteChain(t *testing.T) {
 	out.Reset()
 
 	// Complete t-000002: задача завершена → нет следующего шага → терминал (выполнен).
-	res2, err := eng.Complete("t-000002")
+	res2, err := eng.Complete("t-000002", emptyRec())
 	if err != nil {
 		t.Fatalf("Complete t-000002: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestCompleteTerminalDirect(t *testing.T) {
 	}
 	out.Reset()
 
-	res, err := eng.Complete("t-000001")
+	res, err := eng.Complete("t-000001", emptyRec())
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestCompleteNotFound(t *testing.T) {
 	if _, err := eng.Start("solo", argsInt(1)); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	_, err := eng.Complete("t-999999")
+	_, err := eng.Complete("t-999999", emptyRec())
 	if err == nil {
 		t.Fatalf("ожидали ошибку на несуществующую задачу")
 	}
@@ -177,7 +177,7 @@ func TestCompleteGuardInstanceNotWaiting(t *testing.T) {
 		Assignee: "Иванов", Status: store.TaskPending,
 	}
 	st, eng, _ := fabricate(t, inst, task)
-	_, err := eng.Complete("t-000001")
+	_, err := eng.Complete("t-000001", emptyRec())
 	if err == nil {
 		t.Fatalf("ожидали ошибку гарда D-8 (инстанс не ожидает)")
 	}
@@ -212,7 +212,7 @@ func TestCompleteGuardStepMismatch(t *testing.T) {
 		Assignee: "Иванов", Status: store.TaskPending,
 	}
 	st, eng, _ := fabricate(t, inst, task)
-	_, err := eng.Complete("t-000001")
+	_, err := eng.Complete("t-000001", emptyRec())
 	if err == nil {
 		t.Fatalf("ожидали ошибку гарда D-8 (несоответствие шагу)")
 	}
@@ -244,7 +244,7 @@ func TestCompleteCatchUp(t *testing.T) {
 		Assignee: "Иванов", Status: store.TaskCompleted, CompletedAt: &completedAt,
 	}
 	st, eng, out := fabricate(t, inst, task)
-	res, err := eng.Complete("t-000001")
+	res, err := eng.Complete("t-000001", emptyRec())
 	if err != nil {
 		t.Fatalf("Complete (догон): %v", err)
 	}
@@ -284,7 +284,7 @@ func TestCompleteAlreadyCompletedNoCatchUp(t *testing.T) {
 		Assignee: "Иванов", Status: store.TaskCompleted, CompletedAt: &completedAt,
 	}
 	st, eng, _ := fabricate(t, inst, task)
-	_, err := eng.Complete("t-000001")
+	_, err := eng.Complete("t-000001", emptyRec())
 	if err == nil {
 		t.Fatalf("ожидали ошибку «уже завершена» (догон неприменим)")
 	}
