@@ -22,7 +22,7 @@ description: "Task list — 013-call-result (веха M2, B1)"
 
 ## Phase 1: Setup
 
-- [ ] T001 Подтвердить стартовую базу на ветке `013-call-result`: `cd src && gofmt -l . && go vet ./... && go test ./... -count=1 && go build ./...` — всё зелёное («зелёный до правок»). Зафиксировать вывод в леджере.
+- [x] T001 Подтвердить стартовую базу на ветке `013-call-result`: `cd src && gofmt -l . && go vet ./... && go test ./... -count=1 && go build ./...` — всё зелёное («зелёный до правок»). Зафиксировать вывод в леджере.
 
 ---
 
@@ -30,7 +30,7 @@ description: "Task list — 013-call-result (веха M2, B1)"
 
 **Purpose**: общей новой инфры нет — `ProcessRuntime` (`eval/runtime.go`), `exprBase`/`Pos()` (`ast/expr.go`), `evalExpr` type-switch, `runtimeErrWrap` (`interpreter.go:189`), golden §EN-7 (`engine`) уже на месте. Узел B1 — клон прецедента `RunProcessExpr`. Зафиксировать неприкосновенное.
 
-- [ ] T002 [P] Зафиксировать в леджере карту неприкосновенного (НЕ трогать ни в одной фазе): `src/internal/store` (пустой дифф, Store=15), реальный драйвер/HTTP (это B2), `Notify` (`engine/runtime.go:54`), step-only контекст-гард действий (`analyze.go:584-592`) и его замки (`analyze_decl_test.go:422`, `analyze_trigger_test.go:92`), read-only барьер тела триггера (007a), существующие 7 сигнатур `ProcessRuntime`, eval-`errors_golden` счётчик `len(seen)!=28`. Также: имя `CallExpr`/`NewCallExpr` (`ast/expr.go:31`) — занято, НЕ переиспользовать.
+- [x] T002 [P] Зафиксировать в леджере карту неприкосновенного (НЕ трогать ни в одной фазе): `src/internal/store` (пустой дифф, Store=15), реальный драйвер/HTTP (это B2), `Notify` (`engine/runtime.go:54`), step-only контекст-гард действий (`analyze.go:584-592`) и его замки (`analyze_decl_test.go:422`, `analyze_trigger_test.go:92`), read-only барьер тела триггера (007a), существующие 7 сигнатур `ProcessRuntime`, eval-`errors_golden` счётчик `len(seen)!=28`. Также: имя `CallExpr`/`NewCallExpr` (`ast/expr.go:31`) — занято, НЕ переиспользовать.
 
 **Checkpoint**: можно начинать US1.
 
@@ -44,27 +44,27 @@ description: "Task list — 013-call-result (веха M2, B1)"
 
 ### Tests for US1 — фронтенд (tests-first — ДОЛЖНЫ упасть до реализации) ⚠️
 
-- [ ] T003 [P] [US1] Red→green C-AST-1 в `src/internal/ast/expr_test.go`: `TestNewCallExternalExpr` — `NewCallExternalExpr(pos, target, args)` строит узел; `Pos()` == `pos` (токен `вызвать`); `Target`/`Args` сохранены; узел реализует `ast.Expression`. Критерий: СЕЙЧАС не компилируется (узла нет) → red.
+- [x] T003 [P] [US1] Red→green C-AST-1 в `src/internal/ast/expr_test.go`: `TestNewCallExternalExpr` — `NewCallExternalExpr(pos, target, args)` строит узел; `Pos()` == `pos` (токен `вызвать`); `Target`/`Args` сохранены; узел реализует `ast.Expression`. Критерий: СЕЙЧАС не компилируется (узла нет) → red.
   **Инверсия:** конструктор кладёт `target.Pos()` вместо `pos` ИЛИ теряет `Args` → `Pos()`/`Args` ≠ ожидаемым → red.
-- [ ] T004 [P] [US1] Red→green C-AST-1.1 (имя) — статический замок: узел зовётся `CallExternalExpr` (не `CallExpr`); проверяется самим фактом компиляции пакета `ast` (отдельный тип, без redeclared). Критерий: попытка назвать `CallExpr` → `redeclared in this block` (компилятор).
+- [x] T004 [P] [US1] Red→green C-AST-1.1 (имя) — статический замок: узел зовётся `CallExternalExpr` (не `CallExpr`); проверяется самим фактом компиляции пакета `ast` (отдельный тип, без redeclared). Критерий: попытка назвать `CallExpr` → `redeclared in this block` (компилятор).
   **Инверсия:** назвать узел `CallExpr` → пакет `ast` не компилируется.
-- [ ] T005 [P] [US1] Red→green C-PARSE-2/3 в `src/internal/parser/parse_expr_test.go`: `TestParseCallExprInAssignRHS` — `присвоить r = вызвать crm("к")` (в теле шага) → RHS = `*ast.CallExternalExpr` с `Target.Name=="crm"`, 1 аргумент; НЕ `*ast.CallAction`, НЕ `*ast.CallExpr`. Критерий: СЕЙЧАС red (нет ветки `case KW_CALL`).
+- [x] T005 [P] [US1] Red→green C-PARSE-2/3 в `src/internal/parser/parse_expr_test.go`: `TestParseCallExprInAssignRHS` — `присвоить r = вызвать crm("к")` (в теле шага) → RHS = `*ast.CallExternalExpr` с `Target.Name=="crm"`, 1 аргумент; НЕ `*ast.CallAction`, НЕ `*ast.CallExpr`. Критерий: СЕЙЧАС red (нет ветки `case KW_CALL`).
   **Инверсия:** убрать `case lexer.KW_CALL` из `parsePrimary` → `вызвать` уходит в default-ветку (ошибка) → RHS не `CallExternalExpr` → red.
-- [ ] T006 [P] [US1] Red→green C-PARSE-2 (FIRST-set) в `src/internal/parser/parse_expr_test.go`: `TestStartsExpressionCall` — `startsExpression(lexer.KW_CALL)==true`; и интеграционно `печать(вызвать сервис())` + `пусть xs = [вызвать a(), 1]` разбираются с `CallExternalExpr` в позиции аргумента/элемента. Критерий: СЕЙЧАС red (KW_CALL не в `startsExpression`).
+- [x] T006 [P] [US1] Red→green C-PARSE-2 (FIRST-set) в `src/internal/parser/parse_expr_test.go`: `TestStartsExpressionCall` — `startsExpression(lexer.KW_CALL)==true`; и интеграционно `печать(вызвать сервис())` + `пусть xs = [вызвать a(), 1]` разбираются с `CallExternalExpr` в позиции аргумента/элемента. Критерий: СЕЙЧАС red (KW_CALL не в `startsExpression`).
   **Инверсия:** не добавлять `lexer.KW_CALL` в `startsExpression` → `false`; `вызвать` как аргумент/элемент не распознаётся как начало выражения → red.
-- [ ] T007 [P] [US1] Red→green C-PARSE-3 (постфикс) в `src/internal/parser/parse_expr_test.go`: `TestParseCallExprPostfix` — `вызвать crm(x).статус` → `*ast.FieldExpr{Target: *ast.CallExternalExpr}` (постфикс цепочкой `parsePostfix`, скобки — часть узла). Критерий: red до реализации.
+- [x] T007 [P] [US1] Red→green C-PARSE-3 (постфикс) в `src/internal/parser/parse_expr_test.go`: `TestParseCallExprPostfix` — `вызвать crm(x).статус` → `*ast.FieldExpr{Target: *ast.CallExternalExpr}` (постфикс цепочкой `parsePostfix`, скобки — часть узла). Критерий: red до реализации.
   **Инверсия:** не возвращать узел из `parsePrimary` (или поглотить `.статус` внутрь `parseCallExternalExpr`) → структура ≠ `FieldExpr{Target:CallExternalExpr}` → red.
-- [ ] T008 [P] [US1] Контроль развязки (зелёный СЕЙЧАС, остаётся зелёным) в `src/internal/parser/parse_stmt_test.go`: `TestLeadingCallStaysStatement` — `вызвать ИТ("з")` отдельной строкой как ведущий токен шага → `*ast.CallAction` (путь v1). `TestNotifyNotExpression` — `присвоить x = уведомить кто("a")` → синтаксическая ошибка (`уведомить` не выражение). Критерий: оба зелёные ДО и ПОСЛЕ реализации (правка не перехватывает ведущий `вызвать`, не вводит `уведомить`-выражение).
+- [x] T008 [P] [US1] Контроль развязки (зелёный СЕЙЧАС, остаётся зелёным) в `src/internal/parser/parse_stmt_test.go`: `TestLeadingCallStaysStatement` — `вызвать ИТ("з")` отдельной строкой как ведущий токен шага → `*ast.CallAction` (путь v1). `TestNotifyNotExpression` — `присвоить x = уведомить кто("a")` → синтаксическая ошибка (`уведомить` не выражение). Критерий: оба зелёные ДО и ПОСЛЕ реализации (правка не перехватывает ведущий `вызвать`, не вводит `уведомить`-выражение).
   **Инверсия:** если реализация ошибочно перехватит ведущий `вызвать` в выражение → `TestLeadingCallStaysStatement` red; если добавит `case KW_NOTIFY` в primary → `TestNotifyNotExpression` red.
 
 ### Implementation for US1 — фронтенд
 
-- [ ] T009 [US1] **AST**: добавить в `src/internal/ast/expr.go` узел `CallExternalExpr{ exprBase; Target Ident; Args []Expression }` + `NewCallExternalExpr(pos Position, target Ident, args []Expression) *CallExternalExpr` (по образцу `RunProcessExpr:69-77`; имя НЕ `CallExpr`). Не импортировать `errors`. Критерий: T003/T004 зеленеют; пакет `ast` компилируется.
-- [ ] T010 [US1] **Парсер метод**: добавить в `src/internal/parser/parse_expr.go` (рядом с `parseRunProcess:240`) метод `parseCallExternalExpr`: `advance()` `вызвать` → `expect(lexer.IDENT, "имя цели")` → опц. `"(" parseArgList(lexer.RPAREN) ")"` → `ast.NewCallExternalExpr(toASTPos(callTok.Pos), *target, args)`. Критерий: компилируется.
-- [ ] T011 [US1] **Парсер диспетч**: в `parsePrimary` (`parse_expr.go:165`) добавить `case lexer.KW_CALL: return p.parseCallExternalExpr()` (рядом с `case lexer.KW_RUN`@197). Критерий: T005/T007 зеленеют.
-- [ ] T012 [US1] **FIRST-set**: в `startsExpression` (`parse_expr.go:18-22`) добавить `lexer.KW_CALL` в case-список (рядом с `KW_RUN`/`KW_VALUE`/`KW_EVENT`). Критерий: T006 зеленеет; T008 остаётся зелёным.
-- [ ] T013 [US1] Мутант-доказательство фронтенда: временно откатить T011 → `cd src && go test ./internal/parser/ -run 'CallExpr|StartsExpression' -count=1` ДОЛЖЕН упасть; вернуть. Зафиксировать в леджере (замки реально кусаются, не «полые»).
-- [ ] T014 [US1] Аддитивность фронтенда (§3-инвариант): `cd src && go test ./internal/ast/... ./internal/parser/... -count=1` — все существующие v1-тесты (выражения, постфикс-вызов `f(x)`, statement-развязка) зелёные без правки ожиданий. Критерий: 0 регрессий.
+- [x] T009 [US1] **AST**: добавить в `src/internal/ast/expr.go` узел `CallExternalExpr{ exprBase; Target Ident; Args []Expression }` + `NewCallExternalExpr(pos Position, target Ident, args []Expression) *CallExternalExpr` (по образцу `RunProcessExpr:69-77`; имя НЕ `CallExpr`). Не импортировать `errors`. Критерий: T003/T004 зеленеют; пакет `ast` компилируется.
+- [x] T010 [US1] **Парсер метод**: добавить в `src/internal/parser/parse_expr.go` (рядом с `parseRunProcess:240`) метод `parseCallExternalExpr`: `advance()` `вызвать` → `expect(lexer.IDENT, "имя цели")` → опц. `"(" parseArgList(lexer.RPAREN) ")"` → `ast.NewCallExternalExpr(toASTPos(callTok.Pos), *target, args)`. Критерий: компилируется.
+- [x] T011 [US1] **Парсер диспетч**: в `parsePrimary` (`parse_expr.go:165`) добавить `case lexer.KW_CALL: return p.parseCallExternalExpr()` (рядом с `case lexer.KW_RUN`@197). Критерий: T005/T007 зеленеют.
+- [x] T012 [US1] **FIRST-set**: в `startsExpression` (`parse_expr.go:18-22`) добавить `lexer.KW_CALL` в case-список (рядом с `KW_RUN`/`KW_VALUE`/`KW_EVENT`). Критерий: T006 зеленеет; T008 остаётся зелёным.
+- [x] T013 [US1] Мутант-доказательство фронтенда: временно откатить T011 → `cd src && go test ./internal/parser/ -run 'CallExpr|StartsExpression' -count=1` ДОЛЖЕН упасть; вернуть. Зафиксировать в леджере (замки реально кусаются, не «полые»).
+- [x] T014 [US1] Аддитивность фронтенда (§3-инвариант): `cd src && go test ./internal/ast/... ./internal/parser/... -count=1` — все существующие v1-тесты (выражения, постфикс-вызов `f(x)`, statement-развязка) зелёные без правки ожиданий. Критерий: 0 регрессий.
 
 **Checkpoint**: фронтенд B1 функционален; `CallExternalExpr` строится в позиции выражения, statement/`уведомить` целы.
 
@@ -78,23 +78,23 @@ description: "Task list — 013-call-result (веха M2, B1)"
 
 ### Tests for US1 — исполнение (tests-first) ⚠️
 
-- [ ] T015 [P] [US1] Red→green C-SEAM-1 в `src/internal/eval/runtime_test.go` (или `expr_test.go`): компиляц.-замок — фейк `ProcessRuntime` реализует все 8 методов, включая `CallExternalResult(target string, args []value.Value) (value.Value, error)`; `var _ eval.ProcessRuntime = (*fakeRuntime)(nil)`. Критерий: СЕЙЧАС не компилируется (метода в интерфейсе нет) → red.
+- [x] T015 [P] [US1] Red→green C-SEAM-1 в `src/internal/eval/runtime_test.go` (или `expr_test.go`): компиляц.-замок — фейк `ProcessRuntime` реализует все 8 методов, включая `CallExternalResult(target string, args []value.Value) (value.Value, error)`; `var _ eval.ProcessRuntime = (*fakeRuntime)(nil)`. Критерий: СЕЙЧАС не компилируется (метода в интерфейсе нет) → red.
   **Инверсия:** удалить `CallExternalResult` из интерфейса `ProcessRuntime` → кейс eval (T017/T018/T019) не компилируется (`i.runtime.CallExternalResult` неизвестен) → red. (Счёт «ровно 8» закрепляется связкой T015+T017.)
-- [ ] T016 [P] [US1] Red→green C-SEAM-2.1 в `src/internal/engine/runtime_test.go`: `TestCallExternalDelegatesToResult` — вызвать `engine.CallExternal("crm", args)` с буфером `out`; ожидать РОВНО одну строку `[вызов] crm(...)\n` (нет двойного эффекта). Дополнительно `TestCallExternalResultStubPrintsAndReturnsNone` — `CallExternalResult` печатает ту же строку и возвращает `(value.None, nil)`. Критерий: red до реализации делегирования.
+- [x] T016 [P] [US1] Red→green C-SEAM-2.1 в `src/internal/engine/runtime_test.go`: `TestCallExternalDelegatesToResult` — вызвать `engine.CallExternal("crm", args)` с буфером `out`; ожидать РОВНО одну строку `[вызов] crm(...)\n` (нет двойного эффекта). Дополнительно `TestCallExternalResultStubPrintsAndReturnsNone` — `CallExternalResult` печатает ту же строку и возвращает `(value.None, nil)`. Критерий: red до реализации делегирования.
   **Инверсия:** оставить у `CallExternal` собственную `Fprintf` И вызвать `CallExternalResult` (тоже печатает) → две строки → red; ИЛИ `CallExternalResult` вернуть не-None → второй замок red.
-- [ ] T017 [P] [US1] Red→green C-SEAM-3.3 в `src/internal/eval/expr_test.go`: `TestEvalCallExternalStubReturnsNone` — исполнить `присвоить r = вызвать сервис(1)` (или прямой `evalExpr` узла) с фейк-runtime, чьим `CallExternalResult` возвращает `(value.None, nil)`; ожидать значение `value.None`, err=nil. Критерий: red (нет кейса в `evalExpr`).
+- [x] T017 [P] [US1] Red→green C-SEAM-3.3 в `src/internal/eval/expr_test.go`: `TestEvalCallExternalStubReturnsNone` — исполнить `присвоить r = вызвать сервис(1)` (или прямой `evalExpr` узла) с фейк-runtime, чьим `CallExternalResult` возвращает `(value.None, nil)`; ожидать значение `value.None`, err=nil. Критерий: red (нет кейса в `evalExpr`).
   **Инверсия:** не добавлять `case *ast.CallExternalExpr` в `evalExpr` → узел падает в default «неизвестное выражение» → err ≠ nil → red.
-- [ ] T018 [P] [US1] Red→green C-SEAM-3.1 (порядок) в `src/internal/eval/expr_test.go`: `TestEvalCallExternalArgsLeftToRight` — фейк-runtime записывает порядок аргументов через побочный эффект eval (напр. вызовы-счётчики); ожидать строго слева-направо. Критерий: red до реализации.
+- [x] T018 [P] [US1] Red→green C-SEAM-3.1 (порядок) в `src/internal/eval/expr_test.go`: `TestEvalCallExternalArgsLeftToRight` — фейк-runtime записывает порядок аргументов через побочный эффект eval (напр. вызовы-счётчики); ожидать строго слева-направо. Критерий: red до реализации.
   **Инверсия:** в кейсе вычислять `c.Args` в обратном порядке → порядок ≠ исходному → red.
-- [ ] T019 [P] [US1] Red→green C-SEAM-3.2 (обёртка ошибки) в `src/internal/eval/expr_test.go`: `TestEvalCallExternalWrapsError` — фейк-`CallExternalResult` возвращает `(nil, errors.New("boom"))`; ожидать `errors.ОшибкаВыполнения` (через `errors.As`) с `Pos` == позиция токена `вызвать` и `Cause` == исходная ошибка. Критерий: red до реализации.
+- [x] T019 [P] [US1] Red→green C-SEAM-3.2 (обёртка ошибки) в `src/internal/eval/expr_test.go`: `TestEvalCallExternalWrapsError` — фейк-`CallExternalResult` возвращает `(nil, errors.New("boom"))`; ожидать `errors.ОшибкаВыполнения` (через `errors.As`) с `Pos` == позиция токена `вызвать` и `Cause` == исходная ошибка. Критерий: red до реализации.
   **Инверсия:** вернуть raw `err` без `runtimeErrWrap(c.Pos(), err)` → тип ≠ `ОшибкаВыполнения` / нет Pos → red.
 
 ### Implementation for US1 — исполнение
 
-- [ ] T020 [US1] **Шов объявление**: в `src/internal/eval/runtime.go` добавить в интерфейс `ProcessRuntime` метод `CallExternalResult(target string, args []value.Value) (value.Value, error)` (рядом с `CallExternal`), с doc-комментарием. 7 существующих сигнатур НЕ трогать. Критерий: T015 компилируется; `eval` НЕ импортирует `store`/`engine` (см. T024).
-- [ ] T021 [US1] **Шов реализация + делегирование**: в `src/internal/engine/runtime.go` реализовать `func (e *Engine) CallExternalResult(target string, args []value.Value) (value.Value, error)` — печать `[вызов] %s(%s)` (как нынешний `CallExternal:41`, разделитель `", "`) + `return value.None, nil`; ПЕРЕПИСАТЬ `CallExternal` на делегирование `{ _, err := e.CallExternalResult(target, args); return err }`. `var _ eval.ProcessRuntime = (*Engine)(nil)` (`:16`) должен компилироваться. Критерий: T016 зеленеет.
-- [ ] T022 [US1] **eval кейс**: в `src/internal/eval/expr.go` добавить в `evalExpr` (type-switch) `case *ast.CallExternalExpr:` → метод `evalCallExternal(env, c)`: защита `i.runtime == nil` → `runtimeErr(c.Pos(), "…движок процессов не подключён")`; вычислить `c.Args` слева направо (как `evalArgs`/`evalRunProcess:198-205`); `v, err := i.runtime.CallExternalResult(c.Target.Name, args)`; `err != nil → return nil, runtimeErrWrap(c.Pos(), err)`; иначе `return v, nil`. Критерий: T017/T018/T019 зеленеют.
-- [ ] T023 [US1] Мутант-доказательство исполнения: временно откатить T022 → `cd src && go test ./internal/eval/ -run CallExternal -count=1` ДОЛЖЕН упасть; временно вернуть `CallExternal` к собственной печати + делегированию → `TestCallExternalDelegatesToResult` падает (двойная строка); вернуть. Зафиксировать в леджере.
+- [x] T020 [US1] **Шов объявление**: в `src/internal/eval/runtime.go` добавить в интерфейс `ProcessRuntime` метод `CallExternalResult(target string, args []value.Value) (value.Value, error)` (рядом с `CallExternal`), с doc-комментарием. 7 существующих сигнатур НЕ трогать. Критерий: T015 компилируется; `eval` НЕ импортирует `store`/`engine` (см. T024).
+- [x] T021 [US1] **Шов реализация + делегирование**: в `src/internal/engine/runtime.go` реализовать `func (e *Engine) CallExternalResult(target string, args []value.Value) (value.Value, error)` — печать `[вызов] %s(%s)` (как нынешний `CallExternal:41`, разделитель `", "`) + `return value.None, nil`; ПЕРЕПИСАТЬ `CallExternal` на делегирование `{ _, err := e.CallExternalResult(target, args); return err }`. `var _ eval.ProcessRuntime = (*Engine)(nil)` (`:16`) должен компилироваться. Критерий: T016 зеленеет.
+- [x] T022 [US1] **eval кейс**: в `src/internal/eval/expr.go` добавить в `evalExpr` (type-switch) `case *ast.CallExternalExpr:` → метод `evalCallExternal(env, c)`: защита `i.runtime == nil` → `runtimeErr(c.Pos(), "…движок процессов не подключён")`; вычислить `c.Args` слева направо (как `evalArgs`/`evalRunProcess:198-205`); `v, err := i.runtime.CallExternalResult(c.Target.Name, args)`; `err != nil → return nil, runtimeErrWrap(c.Pos(), err)`; иначе `return v, nil`. Критерий: T017/T018/T019 зеленеют.
+- [x] T023 [US1] Мутант-доказательство исполнения: временно откатить T022 → `cd src && go test ./internal/eval/ -run CallExternal -count=1` ДОЛЖЕН упасть; временно вернуть `CallExternal` к собственной печати + делегированию → `TestCallExternalDelegatesToResult` падает (двойная строка); вернуть. Зафиксировать в леджере.
 
 **Checkpoint**: исполнение B1 функционально; захват результата работает под стабом → `value.None`.
 
@@ -102,11 +102,11 @@ description: "Task list — 013-call-result (веха M2, B1)"
 
 ## Phase 5: Интеграция и инварианты (Priority: P1)
 
-- [ ] T024 [US1] Инвариант FR-012 (eval без store/engine): `cd src && go list -deps ./internal/eval | grep -E 'github.com/denis-kosyakov/ladix/internal/(store|engine)$'` — пусто (eval не зависит от store/engine). Критерий: команда ничего не печатает.
-- [ ] T025 [US1] Инвариант FR-015 / golden §EN-7: `cd src && go test ./internal/engine/... -count=1` — все golden печать-стаба `[вызов]`/`[уведомление]` зелёные, тексты байт-в-байт. Критерий: 0 изменений golden-текстов.
-- [ ] T026 [US1] Инвариант пустого диффа store/драйвера: `git diff --stat master -- src/internal/store` пуст; реальный драйвер/HTTP не введён (`grep -rn 'http\|webhook\|вебхук' src/internal/engine/` — нет нового драйвера B2). Критерий: пустой дифф store; драйвер не тронут.
-- [ ] T027 [US1] Полный гейт + интеграция: `cd src && gofmt -l . && go vet ./... && go test ./... -count=1 && go build -o ../ladix ./cmd/ladix`. Прогнать quickstart-сниппеты (`присвоить ответ = вызвать crm("к")` → стаб + `Пусто`, exit 0; `вызвать ИТ("з")` → `CallAction`; `уведомить` в выражении → ошибка). Критерий: всё зелёное; поведение совпадает с quickstart.md.
-- [ ] T028 [US1] Дрейф-аудит §AU-2: подтвердить `ProcessRuntime` = РОВНО 8 методов (был 7); `Store` = 15 (не тронут); ребро `engine→eval` однонаправленно. Зафиксировать в леджере для M2-гейта.
+- [x] T024 [US1] Инвариант FR-012 (eval без store/engine): `cd src && go list -deps ./internal/eval | grep -E 'github.com/denis-kosyakov/ladix/internal/(store|engine)$'` — пусто (eval не зависит от store/engine). Критерий: команда ничего не печатает.
+- [x] T025 [US1] Инвариант FR-015 / golden §EN-7: `cd src && go test ./internal/engine/... -count=1` — все golden печать-стаба `[вызов]`/`[уведомление]` зелёные, тексты байт-в-байт. Критерий: 0 изменений golden-текстов.
+- [x] T026 [US1] Инвариант пустого диффа store/драйвера: `git diff --stat master -- src/internal/store` пуст; реальный драйвер/HTTP не введён (`grep -rn 'http\|webhook\|вебхук' src/internal/engine/` — нет нового драйвера B2). Критерий: пустой дифф store; драйвер не тронут.
+- [x] T027 [US1] Полный гейт + интеграция: `cd src && gofmt -l . && go vet ./... && go test ./... -count=1 && go build -o ../ladix ./cmd/ladix`. Прогнать quickstart-сниппеты (`присвоить ответ = вызвать crm("к")` → стаб + `Пусто`, exit 0; `вызвать ИТ("з")` → `CallAction`; `уведомить` в выражении → ошибка). Критерий: всё зелёное; поведение совпадает с quickstart.md.
+- [x] T028 [US1] Дрейф-аудит §AU-2: подтвердить `ProcessRuntime` = РОВНО 8 методов (был 7); `Store` = 15 (не тронут); ребро `engine→eval` однонаправленно. Зафиксировать в леджере для M2-гейта.
 
 **Checkpoint**: B1 завершён, инварианты 1-3 закрыты, готов гейтить B2.
 
