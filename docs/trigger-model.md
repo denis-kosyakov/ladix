@@ -429,8 +429,8 @@ parseTriggerDecl():
           body := parseBlock()
           → ScheduleTrigger{Spec} в TriggerDecl{Body}
       default:
-          // SE-TRIGGER-KIND, §TR-7.F: msgExpected("метрика, событие или расписание", peek())
-          error(peek().Pos, msgExpected("метрика, событие или расписание", peek()))
+          // SE-TRIGGER-KIND, §TR-7.F: msgExpected("метрика, событие, расписание или задача", peek())
+          error(peek().Pos, msgExpected("метрика, событие, расписание или задача", peek()))
           synchronize()
           return nil                           // поглощённая ошибочная конструкция
 ```
@@ -1067,7 +1067,7 @@ top-level.
 |---|---|---|---|---|
 | TR-SYN-UNEXPECTED | синтаксическая | неожиданный ведущий токен в позиции триггера/выражения тела (`значение`/`событие`/`{`/`}` на top-level) | `неожиданный токен '<лексема>'` (`msgUnexpected`, errors.go:45) | 1 |
 | TR-SYN-EMPTYBLOCK | синтаксическая | тело триггера после `:` пустое (нет INDENT) | `пустой блок не допускается, добавьте хотя бы один оператор` (`msgEmptyBlock`, errors.go:17) | 1 |
-| SE-TRIGGER-KIND | синтаксическая | после `когда` нет `метрика`/`событие`/`расписание` (диспетчер `parseTriggerDecl`, ветка `default`) | `ожидалось 'метрика, событие или расписание', получено '<лексема>'` (через `msgExpected`, errors.go:40) | 1 |
+| SE-TRIGGER-KIND | синтаксическая | после `когда` нет `метрика`/`событие`/`расписание` (диспетчер `parseTriggerDecl`, ветка `default`) | `ожидалось 'метрика, событие, расписание или задача', получено '<лексема>'` (через `msgExpected`, errors.go:61) | 1 |
 | SE-EXPECT-COMPOP | синтаксическая | после `метрика Ident` не CompOp-токен (`expectCompOp`) | `ожидалось 'оператор сравнения', получено '<лексема>'` (через `msgExpected`, errors.go:40) | 1 |
 | SE-SCHEDULE-SPEC | синтаксическая | после `расписание` нет `каждые`/`в` (диспетчер `parseScheduleSpec`, ветка `default`) | `ожидалось 'каждые или в', получено '<лексема>'` (через `msgExpected`, errors.go:40) | 1 |
 
@@ -1084,7 +1084,7 @@ top-level разобрался бы как голое выражение-опе�
 > **Тексты диагностик (наземная правда).** Три новые синтаксические диагностики
 > реализуются через **существующий** `msgExpected(expected, got)` (errors.go:40-41,
 > формат `ожидалось '%s', получено '%s'`), подставляя `expected`:
-> `"метрика, событие или расписание"` (SE-TRIGGER-KIND), `"оператор сравнения"`
+> `"метрика, событие, расписание или задача"` (SE-TRIGGER-KIND), `"оператор сравнения"`
 > (SE-EXPECT-COMPOP), `"каждые или в"` (SE-SCHEDULE-SPEC). Отдельные const/функции
 > (`msgTriggerKind`/`msgScheduleSpec`) — деталь оформления импл-чата; **текст фиксирован**
 > через `msgExpected`. `msgEmptyBlock` и `msgUnexpected` — наземная правда (errors.go:17, 45).

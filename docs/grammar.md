@@ -205,12 +205,14 @@ TriggerDecl     ::= "когда" TriggerSpec ":" Block
 TriggerSpec     ::= MetricTrigger
                   | EventTrigger
                   | ScheduleTrigger
+                  | DeadlineTrigger
 
 MetricTrigger   ::= "метрика" Ident CompOp Expression
 EventTrigger    ::= "событие" Ident
 ScheduleTrigger ::= "расписание" ScheduleSpec
 ScheduleSpec    ::= "каждые" DurationLiteral
                   | "в" StringLiteral
+DeadlineTrigger ::= "задача" "просрочена" "в" Ident "." Ident
 ```
 
 **Семантика:**
@@ -219,6 +221,7 @@ ScheduleSpec    ::= "каждые" DurationLiteral
 - `ScheduleTrigger`:
   - `каждые <DurationLiteral>` — периодически (например, `каждые 1дн`);
   - `в <строка>` — в указанное время дня (формат `"ЧЧ:ММ"`). Парсер принимает любой `StringLiteral`; содержимое строки фронтенд не валидирует — формат проверяет демон `serve` при исполнении расписания (фича 007b).
+- `DeadlineTrigger` (`задача просрочена в <Процесс>.<Шаг>`, B4a, §AU-6.1.1) — эскалация по просрочке дедлайна задачи указанного шага. Слова `задача` и `просрочена` — **не ключевые слова**: лексер выдаёт их как `Ident`, контекст применяет парсер по лексеме (вид триггера выбирается по второму токену после `когда`; ведущий `Ident` со значением `задача` → `DeadlineTrigger`, любой иной ведущий `Ident` → ошибка вида триггера). Под демоном `serve` четвёртая фаза тика проверяет просрочку и эскалирует задачу **ровно один раз** (durable-флаг, переживает рестарт); под `run` — заглушка `задача триггер '<P>.<S>' требует serve (фича 007b)`.
 - В теле `EventTrigger` доступна предопределённая переменная `событие` с данными события.
 
 ## 9. Выражения
@@ -249,10 +252,12 @@ Primary         ::= IntLiteral
                   | DurationLiteral
                   | ListLiteral
                   | RunProcessExpr
+                  | CallExternalExpr
                   | Ident
                   | "(" Expression ")"
 ListLiteral     ::= "[" (Expression ("," Expression)* ","?)? "]"
 RunProcessExpr  ::= "запустить" "процесс" Ident ("(" ArgList? ")")?
+CallExternalExpr ::= "вызвать" Ident ("(" ArgList? ")")?
 ```
 
 **Правила:**
@@ -260,6 +265,7 @@ RunProcessExpr  ::= "запустить" "процесс" Ident ("(" ArgList? ")
 - **Деление:** `/` всегда возвращает `Дробное` с плавающей точкой; `//` — целочисленное деление (оба операнда целые → целое, иначе runtime-ошибка типа); `%` — остаток. Деление на ноль (`/`, `//`, `%`) — runtime-ошибка (§4, §13).
 - **Литерал списка** с висящей запятой допускается: `[1, 2, 3,]`. Гетерогенный: `[1, "две", истина]`.
 - **`RunProcessExpr`** — запуск процесса как выражение, возвращает строковый идентификатор инстанса (см. §7). Скобки `(...)` — часть самой `RunProcessExpr`, не Postfix-вызов по результату. Парсер при виде `запустить` сразу выбирает эту альтернативу, неоднозначности с Postfix нет. Standalone-использование оформляется как `ExpressionStmt`.
+- **`CallExternalExpr`** — `вызвать Цель(…)` как **выражение** с захватом результата внешнего вызова (B1, §AU-3): `присвоить r = вызвать crm(x)`. Скобки `(...)` — часть самой `CallExternalExpr`, не Postfix-вызов по результату (постфикс навешивается уже на возвращённое значение). Парсер при виде `вызвать` в позиции выражения (правая часть `присвоить`/`пусть`, аргумент, элемент списка) сразу выбирает эту альтернативу. Развязка со statement-формой `CallAction` (§7) — структурная: ведущий `вызвать` в позиции оператора ловит `StepAction` до того, как управление дойдёт до `Expression`. Эффект — общий с `вызвать`-statement (§7): по умолчанию печать-стаб, под драйвером вебхука — HTTP POST.
 - **Возведение в степень** в v1 не поддерживается.
 - **Тернарный оператор** в v1 не поддерживается (используется блочный `если/иначе`).
 
@@ -297,6 +303,6 @@ Block           ::= Newline Indent Statement Statement* Dedent
 
 Алфавитный указатель всех нетерминалов:
 
-`Additive`, `ArgList`, `AssignAction`, `AssignStmt`, `Block`, `BreakStmt`, `CallAction`, `CompOp`, `Comparison`, `ContinueStmt`, `ElseClause`, `EventTrigger`, `Expression`, `ExpressionStmt`, `FieldBlock`, `FieldDef`, `ForStmt`, `FunctionDecl`, `IfStmt`, `LetStmt`, `ListLiteral`, `LogicAnd`, `LogicNot`, `LogicOr`, `MetricAttr`, `MetricBlock`, `MetricDecl`, `MetricTrigger`, `Multiplicative`, `NotifyAction`, `ParamList`, `PeriodValue`, `Postfix`, `PostfixOp`, `Primary`, `ProcessBlock`, `ProcessDecl`, `Program`, `ReturnStmt`, `RunProcessExpr`, `ScheduleSpec`, `ScheduleTrigger`, `SourceAttr`, `SourceBlock`, `SourceDecl`, `Statement`, `StepAction`, `StepAfter`, `StepAttr`, `StepBlock`, `StepDecl`, `StepLine`, `TopLevelItem`, `TriggerDecl`, `TriggerSpec`, `Unary`, `WhileStmt`.
+`Additive`, `ArgList`, `AssignAction`, `AssignStmt`, `Block`, `BreakStmt`, `CallAction`, `CallExternalExpr`, `CompOp`, `Comparison`, `ContinueStmt`, `DeadlineTrigger`, `ElseClause`, `EventTrigger`, `Expression`, `ExpressionStmt`, `FieldBlock`, `FieldDef`, `ForStmt`, `FunctionDecl`, `IfStmt`, `LetStmt`, `ListLiteral`, `LogicAnd`, `LogicNot`, `LogicOr`, `MetricAttr`, `MetricBlock`, `MetricDecl`, `MetricTrigger`, `Multiplicative`, `NotifyAction`, `ParamList`, `PeriodValue`, `Postfix`, `PostfixOp`, `Primary`, `ProcessBlock`, `ProcessDecl`, `Program`, `ReturnStmt`, `RunProcessExpr`, `ScheduleSpec`, `ScheduleTrigger`, `SourceAttr`, `SourceBlock`, `SourceDecl`, `Statement`, `StepAction`, `StepAfter`, `StepAttr`, `StepBlock`, `StepDecl`, `StepLine`, `TopLevelItem`, `TriggerDecl`, `TriggerSpec`, `Unary`, `WhileStmt`.
 
 **Терминалы из лексера:** `Ident`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `BoolLiteral`, `NoneLiteral`, `DurationLiteral`, `Newline`, `Indent`, `Dedent`, `EOF`, плюс ключевые слова и операторы/разделители из §2.
