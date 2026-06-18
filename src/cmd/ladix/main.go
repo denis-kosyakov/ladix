@@ -83,11 +83,11 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 	case "metric":
 		return metricMain(args[1:], stdout, stderr)
 	case "start":
-		return startMain(args[1:], stdout, stderr)
+		return startMain(args[1:], engine.SystemClock{}, stdout, stderr)
 	case "complete":
-		return completeMain(args[1:], stdout, stderr)
+		return completeMain(args[1:], engine.SystemClock{}, stdout, stderr)
 	case "tasks":
-		return tasksMain(args[1:], stdout, stderr)
+		return tasksMain(args[1:], engine.SystemClock{}, stdout, stderr)
 	case "inspect":
 		return inspectMain(args[1:], stdout, stderr)
 	case "serve":
@@ -172,7 +172,7 @@ func runMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
 		return 2
 	}
-	return runFile(file, dbPath, maxDepth, caller, stdout, stderr)
+	return runFile(file, dbPath, maxDepth, caller, engine.SystemClock{}, stdout, stderr)
 }
 
 // metricMain разбирает аргументы подкоманды metric и вычисляет одну метрику (§SM-11
@@ -221,7 +221,10 @@ func metricMain(rest []string, stdout, stderr io.Writer) int {
 // runFile исполняет один файл и возвращает код возврата (0/1/2). dbPath=="" —
 // MemoryStore (эфемерно, как 003); иначе SQLiteStore (Q2, §EN-6). Открытие/инициа-
 // лизация SQLite вне guard: ошибка → «не удалось открыть хранилище», exit 2.
-func runFile(path, dbPath string, maxDepth int, caller engine.ExternalCaller, stdout, stderr io.Writer) int {
+// clock — единые часы пути (C4 §C-4.2, прод engine.SystemClock{}): дата метрик
+// интерпретатора (через evalClockFromEngine), lifecycle-штампы движка (WithClock)
+// и «сейчас» сводки задач берутся ОТ ОДНИХ И ТЕХ ЖЕ часов (тест — fixedClock).
+func runFile(path, dbPath string, maxDepth int, caller engine.ExternalCaller, clock engine.Clock, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -248,11 +251,12 @@ func runFile(path, dbPath string, maxDepth int, caller engine.ExternalCaller, st
 		st = store.NewMemoryStore()
 	}
 	return guard(stderr, func() int {
-		interp := eval.NewInterpreter(stdout, maxDepth, eval.SystemClock{})
+		interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
 		// Стек движка процессов (006, §EN-6): Store + Engine + инъекция
 		// ProcessRuntime, чтобы «запустить процесс» исполнялся. Драйвер внешних эффектов
 		// (B2): webhookCaller под --вебхук/env, иначе дефолт-стаб (caller == nil).
-		eng := engine.NewEngine(st, interp, stdout, withExternalCallerOpt(caller)...)
+		// engine.WithClock(clock) — те же часы, что и у интерпретатора (C4 §C-4.2).
+		eng := engine.NewEngine(st, interp, stdout, append([]engine.Option{engine.WithClock(clock)}, withExternalCallerOpt(caller)...)...)
 		interp.SetProcessRuntime(eng)
 		if err := interp.Run(prog); err != nil {
 			// Все типы eval/lexer/parser реализуют канонический двухстрочный Error() (§8.1).
@@ -274,7 +278,7 @@ func runFile(path, dbPath string, maxDepth int, caller engine.ExternalCaller, st
 			return 2
 		}
 		if len(pending) > 0 {
-			now := engine.SystemClock{}.Now()
+			now := clock.Now()
 			fmt.Fprintf(stdout, "открытых задач: %d\n", len(pending))
 			for _, t := range pending {
 				fmt.Fprintln(stdout, engine.FormatTaskLine(t, now))
@@ -315,8 +319,10 @@ func runMetric(path, metricName string, maxDepth int, clock eval.Clock, stdout, 
 		// У metric Store — всегда MemoryStore (флага --db нет). SetProcessRuntime ДО
 		// EvalMetricByName: формула метрики может через функцию дёрнуть process-builtin/
 		// «запустить процесс» (семпроход разрешает) — иначе nil-runtime (§EN-8.A:685).
+		// engine.WithClock — ТЕ ЖЕ часы, что у интерпретатора (C4 §C-4.1/T009): эффект
+		// латентный (движок «сейчас» на metric-пути не штампует), но единые на будущее.
 		st := store.NewMemoryStore()
-		eng := engine.NewEngine(st, interp, stdout)
+		eng := engine.NewEngine(st, interp, stdout, engine.WithClock(engineClockFromEval{clock}))
 		interp.SetProcessRuntime(eng)
 		v, err := interp.EvalMetricByName(metricName)
 		if err != nil {
@@ -335,7 +341,10 @@ func runMetric(path, metricName string, maxDepth int, clock eval.Clock, stdout, 
 // + опциональные --db (дефолт ladix.db) и --max-depth. Компиляция файла обязана
 // пройти чисто (лексер→парсер→Analyze); interp.Run НЕ вызывается (top-level не
 // исполняется). Печать строк 7-10 делает сам eng.Complete.
-func completeMain(rest []string, stdout, stderr io.Writer) int {
+// clock — единые часы пути (C4 §C-4.2, прод engine.SystemClock{}): движок штампует
+// MarkTaskCompleted/UpdatedAt от ЭТИХ часов (WithClock), интерпретатор — дату метрик
+// от тех же (evalClockFromEngine); тест инжектирует fixedClock для детерминизма.
+func completeMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) int {
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := defaultDBPath
 	webhook := ""
@@ -406,7 +415,7 @@ func completeMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
 		return 2
 	}
-	return completeTask(positional[0], positional[1], dbPath, maxDepth, payloadRaw, caller, stdout, stderr)
+	return completeTask(positional[0], positional[1], dbPath, maxDepth, payloadRaw, caller, clock, stdout, stderr)
 }
 
 // completeTask компилирует файл, собирает стек (SQLiteStore) и завершает задачу
@@ -414,7 +423,9 @@ func completeMain(rest []string, stdout, stderr io.Writer) int {
 // §13, exit 1); interp.Run НЕ вызывается. eng.Complete печатает строки 7-10 сам.
 // Ошибки-гарды Store (§EN-8.B) → exit 2; runtime-ошибка продвижения (D-14) → канон
 // §13, exit 1. Подкоманда обёрнута guard/recover-барьером (конституция III).
-func completeTask(path, taskID, dbPath string, maxDepth int, payloadRaw string, caller engine.ExternalCaller, stdout, stderr io.Writer) int {
+// clock — единые часы пути (C4 §C-4.2): движок штампует MarkTaskCompleted/UpdatedAt
+// от ЭТИХ часов (WithClock), интерпретатор — дату метрик от тех же (evalClockFromEngine).
+func completeTask(path, taskID, dbPath string, maxDepth int, payloadRaw string, caller engine.ExternalCaller, clock engine.Clock, stdout, stderr io.Writer) int {
 	// Декод --данные (B3, §AU-5.3) на CLI — корень композиции, импорт jsonval допустим;
 	// движок получает уже готовую value.Запись. Пустой payload → пустая Запись без
 	// ошибки (поведение jsonval). Невалидный JSON / не-объект → дословная ошибка exit 2
@@ -443,12 +454,13 @@ func completeTask(path, taskID, dbPath string, maxDepth int, payloadRaw string, 
 	}
 	defer sq.Close()
 	return guard(stderr, func() int {
-		interp := eval.NewInterpreter(stdout, maxDepth, eval.SystemClock{})
+		interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
 		if err := interp.Analyze(prog); err != nil {
 			fmt.Fprintln(stderr, err.Error())
 			return 1 // семпроход (§SM-9.A) — компиляция обязана пройти чисто
 		}
-		eng := engine.NewEngine(sq, interp, stdout, withExternalCallerOpt(caller)...)
+		// engine.WithClock(clock) — те же часы: MarkTaskCompleted/UpdatedAt детерминир. (C4).
+		eng := engine.NewEngine(sq, interp, stdout, append([]engine.Option{engine.WithClock(clock)}, withExternalCallerOpt(caller)...)...)
 		interp.SetProcessRuntime(eng)
 		// interp.Run НЕ вызывается (Q3): top-level не исполняется, чтобы complete не
 		// плодил новые инстансы. Печать строк 7-10 (§EN-7) делает сам Complete.
@@ -502,7 +514,9 @@ func completeError(err error, taskID string, stderr io.Writer) int {
 // rest — аргументы ПОСЛЕ «tasks»: один опциональный позиционный (фильтр-исполнитель)
 // + опциональный --db (дефолт ladix.db). Файл НЕ принимается — всё из БД; движок/
 // интерпретатор НЕ строятся. Обёрнута guard/recover-барьером.
-func tasksMain(rest []string, stdout, stderr io.Writer) int {
+// clock — единые часы пути (C4 §C-4.2, прод engine.SystemClock{}): «сейчас» для
+// FormatTaskLine берётся от инъектированных часов (тест — fixedClock).
+func tasksMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) int {
 	dbPath := defaultDBPath
 	var positional []string
 	for k := 0; k < len(rest); k++ {
@@ -532,14 +546,15 @@ func tasksMain(rest []string, stdout, stderr io.Writer) int {
 	if len(positional) == 1 {
 		assignee = positional[0]
 	}
-	return listTasks(assignee, dbPath, stdout, stderr)
+	return listTasks(assignee, dbPath, clock, stdout, stderr)
 }
 
 // listTasks открывает SQLiteStore и печатает открытые задачи фильтра (§EN-6).
 // st.ListPendingTasks(фильтр) → FormatTaskLine на задачу (строка 6 §EN-7); пусто →
-// «открытых задач нет» (строка 11). Exit 0 в обоих случаях. now — от SystemClock
-// (инвариант D-2/D-22). Обёрнута guard/recover-барьером (конституция III).
-func listTasks(assignee, dbPath string, stdout, stderr io.Writer) int {
+// «открытых задач нет» (строка 11). Exit 0 в обоих случаях. now — от инъектированных
+// часов clock (C4 §C-4.2, прод engine.SystemClock{}, инвариант D-2/D-22; тест —
+// fixedClock). Обёрнута guard/recover-барьером (конституция III).
+func listTasks(assignee, dbPath string, clock engine.Clock, stdout, stderr io.Writer) int {
 	sq, oerr := store.NewSQLiteStore(dbPath)
 	if oerr != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось открыть хранилище '%s': %s\n", dbPath, oerr.Error())
@@ -556,7 +571,7 @@ func listTasks(assignee, dbPath string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stdout, "открытых задач нет")
 			return 0
 		}
-		now := engine.SystemClock{}.Now()
+		now := clock.Now()
 		for _, t := range tasks {
 			fmt.Fprintln(stdout, engine.FormatTaskLine(t, now))
 		}
