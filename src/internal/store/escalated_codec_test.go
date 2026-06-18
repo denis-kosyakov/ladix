@@ -123,17 +123,17 @@ func TestMemoryStoreEscalatedCopy(t *testing.T) {
 	}
 }
 
-// TestStoreMethodCount16 — интерфейс Store под B6: 15 базовых (006/007b) + аддитивный
-// ListTasksByInstance (read-only, §AU-2 15→16). B4b Escalated — колонка, не метод
-// (счёт не растёт); B6 добавляет РОВНО один метод. Замок INV-2 §AU-2.
-func TestStoreMethodCount16(t *testing.T) {
-	// Compile-time: обе реализации удовлетворяют интерфейсу (см. store.go var _).
+// TestStoreMethodCount18 — интерфейс Store под M3-C2b: 16 (006/007b/B6) +
+// LoadOutbox/SaveOutbox (outbox-леджер exactly-once, §C-2b.6 16→18). Аддитивно;
+// базовые 16 сигнатур байт-целы. Замок INV-2 §C-6 (был TestStoreMethodCount16, M2-эра).
+func TestStoreMethodCount18(t *testing.T) {
+	// Compile-time: обе реализации удовлетворяют интерфейсу (см. store.go var _, ДВОЙНОЙ замок).
 	var _ Store = (*SQLiteStore)(nil)
 	var _ Store = (*MemoryStore)(nil)
 	// Ручной счёт методов интерфейса Store через рефлексию.
-	const wantMethods = 16
+	const wantMethods = 18
 	got := storeInterfaceMethodCount()
 	if got != wantMethods {
-		t.Errorf("интерфейс Store имеет %d методов, хотим РОВНО %d (15 базовых + ListTasksByInstance B6)", got, wantMethods)
+		t.Errorf("интерфейс Store имеет %d методов, хотим РОВНО %d (16 базовых + LoadOutbox/SaveOutbox C2b)", got, wantMethods)
 	}
 }

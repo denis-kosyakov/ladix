@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// Счётный замок Store=16 (T-STORE-COUNT-16, §AU-2 15→16) живёт в
-// escalated_codec_test.go::TestStoreMethodCount16 (там уже helper storeInterfaceMethodCount).
+// Счётный замок Store=18 (§C-6 16→18, M3-C2b) живёт в
+// escalated_codec_test.go::TestStoreMethodCount18 (там уже helper storeInterfaceMethodCount).
 
 // TestListTasksByInstanceContract — поведенческий контракт ListTasksByInstance
 // (C1–C6, store-list-tasks-by-instance.md) на ОБЕИХ реализациях. Зеркало
