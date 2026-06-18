@@ -494,6 +494,12 @@ fault-Store; нет файла `*fault*` в `internal/daemon` сегодня):
 `eng := engine.NewEngine(st, interp, out, append([]engine.Option{engine.WithClock(clock)}, withExternalCallerOpt(caller)...)...)`;
 любой «сейчас» для сводок = `clock.Now()`.
 
+> **Реализационная пометка (M3-гейт, C4-1).** Путь `metric` исторически входит через
+> `runMetric(clock eval.Clock)` (eval-часы, не engine), поэтому импл проволочил engine-часы обратным
+> адаптером `engineClockFromEval` вместо forward `evalClockFromEngine{engine.Clock}`. Инвариант «один
+> источник времени на вызов» **сохранён** (engine.Clock выводится из того же eval.Clock); отклонение — в
+> направлении адаптера, не в семантике. Forward-рецепт остаётся каноном для остальных путей.
+
 ### C-4.3. Тест-замки C4
 
 - На команду (run/start/complete/tasks/metric): инъектировать `fixedClock{2026-…}` (engine.Clock fake)
@@ -600,6 +606,9 @@ fire, **получают новую строку** и обязаны быть о
   `TestRunTriggerBodyReadShadowGolden` (два fire).
 - `eval/metric_window_golden_test.go`: `TestWindowMetricTriggerFires` (ждёт `"оконная метрика: 23\n"`
   И `stubs.Len()==0` — explain должен идти в `i.out`, не в `w`, иначе ломает обе проверки).
+- `cmd/ladix/golden_test.go`: `TestCLIGoldenMetrics`, `TestCLIGoldenSourceCSV` (витринные `run`-примеры с
+  фаером триггера — explain-строка приземляется на каждый `… → истина`). **Добавлено по итогу M3-гейта**
+  (CHURN-1): исходный инвентарь их упускал; фактический churn co-land с C5 на них корректен.
 
 **НЕ затронуты (фиксируем явно — не трогать):** count()/contains()-тесты демона (`metrics_test.go`,
 `schedule_test.go`, `daemon_test.go` MFIRE, `m2_endtoend` `sink.count`); no-fire/error-тесты
@@ -683,6 +692,9 @@ fire, **получают новую строку** и обязаны быть о
 | **payload-loss окно (D-AU-3)** | эфемерность payload; крах до захвата в durable-переменную (§C-1.4). |
 | **checkDeadlines ветка-3 fire-then-persist** | то же окно, что C2b; эскалация — НЕ эффект тела шага → вне outbox; durable-флаг `Escalated` закрывает после commit. |
 | **harden конкуренции serve×complete/emit (D-C-3 «а»)** | стресс-тест общего SQLite под `SetMaxOpenConns(1)` + `busy_timeout` — отдельный тест-набор; прод-механика уже верна, не блокирует §2. |
+| **`запустить процесс` в теле шага (вложенный спавн)** | НЕ один из 3 дедуплицируемых effect-методов (`вызвать`/`уведомить`); рестарт ре-исполняет тело → ре-спавн дочернего инстанса с новым ID → его эффекты вне outbox = at-least-once. Вне DoD §2 (золотой сценарий не вкладывает спавн в шаг-с-эффектом); зафиксировано M3-гейтом (C2B-NESTED-1). |
+| **future-version БД (downgrade)** | `migrate` forward-only поднимает старые БД, но БД с `user_version` > текущей открывается молча (без ошибки/отказа). Сценарий = откат бинаря на более старую версию; вне M3-scope; зафиксировано M3-гейтом (C2A-1). |
+| **engine-часы metric-пути не залочены тестом** | инвариант единого источника соблюдён (engine.Clock выводится из того же eval.Clock), но lifecycle-штампы движка на metric-пути не покрыты поведенческим замком (§C-4.3, пункт для metric); низкий риск — `metric` есть read-only вычисление. C4-2. |
 
 ---
 
