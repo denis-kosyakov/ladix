@@ -92,10 +92,10 @@ description: "Task list for feature 021-unified-cli-clock (C4 — unified clock 
 
 **Purpose**: Prove the empty-diff guarantee and the frozen surfaces.
 
-- [ ] T017 Boundary check — diff confinement: from `/Users/denis/dev/ladix` run `git diff --stat` and confirm EVERY changed path is under `src/cmd/ladix/`; then confirm `git diff -- src/internal/eval src/internal/engine src/internal/store src/internal/daemon` is EMPTY. Any non-empty internal diff is a failure (FR-012 / contract C-4).
-- [ ] T018 [P] Frozen-surface check: confirm `engine.Clock`, `engine.SystemClock`, `engine.WithClock`, `engine.NewEngine`, `eval.NewInterpreter`, `eval.Clock`, `eval.SystemClock` signatures are byte-unchanged; Store contract still 18 methods with the DOUBLE compile-lock at `src/internal/store/store.go:42-45` intact; ProcessRuntime still 8 methods in `src/internal/eval/runtime.go`; no new keyword / SE-code / eval-code / builtin / external dependency was added (grep / inspect; no `go.mod` change).
-- [ ] T019 Full gate: from `/Users/denis/dev/ladix/src` run `go build ./...`, `go vet ./...`, `go test ./...` — all green (incl. new `clock_unify_test.go` and the serve golden). `gofmt` clean on changed files.
-- [ ] T020 [P] Docs/anchor cross-check: confirm the implemented recipe matches `docs/reliability-model.md` §C-4.2 (shared adapter + per-command assembly), §C-4.3 (test-locks present), §C-4.4 (no monotonic clocks introduced). Report any anchor↔code line drift in the PR notes (do not silently "fix" the anchor).
+- [X] T017 Boundary check — diff confinement: from `/Users/denis/dev/ladix` run `git diff --stat` and confirm EVERY changed path is under `src/cmd/ladix/`; then confirm `git diff -- src/internal/eval src/internal/engine src/internal/store src/internal/daemon` is EMPTY. Any non-empty internal diff is a failure (FR-012 / contract C-4).
+- [X] T018 [P] Frozen-surface check: confirm `engine.Clock`, `engine.SystemClock`, `engine.WithClock`, `engine.NewEngine`, `eval.NewInterpreter`, `eval.Clock`, `eval.SystemClock` signatures are byte-unchanged; Store contract still 18 methods with the DOUBLE compile-lock at `src/internal/store/store.go:42-45` intact; ProcessRuntime still 8 methods in `src/internal/eval/runtime.go`; no new keyword / SE-code / eval-code / builtin / external dependency was added (grep / inspect; no `go.mod` change).
+- [X] T019 Full gate: from `/Users/denis/dev/ladix/src` run `go build ./...`, `go vet ./...`, `go test ./...` — all green (incl. new `clock_unify_test.go` and the serve golden). `gofmt` clean on changed files.
+- [X] T020 [P] Docs/anchor cross-check: confirm the implemented recipe matches `docs/reliability-model.md` §C-4.2 (shared adapter + per-command assembly), §C-4.3 (test-locks present), §C-4.4 (no monotonic clocks introduced). Report any anchor↔code line drift in the PR notes (do not silently "fix" the anchor).
 
 ---
 
