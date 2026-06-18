@@ -141,3 +141,13 @@ description: "Task list — C2b Outbox-леджер и exactly-once достав
 | дедуп в 3 effect-методах независимо | **T013, T014, T015** |
 | мутпробы (pre-check / effect_index) | **T017, T018, T030** |
 | ProcessRuntime=8 / Store 16→18 / пустой дифф eval | **T026, T027, T028** |
+
+---
+
+## Analyze gate (speckit-analyze, read-only verdict)
+
+- 23 FR / 8 SC / 30 tasks. Coverage 100% (все 23 FR имеют ≥1 задачу). 0 CRITICAL, 0 HIGH, 0 duplication, 0 ambiguity.
+- Constitution 9/9 PASS.
+- Mandatory test-locks все покрыты: durable gate §C-2b.7 (T016, мутпроба T017); 3 fault-теста checkDeadlines §C-2b.8 (T020/T021/T022); двойной compile-замок (T007-T010); codec round-trip (T005); пример+MANIFEST+golden (T023-T025).
+- False-positives (зафиксированы, не блокеры): `store/errors.go` vs sentinel в `types.go:85-92` (анкор-шорткат §C-2b.6, учтён в research R-DRIFT-1 + T004); FR-012/FR-015 — структурные/документируемые границы, не пропуски покрытия.
+- DRIFT анкор↔репо (репорт, НЕ чинится в design): (1) sentinel в types.go, не errors.go; (2) минорные line-offsets §C-10 (ddl :23-66, pragmas :69-73, NewSQLiteStore закрывается :99, interface ends :40 / var block :42-45); (3) OutboxRecord/effectIndex/ErrOutboxNotFound отсутствуют сегодня — ожидаемо (C2b вводит).
