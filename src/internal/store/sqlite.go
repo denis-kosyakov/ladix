@@ -72,6 +72,37 @@ PRAGMA busy_timeout = 5000;
 PRAGMA foreign_keys = ON;
 `
 
+// Версии схемы постоянного хранилища (§C-2a, отзыв D-AU-9). Forward-only:
+// baselineVersion — это схема const ddl («006/007/018»), фиксируемая через
+// PRAGMA user_version; currentSchemaVersion — целевая версия после M3.
+// Инвариант (INV-R1): currentSchemaVersion == baselineVersion + len(schemaMigrations).
+const (
+	baselineVersion      = 1 // схема const ddl (instances/tasks/counters/trigger_state/events + индексы)
+	currentSchemaVersion = 2 // после миграции 1→2 (таблица outbox + индекс)
+)
+
+// schemaMigrations — упорядоченный реестр forward-only-шагов DDL. Элемент i
+// поднимает версию baselineVersion+i → baselineVersion+i+1. DDL ступени 1→2 —
+// дословно из §C-2a.3 (контракт формы таблицы с C2b); IF NOT EXISTS делает шаг
+// безопасным к повторному применению на уже-мигрированной БД.
+var schemaMigrations = []string{
+	// 1 → 2: outbox-леджер (§C-2b).
+	`CREATE TABLE IF NOT EXISTS outbox (
+        dedup_key    TEXT PRIMARY KEY,
+        instance_id  TEXT NOT NULL,
+        step_name    TEXT NOT NULL,
+        effect_index INTEGER NOT NULL,
+        kind         TEXT NOT NULL,
+        target       TEXT NOT NULL,
+        args_json    TEXT NOT NULL,
+        result_json  TEXT,
+        delivered    INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL,
+        delivered_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_outbox_instance ON outbox(instance_id, step_name);`,
+}
+
 // NewSQLiteStore открывает БД и ЯВНО исполняет PRAGMA + DDL (включая сид counters;
 // database/sql ленив — без явного Exec ошибка открытия не всплыла бы). Первая
 // ошибка возвращается наружу — это источник CLI-текста «не удалось открыть
@@ -92,6 +123,13 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, err
 	}
 	if _, err := db.Exec(ddl); err != nil {
+		db.Close()
+		return nil, err
+	}
+	// Forward-only миграции схемы (§C-2a, отзыв D-AU-9): const ddl создал базовую
+	// схему, migrate доводит её до currentSchemaVersion (применяет недостающие
+	// ступени поверх существующих данных, без сброса).
+	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -303,6 +341,52 @@ func (s *SQLiteStore) NextTaskID() (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("t-%06d", n), nil
+}
+
+// migrate приводит схему БД к currentSchemaVersion, применяя недостающие
+// forward-only-ступени из schemaMigrations поверх существующих данных (§C-2a,
+// отзыв D-AU-9). Образец транзакционности — nextCounter. Использует переданный
+// *sql.DB (то же единственное соединение, что у NewSQLiteStore; B-I3); второго
+// соединения не открывает.
+//
+// PRAGMA user_version нельзя биндить через `?` — значение версии подставляется
+// доверенной int-константой через fmt.Sprintf (внешнего ввода нет; B-I2). Шаг
+// DDL и бамп версии исполняются в одной транзакции — откат целиком при любой
+// ошибке внутри (B-I1; PRAGMA user_version транзакционен в SQLite).
+func migrate(db *sql.DB) error {
+	var v int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		return err
+	}
+	if v == 0 {
+		// Свежая ИЛИ до-версионная БД: const ddl уже создал схему baselineVersion.
+		// Нормализуем ноль к базе вне tx — допустимо, схема уже на месте (B-I/INV-V3).
+		v = baselineVersion
+		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, baselineVersion)); err != nil {
+			return err
+		}
+	}
+	target := baselineVersion + len(schemaMigrations)
+	for v < target {
+		stmt := schemaMigrations[v-baselineVersion] // ступень v → v+1
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(stmt); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, v+1)); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		v++
+	}
+	return nil
 }
 
 // nextCounter инкрементирует счётчик и читает новое значение в одной транзакции

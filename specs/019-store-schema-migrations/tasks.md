@@ -25,10 +25,10 @@ TestMigrateIdempotent + инверсионная мутпроба) и SC-004. Т
 
 ## Phase 1: Setup (инициализация фичи)
 
-- [ ] T001 Проверить предусловия среды: `cd src && go build ./...` зелёный на чистой ветке
+- [X] T001 Проверить предусловия среды: `cd src && go build ./...` зелёный на чистой ветке
   `019-store-schema-migrations` (baseline до изменений) в `src/`; зафиксировать, что
   `user_version`/`migrate`/`schemaMigrations` ОТСУТСТВУЮТ в `src/internal/store/` (grep → 0 совпадений).
-- [ ] T002 Свериться с якорем и контрактами: перечитать `specs/019-store-schema-migrations/research.md`,
+- [X] T002 Свериться с якорем и контрактами: перечитать `specs/019-store-schema-migrations/research.md`,
   `data-model.md`, `contracts/store-schema-migration.md` — зафиксировать точку встройки (после
   `db.Exec(ddl)`-блока, до `return` в `NewSQLiteStore`, `src/internal/store/sqlite.go`) и ДОСЛОВНЫЙ DDL
   ступени 1→2 (таблица `outbox` + индекс `idx_outbox_instance`).
@@ -42,7 +42,7 @@ TestMigrateIdempotent + инверсионная мутпроба) и SC-004. Т
 > Для этой фичи нет отдельной инфраструктуры до истории: весь каркас миграций И есть содержание истории
 > US1. Foundational сводится к подтверждению границ, чтобы не задеть смежные сущности.
 
-- [ ] T003 Подтвердить инварианты границ ПЕРЕД правкой кода (только проверка, без изменений):
+- [X] T003 Подтвердить инварианты границ ПЕРЕД правкой кода (только проверка, без изменений):
   контракт `Store` = 16 методов и двойной compile-замок в `src/internal/store/store.go` остаются
   нетронутыми; `src/internal/store/memory.go` (MemoryStore) НЕ меняется; `src/internal/store/types.go`
   (нет `OutboxRecord`) НЕ меняется. Это страховка FR-010/FR-011 — фиксируется как чек-лист задачи.
@@ -62,36 +62,36 @@ TestMigrateIdempotent + инверсионная мутпроба) и SC-004. Т
 
 ### Tests for User Story 1 (пишутся ПЕРВЫМИ, должны падать до реализации) ⚠️
 
-- [ ] T004 [P] [US1] Создать `src/internal/store/migrate_test.go` со скелетом + `TestMigrateFreshDB`:
+- [X] T004 [P] [US1] Создать `src/internal/store/migrate_test.go` со скелетом + `TestMigrateFreshDB`:
   открыть `NewSQLiteStore` на новом temp-файле (`t.TempDir()`); утверждать `PRAGMA user_version == 2`
   (через `db`-хэндл/повторное соединение к файлу) И существование таблицы `outbox`
   (`SELECT name FROM sqlite_master WHERE type='table' AND name='outbox'`). Контракт A1 · FR-001/FR-004 ·
   SC-001. (Падает до реализации — `outbox` нет, версия 0.)
-- [ ] T005 [US1] В `src/internal/store/migrate_test.go` добавить `TestMigrateLegacyV0`: вручную создать
+- [X] T005 [US1] В `src/internal/store/migrate_test.go` добавить `TestMigrateLegacyV0`: вручную создать
   файл БД, применить базовый `ddl` (или вставить через первый `NewSQLiteStore`), затем выставить
   `PRAGMA user_version = 0`, вставить экземпляр процесса и задачу (через store-методы `SaveInstance`/
   `SaveTask`); закрыть; открыть заново `NewSQLiteStore`; утверждать версия→2, `outbox` появилась,
   ранее вставленные инстанс+задача читаются без изменений (`LoadInstance`/`LoadTask`). Контракт A2 +
   G-A3 · FR-003/FR-008 · SC-002. (Зависит от T004 — тот же файл.)
-- [ ] T006 [US1] В `src/internal/store/migrate_test.go` добавить `TestMigrateIdempotent`: открыть
+- [X] T006 [US1] В `src/internal/store/migrate_test.go` добавить `TestMigrateIdempotent`: открыть
   `NewSQLiteStore` дважды на одном temp-файле; второе открытие — без ошибок; утверждать
   `user_version == 2` и что `outbox` не дублируется (один объект в `sqlite_master`). Контракт A4 +
   B-I4 · FR-007 · SC-003. (Зависит от T004 — тот же файл.)
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] В `src/internal/store/sqlite.go` добавить константы рядом с `const ddl`/`const pragmas`:
+- [X] T007 [US1] В `src/internal/store/sqlite.go` добавить константы рядом с `const ddl`/`const pragmas`:
   `const (baselineVersion = 1; currentSchemaVersion = 2)`. Инвариант согласованности
   `currentSchemaVersion == baselineVersion + len(schemaMigrations)` (data-model INV-R1). Контракт C.
-- [ ] T008 [US1] В `src/internal/store/sqlite.go` добавить `var schemaMigrations = []string{ … }` с
+- [X] T008 [US1] В `src/internal/store/sqlite.go` добавить `var schemaMigrations = []string{ … }` с
   ОДНИМ элементом — ступень 1→2, DDL `outbox`+индекс ДОСЛОВНО из
   `contracts/store-schema-migration.md` / `data-model.md` (без отклонений). FR-004. Контракт C.
-- [ ] T009 [US1] В `src/internal/store/sqlite.go` реализовать `func migrate(db *sql.DB) error` по
+- [X] T009 [US1] В `src/internal/store/sqlite.go` реализовать `func migrate(db *sql.DB) error` по
   алгоритму контракта B (по образцу `nextCounter`, sqlite.go:~308–328): прочитать `PRAGMA user_version`;
   нормализовать 0→`baselineVersion`; цикл `for v < target`: `db.Begin()` → `tx.Exec(stmt)` →
   `tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", v+1))` → `tx.Commit()` (Rollback при ошибке внутри).
   Значение версии через `fmt.Sprintf` (НЕ bind `?`). FR-005/FR-006 · B-I1/B-I2/B-I3.
-- [ ] T010 [US1] В `src/internal/store/sqlite.go` вставить вызов `migrate(db)` в `NewSQLiteStore` ПОСЛЕ
+- [X] T010 [US1] В `src/internal/store/sqlite.go` вставить вызов `migrate(db)` в `NewSQLiteStore` ПОСЛЕ
   блока `db.Exec(ddl)` и ДО `return &SQLiteStore{db: db}, nil`:
   `if err := migrate(db); err != nil { db.Close(); return nil, err }`. FR-009 · Контракт A (A5).
 
@@ -102,17 +102,17 @@ idempotent. MVP достигнут.
 
 ## Phase 4: Polish & Cross-Cutting (инверсия + гейт + границы)
 
-- [ ] T011 [US1] Инверсионная мутпроба (SC-004): временно удалить элемент `schemaMigrations` (или бамп
+- [X] T011 [US1] Инверсионная мутпроба (SC-004): временно удалить элемент `schemaMigrations` (или бамп
   версии) и убедиться, что `TestMigrateFreshDB` КРАСНЕЕТ (нет `outbox` / версия ≠ 2); вернуть код.
   Зафиксировать в комментарии теста/мутпробы, что замок реально кусает. Контракт G-A1/B-I1.
-- [ ] T012 Проверка границ диффа: `git diff --name-only` показывает изменения ТОЛЬКО в
+- [X] T012 Проверка границ диффа: `git diff --name-only` показывает изменения ТОЛЬКО в
   `src/internal/store/sqlite.go` и новый `src/internal/store/migrate_test.go`; дифф
   `src/internal/eval`, `src/internal/engine`, `src/cmd/ladix`, `src/internal/daemon` ПУСТОЙ; 0 новых
   зависимостей (`go.mod`/`go.sum` без изменений). FR-012/FR-013 · SC-005.
-- [ ] T013 Подтвердить неизменность контракта: `src/internal/store/store.go` (16 методов + двойной
+- [X] T013 Подтвердить неизменность контракта: `src/internal/store/store.go` (16 методов + двойной
   compile-замок), `src/internal/store/memory.go`, `src/internal/store/types.go` — БЕЗ изменений
   (`git diff` пуст для них). FR-010/FR-011.
-- [ ] T014 Финальный гейт: `cd src && go build ./... && go vet ./... && gofmt -l . && go test ./...` —
+- [X] T014 Финальный гейт: `cd src && go build ./... && go vet ./... && gofmt -l . && go test ./...` —
   всё зелёное, `gofmt -l` пустой вывод, все тесты пакета `store` проходят. SC-006.
 
 ---
