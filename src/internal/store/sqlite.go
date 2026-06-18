@@ -81,10 +81,26 @@ const (
 	currentSchemaVersion = 2 // после миграции 1→2 (таблица outbox + индекс)
 )
 
+// init форсирует INV-R1: currentSchemaVersion должна РОВНО соответствовать длине
+// реестра ступеней. Без этого гарда новый шаг в schemaMigrations без бампа
+// currentSchemaVersion (или наоборот) прошёл бы молча — дрейф между «целевой
+// версией» и фактическим числом ступеней. Панику ловит любой запуск/тест на старте
+// процесса (дешёвый старт-чек, не горячий путь).
+func init() {
+	if want := baselineVersion + len(schemaMigrations); currentSchemaVersion != want {
+		panic(fmt.Sprintf(
+			"store: нарушен INV-R1: currentSchemaVersion=%d, но baselineVersion+len(schemaMigrations)=%d",
+			currentSchemaVersion, want))
+	}
+}
+
 // schemaMigrations — упорядоченный реестр forward-only-шагов DDL. Элемент i
 // поднимает версию baselineVersion+i → baselineVersion+i+1. DDL ступени 1→2 —
-// дословно из §C-2a.3 (контракт формы таблицы с C2b); IF NOT EXISTS делает шаг
-// безопасным к повторному применению на уже-мигрированной БД.
+// дословно из §C-2a.3 (контракт формы таблицы с C2b). Айдемпотентность повторного
+// открытия обеспечивает ЕДИНСТВЕННО версионный гард `for v < target` в migrate:
+// при user_version=currentSchemaVersion тело цикла не исполняется, и ни один шаг
+// не доходит до повторного Exec. `IF NOT EXISTS` здесь — defense-in-depth (на
+// случай несогласованного stale-version-с-таблицей), НЕ основной механизм.
 var schemaMigrations = []string{
 	// 1 → 2: outbox-леджер (§C-2b).
 	`CREATE TABLE IF NOT EXISTS outbox (
@@ -366,7 +382,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
-	target := baselineVersion + len(schemaMigrations)
+	// target — целевая версия из загруженной (load-bearing) const; init() гарантирует
+	// её равенство baselineVersion+len(schemaMigrations) (INV-R1). Версионный гард
+	// `for v < target` — ЕДИНСТВЕННЫЙ айдемпотентный механизм: на уже-мигрированной БД
+	// (v==target) тело не исполняется, повторного применения шага нет.
+	target := currentSchemaVersion
 	for v < target {
 		stmt := schemaMigrations[v-baselineVersion] // ступень v → v+1
 		tx, err := db.Begin()

@@ -68,10 +68,12 @@ func TestMigrateFreshDB(t *testing.T) {
 	}
 }
 
-// TestMigrateLegacyV0 (контракт A2 + G-A3 · FR-003/FR-008 · SC-002): база с
-// базовыми таблицами, данными и user_version=0 (до-версионная) при повторном
-// открытии поднимается до версии 2, outbox появляется, а ранее записанные данные
-// (инстанс + задача) сохраняются без изменений (отзыв D-AU-9: НЕ сброс схемы).
+// TestMigrateLegacyV0 (контракт A2 + G-A3 · FR-003/FR-008 · SC-002): настоящая
+// до-версионная БД — базовые таблицы + ДАННЫЕ присутствуют, outbox ОТСУТСТВУЕТ,
+// user_version=0. При повторном открытии: (a) данные целы (data-intact), (b) outbox
+// создана из отсутствия и запрашиваема (created-from-absence), (c) user_version==2.
+// Замок мутационно-плотный: краснеет, если миграцию 1→2 убрать ИЛИ она не создаст
+// outbox — независимо от IF NOT EXISTS (отзыв D-AU-9: НЕ сброс схемы).
 func TestMigrateLegacyV0(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 
@@ -105,12 +107,24 @@ func TestMigrateLegacyV0(t *testing.T) {
 		t.Fatalf("SaveTask: %v", err)
 	}
 
-	// Сбросить версию в 0 — имитируем до-версионную БД (M2-эра без user_version).
+	// Имитируем настоящую до-версионную БД (M2-эра без user_version): базовые таблицы
+	// и ДАННЫЕ есть, но outbox физически ОТСУТСТВУЕТ, а user_version=0. DROP TABLE
+	// outbox делает шаг 1→2 «создающим из отсутствия» — мутационно-плотно: тест
+	// КРАСНЕЕТ, если миграция 1→2 убрана или не создаёт outbox, НЕЗАВИСИМО от
+	// IF NOT EXISTS (на чистом CREATE поведение то же).
 	if _, err := st.db.Exec(`PRAGMA user_version = 0`); err != nil {
 		t.Fatalf("reset user_version: %v", err)
 	}
+	if _, err := st.db.Exec(`DROP TABLE IF EXISTS outbox`); err != nil {
+		t.Fatalf("drop outbox: %v", err)
+	}
 	if err := st.Close(); err != nil {
 		t.Fatalf("close: %v", err)
+	}
+
+	// Санити: outbox действительно отсутствует ДО повторного открытия.
+	if got := countTables(t, path, "outbox"); got != 0 {
+		t.Fatalf("precondition: outbox count = %d, want 0 (table must be absent)", got)
 	}
 
 	// Повторное открытие — миграция 0→1→2.
@@ -120,14 +134,20 @@ func TestMigrateLegacyV0(t *testing.T) {
 	}
 	defer st2.Close()
 
+	// (c) версия поднялась до 2.
 	if got := readUserVersion(t, path); got != 2 {
 		t.Errorf("user_version after reopen = %d, want 2", got)
 	}
+	// (b) outbox создана из отсутствия и реально запрашиваема (SELECT, не только
+	// присутствие в sqlite_master).
 	if got := countTables(t, path, "outbox"); got != 1 {
-		t.Errorf("outbox table count = %d, want 1", got)
+		t.Errorf("outbox table count = %d, want 1 (created from absence)", got)
+	}
+	if err := st2.db.QueryRow(`SELECT count(*) FROM outbox`).Scan(new(int)); err != nil {
+		t.Fatalf("outbox not queryable after migrate: %v", err)
 	}
 
-	// Данные базовых таблиц целы (G-A3 / FR-008).
+	// (a) данные базовых таблиц целы (G-A3 / FR-008).
 	gotInst, err := st2.LoadInstance("p-000001")
 	if err != nil {
 		t.Fatalf("LoadInstance after migrate: %v", err)
@@ -172,5 +192,16 @@ func TestMigrateIdempotent(t *testing.T) {
 	}
 	if got := countTables(t, path, "outbox"); got != 1 {
 		t.Errorf("outbox table count = %d, want 1 (no duplicate)", got)
+	}
+}
+
+// TestSchemaVersionInvariant (INV-R1): const currentSchemaVersion обязана РОВНО
+// равняться производной от реестра версии baselineVersion+len(schemaMigrations).
+// Этот замок краснеет при молчаливом дрейфе (шаг добавлен/убран без бампа const),
+// дублируя в тесте старт-чек init() в sqlite.go (который иначе паникует при запуске).
+func TestSchemaVersionInvariant(t *testing.T) {
+	if want := baselineVersion + len(schemaMigrations); currentSchemaVersion != want {
+		t.Errorf("INV-R1 нарушен: currentSchemaVersion=%d, baselineVersion+len(schemaMigrations)=%d",
+			currentSchemaVersion, want)
 	}
 }
