@@ -102,6 +102,7 @@ type Task struct {
     Status      TaskStatus
     CreatedAt   time.Time
     CompletedAt *time.Time // nil, пока открыта; выставляет MarkTaskCompleted (D-12)
+    Escalated   bool       // задача уже эскалирована — durable, одноразово (016 B4b, D-AU-5)
 }
 ```
 
@@ -512,6 +513,7 @@ tick():
   1. drainEvents()       # разобрать накопленную очередь events (EM-17.3)
   2. evalMetrics()       # переоценить все метрика-триггеры, детект перехода (EM-17.2)
   3. checkSchedules()    # проверить все расписание-триггеры (EM-17.4)
+  4. checkDeadlines()    # эскалация просроченных задач (016 B4b; automation-model.md §AU-6.2)
 ```
 
 Каждый сработавший триггер исполняет своё тело (EM-17.5). Триггеры одного вида обрабатываются в
