@@ -4,6 +4,7 @@ import (
 	stderrors "errors"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
+	"github.com/denis-kosyakov/ladix/internal/eval"
 	"github.com/denis-kosyakov/ladix/internal/store"
 )
 
@@ -36,7 +37,7 @@ func (d *Daemon) evalMetrics() {
 		}
 		id := triggerID(idx)
 
-		cur, snapshot, computable, err := d.interp.EvalMetricCondition(spec)
+		cur, snapshot, threshold, computable, err := d.interp.EvalMetricCondition(spec)
 		if err != nil {
 			// Нештатная невычислимость (цикл метрик/сбой загрузки): логируем и
 			// замораживаем — тик не падает (Принцип III, FR-009 трактовка).
@@ -80,6 +81,11 @@ func (d *Daemon) evalMetrics() {
 		}
 
 		if fired {
+			// ALWAYS-ON explain «почему» (§C-5, D-C-6): печатаем при фронте ложь→истина
+			// (ТОЛЬКО при fired — на тике уже-истина ребра нет, строки нет, FR-008) через
+			// d.logf ДО safeFire/тела. serve = edge ⇒ маркер «(ребро ложь→истина)»
+			// (withEdge=true). Единый ExplainFire — формат совпадает с run.
+			d.logf("%s", eval.ExplainFire(spec.Metric.Name, spec.Op, snapshot, threshold, true))
 			body := td.Body
 			d.safeFire(func() error {
 				return d.fireBody(body, injection{name: valueName, val: snapshot})

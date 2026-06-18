@@ -28,27 +28,32 @@ import (
 //
 // Метод над полями интерпретатора (Принцип V — без глобального состояния);
 // синхронизация при разделении с горутиной демона — забота демона (d.mu вокруг тика).
-func (i *Interpreter) EvalMetricCondition(spec *ast.MetricTrigger) (cur bool, snapshot value.Value, ok bool, err error) {
+//   - threshold — снимок ВЫЧИСЛЕННОГО порога (§C-5: serve-explain печатает его при
+//     срабатывании). Тоталь: возвращается во ВСЕХ ветках; при невычислимости
+//     (пустая метрика / несравнимые типы / ошибка) → value.None, т.к. explain тогда
+//     не печатается (тело не исполняется, FR-009). Только наблюдаемость — порог в
+//     поведение тика не входит (детерминизм: зависит лишь от spec и i.global).
+func (i *Interpreter) EvalMetricCondition(spec *ast.MetricTrigger) (cur bool, snapshot value.Value, threshold value.Value, ok bool, err error) {
 	metricVal, err := i.evalMetricByName(spec.Metric.Name, spec.Metric.Pos())
 	if err != nil {
-		return false, nil, false, err
+		return false, nil, value.None, false, err
 	}
 	// Метрика пуста (агрегат над пустым множеством) → сравнение бессмысленно:
 	// заморозка (§TR-?, FR-009). Не ошибка — штатное «нет данных на этом тике».
 	if _, empty := metricVal.(value.Пусто); empty {
-		return false, metricVal, false, nil
+		return false, metricVal, value.None, false, nil
 	}
 	threshVal, err := i.evalExpr(i.global, spec.Threshold)
 	if err != nil {
-		return false, nil, false, err
+		return false, nil, value.None, false, err
 	}
 	fired, cmpErr := i.compareValues(spec.Metric.Pos(), ast.BinOp(spec.Op), metricVal, threshVal)
 	if cmpErr != nil {
 		// Сравнение не дало Булево (несравнимые типы / ОшибкаТипа) → заморозка, не
 		// падение тика (FR-009). Ошибку наверх не несём: это ожидаемая невычислимость.
-		return false, metricVal, false, nil
+		return false, metricVal, value.None, false, nil
 	}
-	return fired, metricVal, true, nil
+	return fired, metricVal, threshVal, true, nil
 }
 
 // NewTriggerBodyEnv создаёт локальную область для исполнения тела триггера демоном
