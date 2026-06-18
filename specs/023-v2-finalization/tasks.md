@@ -174,9 +174,9 @@ golden'ы старта/инспекции/часов — все зелёные �
       ./internal/daemon/ -run TestM2GoldenEndToEnd` из `src/`. **Критерий приёмки** (FR-011): зелёный,
       файл НЕ переписан (дифф пуст).
 - [ ] T010 [P] [US4] Верифицировать терминальный гейт `TestStepEffectExactlyOnceRestart`
-      (`src/internal/engine/`) — реальный эффект доставлен ровно один раз через рестарт демона: `go test
-      ./internal/engine/ -run TestStepEffectExactlyOnceRestart` из `src/`. **Критерий приёмки** (FR-011):
-      зелёный, файл НЕ переписан.
+      (`src/cmd/ladix/outbox_exactly_once_test.go`, package main) — реальный эффект доставлен ровно один
+      раз через рестарт демона: `go test ./cmd/ladix/ -run TestStepEffectExactlyOnceRestart` из `src/`.
+      **Критерий приёмки** (FR-011): зелёный, файл НЕ переписан.
 - [ ] T011 [P] [US4] Верифицировать соседние golden'ы старта и инспекции без правок: `go test
       ./cmd/ladix/ -run 'TestStartGolden|TestInspectGolden'` (`src/cmd/ladix/start_golden_test.go`,
       `inspect_golden_test.go`). **Критерий приёмки** (FR-012): зелёные без правок (инстанцируют процесс по
@@ -204,8 +204,9 @@ golden'ы старта/инспекции/часов — все зелёные �
       печатает; рабочее дерево чистое — сборочный бинарь (`src/ladix`) и файлы БД не закоммичены
       (`.gitignore`).
 - [ ] T014 Верифицировать сохранность несущих швов (FR-015, SC-008): прогнать compile-замки `go test
-      ./internal/engine/ -run TestProcessRuntimeMethodCount` (`payload_invariants_test.go:14` — РОВНО 8) и
-      `go test ./internal/store/ -run` codec-замок (`escalated_codec_test.go:134` — `wantMethods = 18`).
+      ./internal/engine/ -run TestProcessRuntimeStays8` (`payload_invariants_test.go:16` — РОВНО 8) и
+      `go test ./internal/store/ -run TestStoreMethodCount18` codec-замок (`escalated_codec_test.go:129` —
+      `wantMethods = 18`).
       **Критерий приёмки**: `ProcessRuntime` = 8 / `Store` = 18 целы; прод-дифф пуст в `internal/eval`,
       `internal/engine` (не-тесты), `internal/store`, `internal/daemon` (не-тесты), не-тестовый CLI-код;
       0 новых KW/кодов/builtins/зависимостей.
@@ -261,7 +262,7 @@ golden'ы старта/инспекции/часов — все зелёные �
 ```bash
 # Из src/ — терминальные гейты и соседние golden'ы параллельно (verify-only):
 go test ./internal/daemon/ -run TestM2GoldenEndToEnd          # T009
-go test ./internal/engine/ -run TestStepEffectExactlyOnceRestart  # T010
+go test ./cmd/ladix/ -run TestStepEffectExactlyOnceRestart  # T010
 go test ./cmd/ladix/ -run 'TestStartGolden|TestInspectGolden'     # T011
 ```
 
