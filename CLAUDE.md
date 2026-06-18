@@ -1,6 +1,15 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
+specs/019-store-schema-migrations/plan.md (фича 019-store-schema-migrations — M3 «Надёжность» пункт
+C2a: forward-only каркас миграций схемы Store, отзыв D-AU-9. PRAGMA user_version; baselineVersion=1
+(«схема 006/007/018»), currentSchemaVersion=2; migrate(db) в NewSQLiteStore между db.Exec(ddl) и
+return; реестр schemaMigrations со ступенью 1→2 = CREATE TABLE outbox + индекс idx_outbox_instance
+(DDL дословно §C-2a.3); шаг+бамп user_version атомарны в одной транзакции (шаблон nextCounter).
+ГРАНИЦЫ: создаётся только таблица outbox; Go-методы LoadOutbox/SaveOutbox и Store 16→18 — это C2b, НЕ
+здесь; контракт Store=16, двойной compile-замок не меняется; MemoryStore без миграций. Дифф строго в
+src/internal/store/; ПУСТОЙ дифф eval/engine/cmd/daemon; 0 новых зависимостей; детерминизм. Якорь —
+docs/reliability-model.md §C-2a. Constitution 9/9 PASS. Предыдущая фича M-DX 012 — в
 specs/012-mdx-diagnostics/plan.md (фича 012-mdx-diagnostics — веха M-DX «Диагностика и
 восстановление парсера», фронтенд v2 после M1, БЕЗ новой языковой функциональности. Две независимые
 US. US1 (P1) DX1 — подавление фантомного каскада: ведущее sync-lead ключевое слово в позиции
@@ -23,7 +32,7 @@ plan.md; Триггеры 007a — в specs/007a-trigger-frontend/plan.md; дв�
 процессов 006 — в specs/006-process-engine/plan.md; фронтенд процессов 005 — в
 specs/005-process-frontend/plan.md; декларативный слой 004 — в specs/004-source-metric/plan.md;
 интерпретатор 003 — в specs/003-interpreter-eval/plan.md; парсер+AST 002 — в
-specs/002-parser-ast/plan.md; лексер 001 — в specs/001-lexer-tokens/plan.md).
+specs/002-parser-ast/plan.md; лексер 001 — в specs/001-lexer-tokens/plan.md)).
 <!-- SPECKIT END -->
 
 ## Контекст основного потока ≤20%
