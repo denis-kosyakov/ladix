@@ -44,6 +44,9 @@ ladix.db
 # ladix pipeline ledger (009 finalization — не коммитить)
 .ladix-pipeline/
 
+# M3 reliability train run-ledger (не коммитить)
+.m3-ledger/
+
 # Rust
 target/
 
