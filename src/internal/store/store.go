@@ -37,9 +37,16 @@ type Store interface {
 	// ListTasksByInstance — открытые И завершённые задачи инстанса, порядок ID ASC
 	// (read-only; не найден/без задач → []/nil, error==nil). Источник истории для inspect.
 	ListTasksByInstance(instanceID string) ([]*Task, error)
+
+	// --- outbox-леджер exactly-once (M3-C2b, аддитивно §C-2b.6 16→18) ---
+	// Зеркалят LoadTriggerState/SaveTriggerState. Сериализация — внутри SQLiteStore.
+	LoadOutbox(dedupKey string) (*OutboxRecord, error) // не найдено → ErrOutboxNotFound
+	SaveOutbox(rec *OutboxRecord) error                // upsert по dedup_key
 }
 
-// Проверки соответствия реализаций контракту (compile-time).
+// Проверки соответствия реализаций контракту (compile-time, ДВОЙНОЙ замок). Обе
+// реализации обязаны иметь все 18 методов (вкл. LoadOutbox/SaveOutbox, M3-C2b);
+// отсутствие любого в любой impl ломает go build — это и есть compile-замок.
 var (
 	_ Store = (*MemoryStore)(nil)
 	_ Store = (*SQLiteStore)(nil)

@@ -24,6 +24,7 @@ type MemoryStore struct {
 	tasks        map[string]*Task
 	triggerState map[string]*TriggerState // 007b: ключ TriggerID
 	events       []*Event                 // 007b: FIFO-срез (порядок = порядок Enqueue ≈ CreatedAt)
+	outbox       map[string]*OutboxRecord // M3-C2b: ключ DedupKey; эфемерный леджер дедупа
 	instSeq      int64
 	taskSeq      int64
 	eventSeq     int64 // 007b: счётчик e-NNNNNN
@@ -35,6 +36,7 @@ func NewMemoryStore() *MemoryStore {
 		instances:    make(map[string]*ProcessInstance),
 		tasks:        make(map[string]*Task),
 		triggerState: make(map[string]*TriggerState),
+		outbox:       make(map[string]*OutboxRecord),
 	}
 }
 
@@ -155,6 +157,25 @@ func (s *MemoryStore) SaveTriggerState(ts *TriggerState) error {
 	return nil
 }
 
+// --- outbox-леджер (M3-C2b, аддитивно; эфемерный — дедуп процесса-жизни) ---
+
+func (s *MemoryStore) LoadOutbox(dedupKey string) (*OutboxRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.outbox[dedupKey]
+	if !ok {
+		return nil, ErrOutboxNotFound
+	}
+	return copyOutboxRecord(rec), nil
+}
+
+func (s *MemoryStore) SaveOutbox(rec *OutboxRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.outbox[rec.DedupKey] = copyOutboxRecord(rec)
+	return nil
+}
+
 func (s *MemoryStore) NextEventID() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -268,6 +289,22 @@ func copyTask(t *Task) *Task {
 	if t.CompletedAt != nil {
 		c := *t.CompletedAt
 		cp.CompletedAt = &c
+	}
+	return &cp
+}
+
+// copyOutboxRecord — глубокая копия записи леджера (M3-C2b): новый срез Args
+// (значения value.Value делятся ссылочно — паритет copyInstance/Variables) и новый
+// указатель DeliveredAt, чтобы мутация значений/времён в движке не протекла в леджер.
+func copyOutboxRecord(rec *OutboxRecord) *OutboxRecord {
+	cp := *rec
+	if rec.Args != nil {
+		cp.Args = make([]value.Value, len(rec.Args))
+		copy(cp.Args, rec.Args)
+	}
+	if rec.DeliveredAt != nil {
+		d := *rec.DeliveredAt
+		cp.DeliveredAt = &d
 	}
 	return &cp
 }
