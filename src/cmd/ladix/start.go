@@ -26,7 +26,10 @@ import (
 // argv → openStore → caller → сборка стека → СВЕРКА АРНОСТИ/неизв.процесс ДО
 // eng.Start (иначе движок даёт др. текст «не найден в определении» engine.go:69, не
 // §AU-10) → eng.Start (печатает [задача]-строки сам) → «запущен инстанс <id>».
-func startMain(rest []string, stdout, stderr io.Writer) int {
+// clock — единые часы пути (C4 §C-4.2, прод engine.SystemClock{}): дата метрик
+// интерпретатора (через evalClockFromEngine) и lifecycle-штампы движка (WithClock)
+// берутся ОТ ОДНИХ И ТЕХ ЖЕ часов (тест — fixedClock).
+func startMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) int {
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := defaultDBPath // §AU-9/D-AU-10: дефолт SQLite ladix.db (НЕ Memory)
 	webhook := ""
@@ -130,12 +133,13 @@ func startMain(rest []string, stdout, stderr io.Writer) int {
 	}
 
 	return guard(stderr, func() int {
-		interp := eval.NewInterpreter(stdout, maxDepth, eval.SystemClock{})
+		interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
 		if err := interp.Analyze(prog); err != nil {
 			fmt.Fprintln(stderr, err.Error())
 			return 1 // семпроход (§SM-9.A) — компиляция обязана пройти чисто
 		}
-		eng := engine.NewEngine(st, interp, stdout, withExternalCallerOpt(caller)...)
+		// engine.WithClock(clock) — те же часы, что и у интерпретатора (C4 §C-4.2).
+		eng := engine.NewEngine(st, interp, stdout, append([]engine.Option{engine.WithClock(clock)}, withExternalCallerOpt(caller)...)...)
 		interp.SetProcessRuntime(eng)
 
 		// СВЕРКА ДО engine.Start (data-model §2, §AU-7.3): CLI формирует §AU-10-тексты

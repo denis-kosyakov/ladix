@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/denis-kosyakov/ladix/internal/engine"
+	"github.com/denis-kosyakov/ladix/internal/eval"
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
@@ -25,4 +26,19 @@ type evalClockFromEngine struct{ c engine.Clock }
 func (a evalClockFromEngine) Now() value.Дата {
 	t := a.c.Now().In(time.Local)
 	return value.Дата{Year: t.Year(), Month: int(t.Month()), Day: t.Day()}
+}
+
+// engineClockFromEval адаптирует дневные часы интерпретатора (eval.Clock,
+// value.Дата) к часам движка (engine.Clock, time.Time): возвращает полночь
+// указанной даты в Local. Нужен ТОЛЬКО пути metric (C4 §C-4.1/T009), где
+// инъектируемы лишь eval-часы (runMetric(clock eval.Clock)), а движку нужны
+// ТЕ ЖЕ часы через engine.WithClock — чтобы при будущем lifecycle-штампе на
+// metric-пути «сейчас» не уехало в независимый реал-тайм (эффект латентный,
+// §R5). Значение-обёртка без состояния (Принцип V).
+type engineClockFromEval struct{ c eval.Clock }
+
+// Now возвращает полночь даты eval-часов в локальной зоне.
+func (a engineClockFromEval) Now() time.Time {
+	d := a.c.Now()
+	return time.Date(d.Year, time.Month(d.Month), d.Day, 0, 0, 0, 0, time.Local)
 }

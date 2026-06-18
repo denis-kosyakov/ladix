@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/denis-kosyakov/ladix/internal/engine"
 	"github.com/denis-kosyakov/ladix/internal/store"
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
@@ -92,7 +93,7 @@ func TestStepEffectExactlyOnceRestart(t *testing.T) {
 	var co, ce bytes.Buffer
 	// complete провязывается с тем же webhook-драйвером (через openExternalCaller),
 	// чтобы реальный эффект crm в теле шага догона ушёл POST'ом на sink.
-	if code := completeTask(prog, "t-000001", db, 0, `{"итог":"перезвонит"}`, caller, &co, &ce); code != 0 {
+	if code := completeTask(prog, "t-000001", db, 0, `{"итог":"перезвонит"}`, caller, engine.SystemClock{}, &co, &ce); code != 0 {
 		t.Fatalf("complete --данные: код=%d stderr=%q out=%q", code, ce.String(), co.String())
 	}
 
