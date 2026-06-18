@@ -1,6 +1,21 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
+specs/021-unified-cli-clock/plan.md (фича 021-unified-cli-clock — M3 «Надёжность» пункт C4: единые
+часы во всех путях CLI, развилка §8 «двойные часы». ОДИН engine.Clock протягивается в run/start/
+complete/tasks/metric (сегодня — независимые реальные SystemClock в 2–3 точках на путь). Рецепт §C-4.2:
+ВЫНЕСТИ evalClockFromEngine из serve.go:32-38 в общий cmd/ladix/clock_adapter.go (то же поведение,
+serve не меняется); каждый builder принимает один clock engine.Clock (прод engine.SystemClock{});
+interp := eval.NewInterpreter(out, depth, evalClockFromEngine{clock}); eng := engine.NewEngine(st,
+interp, out, append([]engine.Option{engine.WithClock(clock)}, withExternalCallerOpt(caller)...)...);
+сводки/строки-задач «сейчас» = clock.Now(). metric ДОБИТЬ engine.WithClock (латентный эффект — для
+полноты). serve+emit НЕ ТРОГАТЬ (serve залочен serve_golden_test.go:216, fixedClock :21-23 компилится).
+Монотонные часы НЕ делать (§C-9/§C-4.4). ГРАНИЦЫ: дифф СТРОГО в src/cmd/ladix/; ПУСТОЙ дифф
+eval/engine/store/daemon (engine.Clock/WithClock сигнатуры байт-целы); Store 18 (ДВОЙНОЙ compile-замок)
+/ ProcessRuntime 8 целы; 0 новых KW/SE/eval-кодов/builtins/зависимостей; детерминизм. Тест-замки §C-4.3:
+FixedClock-инъекция в КАЖДЫЙ путь → детерминированный вывод; инверсия (возврат к реальным часам)
+краснит; serve-unchanged регресс-гард. Якорь — docs/reliability-model.md §C-4. Constitution 9/9 PASS.
+Предыдущая фича C2b 020 — в
 specs/020-outbox-exactly-once/plan.md (фича 020-outbox-exactly-once — M3 «Надёжность» пункт C2b:
 outbox-леджер идемпотентности + exactly-once доставка реального эффекта В ТЕЛЕ ШАГА процесса через
 рестарт демона (POST ровно 1). Store 16→18 АДДИТИВНО (ДВОЙНОЙ compile-замок store.go:44-45):
@@ -42,7 +57,7 @@ plan.md; Триггеры 007a — в specs/007a-trigger-frontend/plan.md; дв�
 процессов 006 — в specs/006-process-engine/plan.md; фронтенд процессов 005 — в
 specs/005-process-frontend/plan.md; декларативный слой 004 — в specs/004-source-metric/plan.md;
 интерпретатор 003 — в specs/003-interpreter-eval/plan.md; парсер+AST 002 — в
-specs/002-parser-ast/plan.md; лексер 001 — в specs/001-lexer-tokens/plan.md)).
+specs/002-parser-ast/plan.md; лексер 001 — в specs/001-lexer-tokens/plan.md))).
 <!-- SPECKIT END -->
 
 ## Контекст основного потока ≤20%
