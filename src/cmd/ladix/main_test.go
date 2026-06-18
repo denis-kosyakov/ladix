@@ -131,6 +131,10 @@ func TestRunOnboardingProcessDeferred(t *testing.T) {
 // НЕ исполняется — нет живого таймера, исполняет демон serve, B4b). Exit 0, id
 // детерминированы (свежий Store → p-000001/t-000001), маскируется только <время>
 // дедлайна (deadlineMaskRE, §EN-9). «задача»/«просрочена» остаются IDENT (D-AU-4).
+// M3-C2b: пример эволюционировал (+2 авто-шага догона зафиксировать_итог/уведомить_crm),
+// но stdout под `run` НЕ меняется — авто-шаги стоят ПОСЛЕ человеческого шага и
+// исполняются только в `serve` после `complete --данные` (под `run` процесс паркуется
+// на ожидающей задаче связаться_с_клиентом). Durable-гейт C2b — TestStepEffectExactlyOnceRestart.
 // 🔁 ИНВЕРСИЯ: пример сломан/тело начало исполняться/текст заглушки разошёлся → красный.
 func TestCLIGoldenDeadlineEscalation(t *testing.T) {
 	var out, errBuf bytes.Buffer

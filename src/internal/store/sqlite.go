@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/denis-kosyakov/ladix/internal/value"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -543,6 +545,113 @@ func (s *SQLiteStore) SaveTriggerState(ts *TriggerState) error {
 		ts.TriggerID, ts.Kind, nullableBool(ts.LastBool), nullableTime(ts.LastFire), nullableString(ts.LastFiredDate),
 	)
 	return err
+}
+
+// --- outbox-леджер (M3-C2b, аддитивно §C-2b.6). Таблица outbox создана миграцией
+// C2a (1→2) — здесь только чтение/запись. Сериализация ВНУТРИ store (eval не
+// импортирует store): Args → encodeValue(NewList(args)) (lossless через codec.go),
+// Result → encodeValue (None → tagged-Пусто blob, НЕ SQL NULL). ---
+
+func (s *SQLiteStore) LoadOutbox(dedupKey string) (*OutboxRecord, error) {
+	row := s.db.QueryRow(
+		`SELECT instance_id, step_name, effect_index, kind, target,
+		        args_json, result_json, delivered, created_at, delivered_at
+		 FROM outbox WHERE dedup_key = ?`, dedupKey)
+	var (
+		instanceID, stepName, kind, target string
+		effectIndex                        int
+		argsJSON, resultJSON, createdAt    string
+		delivered                          int
+		deliveredAt                        sql.NullString
+	)
+	if err := row.Scan(&instanceID, &stepName, &effectIndex, &kind, &target,
+		&argsJSON, &resultJSON, &delivered, &createdAt, &deliveredAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrOutboxNotFound
+		}
+		return nil, err
+	}
+	args, err := decodeOutboxArgs(argsJSON)
+	if err != nil {
+		return nil, err
+	}
+	result, err := decodeValue([]byte(resultJSON))
+	if err != nil {
+		return nil, err
+	}
+	created, err := parseTime(createdAt)
+	if err != nil {
+		return nil, err
+	}
+	rec := &OutboxRecord{
+		DedupKey:    dedupKey,
+		InstanceID:  instanceID,
+		StepName:    stepName,
+		EffectIndex: effectIndex,
+		Kind:        kind,
+		Target:      target,
+		Args:        args,
+		Result:      result,
+		Delivered:   delivered != 0,
+		CreatedAt:   created,
+	}
+	if deliveredAt.Valid {
+		d, err := parseTime(deliveredAt.String)
+		if err != nil {
+			return nil, err
+		}
+		rec.DeliveredAt = &d
+	}
+	return rec, nil
+}
+
+func (s *SQLiteStore) SaveOutbox(rec *OutboxRecord) error {
+	argsJSON, err := encodeValue(value.NewList(rec.Args))
+	if err != nil {
+		return err
+	}
+	resultJSON, err := encodeValue(rec.Result)
+	if err != nil {
+		return err
+	}
+	delivered := 0
+	if rec.Delivered {
+		delivered = 1
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO outbox (dedup_key, instance_id, step_name, effect_index, kind, target,
+		                     args_json, result_json, delivered, created_at, delivered_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(dedup_key) DO UPDATE SET
+		   instance_id  = excluded.instance_id,
+		   step_name    = excluded.step_name,
+		   effect_index = excluded.effect_index,
+		   kind         = excluded.kind,
+		   target       = excluded.target,
+		   args_json    = excluded.args_json,
+		   result_json  = excluded.result_json,
+		   delivered    = excluded.delivered,
+		   created_at   = excluded.created_at,
+		   delivered_at = excluded.delivered_at`,
+		rec.DedupKey, rec.InstanceID, rec.StepName, rec.EffectIndex, rec.Kind, rec.Target,
+		string(argsJSON), string(resultJSON), delivered,
+		rec.CreatedAt.Format(time.RFC3339), nullableTime(rec.DeliveredAt),
+	)
+	return err
+}
+
+// decodeOutboxArgs разворачивает args_json (tagged-Список) в []value.Value.
+// Зеркало encodeValue(value.NewList(args)) в SaveOutbox.
+func decodeOutboxArgs(argsJSON string) ([]value.Value, error) {
+	v, err := decodeValue([]byte(argsJSON))
+	if err != nil {
+		return nil, err
+	}
+	lst, ok := v.(value.Список)
+	if !ok {
+		return nil, fmt.Errorf("кодек: args_json ожидал Список, получено %T", v)
+	}
+	return *lst.Elems, nil
 }
 
 func (s *SQLiteStore) NextEventID() (string, error) {

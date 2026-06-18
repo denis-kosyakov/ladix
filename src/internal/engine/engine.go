@@ -31,6 +31,12 @@ const payloadName = "данные"
 type activeFrame struct {
 	inst       *store.ProcessInstance
 	processEnv *eval.Environment
+	// effectIndex — порядковый № эффекта («вызвать»/«уведомить») в теле ТЕКУЩЕЙ
+	// итерации шага (M3-C2b, §C-2b.4). Сброс в 0 в начале каждой итерации advance
+	// (перед телом); инкремент в каждом effect-методе при len(e.active)>0. Ключ
+	// дедупа (inst.ID, CurrentStep, effectIndex) детерминирован порядком исполнения
+	// тела → на рестарте тот же эффект = тот же индекс = тот же ключ (exactly-once).
+	effectIndex int
 }
 
 // Engine — движок исполнения процессов над Store и интерпретатором (§EN-3).
@@ -269,6 +275,10 @@ func (e *Engine) advance(inst *store.ProcessInstance, data value.Запись) e
 		if err := e.save(inst); err != nil {
 			return err
 		}
+		// Сброс счётчика эффектов в начале каждой итерации шага (M3-C2b, §C-2b.4):
+		// тело текущего шага начнёт нумерацию эффектов с 0 → ключ дедупа детерминирован
+		// порядком исполнения тела, воспроизводим на рестарте (exactly-once).
+		frame.effectIndex = 0
 		stepEnv := eval.NewEnvironment(processEnv)
 		// payload «данные» инжектится в ПЕР-ШАГ stepEnv (НЕ processEnv — иначе пережил
 		// бы догон через персист Variables, нарушив эфемерность §AU-5.3). Read-only:

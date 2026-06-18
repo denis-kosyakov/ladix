@@ -80,6 +80,25 @@ type Event struct {
 	Processed   bool      // false=в очереди; true=обработано/отброшено (FR-017)
 }
 
+// OutboxRecord — durable-запись доставленного (или диспатчимого) эффекта тела шага
+// (M3-C2b, §C-2b.6). Леджер идемпотентности (НЕ очередь, D-C-8): консультируется при
+// dispatch'е эффекта тела шага по ключу (instance_id, step_name, effect_index).
+// Value-ориентирована (INV-2): []value.Value/value.Value лежат как есть в MemoryStore,
+// type-tagged JSON — ВНУТРИ SQLiteStore (eval/engine не сериализуют).
+type OutboxRecord struct {
+	DedupKey    string        // "<instanceID>|<stepName>|<effectIndex>" — PRIMARY KEY
+	InstanceID  string        // инстанс процесса
+	StepName    string        // имя шага (= inst.CurrentStep в момент тела)
+	EffectIndex int           // порядковый № эффекта в теле шага, от 0
+	Kind        string        // "вызвать" | "уведомить"
+	Target      string        // цель эффекта (имя внешней системы)
+	Args        []value.Value // аргументы эффекта; сериализуются type-tagged внутри SQLiteStore
+	Result      value.Value   // вызвать → результат; уведомить/statement → value.None
+	Delivered   bool          // true после успешной доставки + персиста
+	CreatedAt   time.Time     // штамп создания записи (часы движка)
+	DeliveredAt *time.Time    // штамп доставки (nil до доставки)
+}
+
 // Сентинелы Store (D-3, §EN-2). Английские: наружу не печатаются, транслируются
 // в русские тексты §EN-8.B на CLI-слое.
 var (
@@ -90,4 +109,8 @@ var (
 	// регистрация, EM-17.2, 007b). Зеркало ErrInstanceNotFound/ErrTaskNotFound;
 	// развёртка через errors.Is.
 	ErrTriggerStateNotFound = errors.New("trigger state not found")
+	// ErrOutboxNotFound — LoadOutbox не нашёл запись по dedup-ключу (M3-C2b,
+	// §C-2b.6). Зеркало ErrTriggerStateNotFound; развёртка через errors.Is.
+	// (research R-DRIFT-1: отдельного store/errors.go нет — sentinel'ы живут здесь.)
+	ErrOutboxNotFound = errors.New("outbox record not found")
 )

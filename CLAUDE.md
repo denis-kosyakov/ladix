@@ -1,15 +1,25 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-specs/019-store-schema-migrations/plan.md (фича 019-store-schema-migrations — M3 «Надёжность» пункт
-C2a: forward-only каркас миграций схемы Store, отзыв D-AU-9. PRAGMA user_version; baselineVersion=1
-(«схема 006/007/018»), currentSchemaVersion=2; migrate(db) в NewSQLiteStore между db.Exec(ddl) и
-return; реестр schemaMigrations со ступенью 1→2 = CREATE TABLE outbox + индекс idx_outbox_instance
-(DDL дословно §C-2a.3); шаг+бамп user_version атомарны в одной транзакции (шаблон nextCounter).
-ГРАНИЦЫ: создаётся только таблица outbox; Go-методы LoadOutbox/SaveOutbox и Store 16→18 — это C2b, НЕ
-здесь; контракт Store=16, двойной compile-замок не меняется; MemoryStore без миграций. Дифф строго в
-src/internal/store/; ПУСТОЙ дифф eval/engine/cmd/daemon; 0 новых зависимостей; детерминизм. Якорь —
-docs/reliability-model.md §C-2a. Constitution 9/9 PASS. Предыдущая фича M-DX 012 — в
+specs/020-outbox-exactly-once/plan.md (фича 020-outbox-exactly-once — M3 «Надёжность» пункт C2b:
+outbox-леджер идемпотентности + exactly-once доставка реального эффекта В ТЕЛЕ ШАГА процесса через
+рестарт демона (POST ровно 1). Store 16→18 АДДИТИВНО (ДВОЙНОЙ compile-замок store.go:44-45):
++тип OutboxRecord (types.go), +sentinel ErrOutboxNotFound, +LoadOutbox/SaveOutbox в ОБЕИХ impl
+(Memory map+глубокая копия Args/времён; SQLite SELECT/INSERT ON CONFLICT); таблица outbox уже создана
+C2a. Кодек §C-2b.6: Args→encodeList(value.NewList(args)); Result→encodeValue; None→tagged-Пусто blob
+НЕ SQL NULL; сериализация ВНУТРИ SQLiteStore (eval не импортирует store). Дедуп в effect-методах
+движка (engine/runtime.go CallExternal/CallExternalResult/Notify, в КАЖДОМ из 3 независимо), активен
+⟺ len(e.active)>0; ключ (inst.ID,CurrentStep,effectIndex); новое поле activeFrame.effectIndex (reset
+в advance перед телом, инкремент на каждый эффект). Протокол D-C-9 deliver-then-record + pre-check:
+LoadOutbox→если delivered вернуть сохранённый Result без доставки; иначе доставить, затем SaveOutbox;
+зазор POST→SaveOutbox = осознанный at-least-once (§C-9). ProcessRuntime ОСТАЁТСЯ 8 (eval-дифф ПУСТ).
+Гейт TestStepEffectExactlyOnceRestart (зеркало driveServeToNoRepeat, inline-const); 3 fault-теста
+checkDeadlines (:38-41/:50-53/:63-65); codec round-trip; исполнимое усиление §2 = эволюция
+examples/контроль_плана.ladix +2 авто-шага + MANIFEST + переснять main_test.go:137. ГРАНИЦЫ: дифф в
+internal/store+engine+daemon(тесты)+examples+тесты; ПУСТОЙ дифф eval; cmd прод не трогать (serve
+clock-путь цел); 0 новых KW/SE/eval-кодов/builtins/зависимостей; детерминизм FixedClock. Якорь —
+docs/reliability-model.md §C-2b/§C-1. Constitution 9/9 PASS. Предыдущая фича C2a 019 — в
+specs/019-store-schema-migrations/plan.md. Фича M-DX 012 — в
 specs/012-mdx-diagnostics/plan.md (фича 012-mdx-diagnostics — веха M-DX «Диагностика и
 восстановление парсера», фронтенд v2 после M1, БЕЗ новой языковой функциональности. Две независимые
 US. US1 (P1) DX1 — подавление фантомного каскада: ведущее sync-lead ключевое слово в позиции
