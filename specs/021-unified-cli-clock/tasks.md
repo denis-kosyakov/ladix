@@ -70,19 +70,19 @@ description: "Task list for feature 021-unified-cli-clock (C4 — unified clock 
 
 ### Per-path fixed-clock injection (deterministic, time-aligned output)
 
-- [ ] T010 [P] [US1] In `src/cmd/ladix/clock_unify_test.go` add `TestRunClockInjected`: drive the `run` path with a fixed clock at a known instant `T`; assert the metric-evaluation date AND the summary "now" both derive from `T`; assert byte-identical output on rerun with same `T` and that switching to `T'` moves the output to `T'`.
-- [ ] T011 [P] [US1] Add `TestStartClockInjected`: drive `start` with fixed clock `T`; assert lifecycle stamps and any metric date follow `T`; deterministic across reruns.
-- [ ] T012 [P] [US1] Add `TestCompleteClockInjected`: drive `complete` with fixed clock `T`; assert `MarkTaskCompleted` time and `UpdatedAt` stamp equal `T` and are deterministic.
-- [ ] T013 [P] [US1] Add `TestTasksClockInjected`: drive `tasks` (`listTasks`) with fixed clock `T`; assert each rendered task line's "now" derives from `T` and is byte-stable.
-- [ ] T014 [P] [US1] Add `TestMetricClockInjected`: drive `metric` with fixed clock `T`; assert the interpreter metric date equals `T` (engine clock also `T`, latent); deterministic across reruns.
+- [X] T010 [P] [US1] In `src/cmd/ladix/clock_unify_test.go` add `TestRunClockInjected`: drive the `run` path with a fixed clock at a known instant `T`; assert the metric-evaluation date AND the summary "now" both derive from `T`; assert byte-identical output on rerun with same `T` and that switching to `T'` moves the output to `T'`.
+- [X] T011 [P] [US1] Add `TestStartClockInjected`: drive `start` with fixed clock `T`; assert lifecycle stamps and any metric date follow `T`; deterministic across reruns.
+- [X] T012 [P] [US1] Add `TestCompleteClockInjected`: drive `complete` with fixed clock `T`; assert `MarkTaskCompleted` time and `UpdatedAt` stamp equal `T` and are deterministic.
+- [X] T013 [P] [US1] Add `TestTasksClockInjected`: drive `tasks` (`listTasks`) with fixed clock `T`; assert each rendered task line's "now" derives from `T` and is byte-stable.
+- [X] T014 [P] [US1] Add `TestMetricClockInjected`: drive `metric` with fixed clock `T`; assert the interpreter metric date equals `T` (engine clock also `T`, latent); deterministic across reruns.
 
 ### Per-path inversion (reddens on real/wall-clock fallback)
 
-- [ ] T015 [US1] Add inversion assertions for all five paths in `src/cmd/ladix/clock_unify_test.go` (mutation-probe style, documented in a comment): each `Test*ClockInjected` MUST be constructed so that if the path reverts to an independent `engine.SystemClock{}` (real wall clock), the assertion diverges from `T` and the test turns RED. Document the intent: "if a path falls back to a real/wall clock, this test must fail." Verify by temporarily reintroducing `engine.SystemClock{}.Now()` in each path (locally, then revert) and confirming the corresponding test reddens.
+- [X] T015 [US1] Add inversion assertions for all five paths in `src/cmd/ladix/clock_unify_test.go` (mutation-probe style, documented in a comment): each `Test*ClockInjected` MUST be constructed so that if the path reverts to an independent `engine.SystemClock{}` (real wall clock), the assertion diverges from `T` and the test turns RED. Document the intent: "if a path falls back to a real/wall clock, this test must fail." Verify by temporarily reintroducing `engine.SystemClock{}.Now()` in each path (locally, then revert) and confirming the corresponding test reddens.
 
 ### Serve-unchanged regression guard
 
-- [ ] T016 [US1] Verify the serve clock path is byte-intact: `cd src && go test ./cmd/ladix -run TestServeMetricDateFollowsSchedulerClock` stays GREEN (serve_golden_test.go:216) and the `fixedClock` fake (serve_golden_test.go:21-23) still compiles after the adapter move (T003/T004). No edits to `serve_golden_test.go` or `serve.go` clock assembly.
+- [X] T016 [US1] Verify the serve clock path is byte-intact: `cd src && go test ./cmd/ladix -run TestServeMetricDateFollowsSchedulerClock` stays GREEN (serve_golden_test.go:216) and the `fixedClock` fake (serve_golden_test.go:21-23) still compiles after the adapter move (T003/T004). No edits to `serve_golden_test.go` or `serve.go` clock assembly.
 
 **Checkpoint**: All five paths deterministic under a fixed clock; inversions proven to redden; serve golden green. US1 complete and independently testable.
 
