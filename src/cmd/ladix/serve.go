@@ -18,24 +18,11 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/lexer"
 	"github.com/denis-kosyakov/ladix/internal/parser"
 	"github.com/denis-kosyakov/ladix/internal/store"
-	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
-// evalClockFromEngine адаптирует часы планировщика (engine.Clock, time.Time) к
-// дневным часам интерпретатора (eval.Clock, value.Дата): усекает момент до
-// календарной даты в локальной зоне — ровно как eval.SystemClock (clock.go).
-// Так двойные часы (FR-024) едины: и движок процессов (engine.WithClock), и
-// интерпретатор (NewInterpreter → пересчёт даты метрик в ResetRunState) читают
-// дату ОТ ОДНИХ И ТЕХ ЖЕ инъектированных часов планировщика, а не из независимого
-// eval.SystemClock. eval не импортирует engine (слой), потому адаптер живёт здесь,
-// где видны оба интерфейса. Значение-обёртка без состояния (Принцип V).
-type evalClockFromEngine struct{ c engine.Clock }
-
-// Now снимает момент планировщика и усекает до Y/M/D в Local.
-func (a evalClockFromEngine) Now() value.Дата {
-	t := a.c.Now().In(time.Local)
-	return value.Дата{Year: t.Year(), Month: int(t.Month()), Day: t.Day()}
-}
+// evalClockFromEngine (адаптер engine.Clock→eval.Clock, FR-024) вынесен в
+// clock_adapter.go (C4 §C-4.2) — общий для всех путей CLI. serve продолжает
+// пользоваться тем же неэкспортированным типом без изменений поведения.
 
 // defaultInterval — период тика демона по умолчанию (--interval, FR-001).
 const defaultInterval = time.Minute

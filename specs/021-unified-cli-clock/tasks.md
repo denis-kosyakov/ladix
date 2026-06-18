@@ -24,8 +24,8 @@ description: "Task list for feature 021-unified-cli-clock (C4 — unified clock 
 
 **Purpose**: Establish the baseline before touching any path. No code beyond confirming the green starting point.
 
-- [ ] T001 Confirm clean starting point on branch `021-unified-cli-clock`: from `/Users/denis/dev/ladix/src` run `go build ./...`, `go vet ./...`, `go test ./...` — all green BEFORE any change (records the pre-change baseline for the empty-diff/boundary check in Phase 5).
-- [ ] T002 Re-read the live clock seams to pin exact line anchors before editing: `src/cmd/ladix/serve.go` (adapter `evalClockFromEngine` struct + `Now()`, ~:32-38; serve assembly `buildServeDaemon` ~:201-223), `src/internal/engine/clock.go` (`Clock` iface, `SystemClock`, `WithClock`), `src/cmd/ladix/serve_golden_test.go` (`fixedClock` fake ~:21-23, `TestServeMetricDateFollowsSchedulerClock` ~:216). No edits — confirm anchors only.
+- [X] T001 Confirm clean starting point on branch `021-unified-cli-clock`: from `/Users/denis/dev/ladix/src` run `go build ./...`, `go vet ./...`, `go test ./...` — all green BEFORE any change (records the pre-change baseline for the empty-diff/boundary check in Phase 5).
+- [X] T002 Re-read the live clock seams to pin exact line anchors before editing: `src/cmd/ladix/serve.go` (adapter `evalClockFromEngine` struct + `Now()`, ~:32-38; serve assembly `buildServeDaemon` ~:201-223), `src/internal/engine/clock.go` (`Clock` iface, `SystemClock`, `WithClock`), `src/cmd/ladix/serve_golden_test.go` (`fixedClock` fake ~:21-23, `TestServeMetricDateFollowsSchedulerClock` ~:216). No edits — confirm anchors only.
 
 ---
 
@@ -35,8 +35,8 @@ description: "Task list for feature 021-unified-cli-clock (C4 — unified clock 
 
 **⚠️ BLOCKS all of Phase 3 (rewires) and Phase 4 (per-path tests).**
 
-- [ ] T003 Create NEW file `src/cmd/ladix/clock_adapter.go` (package `main`) and MOVE the `evalClockFromEngine` adapter (struct `evalClockFromEngine struct{ c engine.Clock }` + method `func (a evalClockFromEngine) Now() value.Дата` that truncates `a.c.Now()` to Y/M/D in Local) VERBATIM out of `src/cmd/ladix/serve.go:32-38`. Behavior-frozen — byte-identical logic; type stays unexported; required imports (`engine`, `value`, `time`) move with it.
-- [ ] T004 In `src/cmd/ladix/serve.go` REMOVE only the now-duplicated local `evalClockFromEngine` type declaration (lines ~32-38); leave `buildServeDaemon` and every other serve line UNTOUCHED — serve keeps referencing the shared `evalClockFromEngine`. Verify `cd src && go build ./...` compiles (serve still resolves the type from `clock_adapter.go`).
+- [X] T003 Create NEW file `src/cmd/ladix/clock_adapter.go` (package `main`) and MOVE the `evalClockFromEngine` adapter (struct `evalClockFromEngine struct{ c engine.Clock }` + method `func (a evalClockFromEngine) Now() value.Дата` that truncates `a.c.Now()` to Y/M/D in Local) VERBATIM out of `src/cmd/ladix/serve.go:32-38`. Behavior-frozen — byte-identical logic; type stays unexported; required imports (`engine`, `value`, `time`) move with it.
+- [X] T004 In `src/cmd/ladix/serve.go` REMOVE only the now-duplicated local `evalClockFromEngine` type declaration (lines ~32-38); leave `buildServeDaemon` and every other serve line UNTOUCHED — serve keeps referencing the shared `evalClockFromEngine`. Verify `cd src && go build ./...` compiles (serve still resolves the type from `clock_adapter.go`).
 
 **Checkpoint**: Adapter is shared; serve unchanged behaviorally; build green. Rewires can begin.
 
