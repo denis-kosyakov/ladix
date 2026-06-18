@@ -106,7 +106,13 @@ func TestTickPhaseOrderAllThreeFire(t *testing.T) {
 	setClock(clk, start.Add(25*time.Hour))
 	d.tick()
 
-	if got, want := out.String(), "E\nM\nS\n"; got != want {
+	// always-on explain (§C-5, serve withEdge): печатается через d.logf при фронте
+	// ложь→истина ДО тела метрики → строка-explain между «E» (drainEvents) и «M»
+	// (тело метрики). m=сумма(x)=30, оп >, порог 10.
+	want := "E\n" +
+		"триггер 'm > 10' сработал (ребро ложь→истина): m = 30 (снимок) > 10 (порог) → истина\n" +
+		"M\nS\n"
+	if got := out.String(); got != want {
 		t.Fatalf("порядок фаз drainEvents→evalMetrics→checkSchedules: out=%q, хотим %q", got, want)
 	}
 }
@@ -157,7 +163,11 @@ func TestTickFourPhasesOrder(t *testing.T) {
 	setClock(clk, start.Add(3*24*time.Hour))
 	d.tick()
 
-	if got, want := out.String(), "E\nM\nS\nD\n"; got != want {
+	// always-on explain (§C-5, serve withEdge): строка-explain между «E» и «M».
+	want := "E\n" +
+		"триггер 'm > 10' сработал (ребро ложь→истина): m = 30 (снимок) > 10 (порог) → истина\n" +
+		"M\nS\nD\n"
+	if got := out.String(); got != want {
 		t.Fatalf("порядок 4 фаз …→checkSchedules→checkDeadlines: out=%q, хотим %q", got, want)
 	}
 }

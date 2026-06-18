@@ -83,6 +83,11 @@ func (i *Interpreter) runMetricTrigger(td *ast.TriggerDecl, spec *ast.MetricTrig
 	if !fired {
 		return nil // ложь → молчание (§TR-6.3): тело не исполнено, значение не инжектировано
 	}
+	// ALWAYS-ON explain «почему» (§C-5, D-C-6): при срабатывании печатаем одну строку
+	// в i.out (канал тела, НЕ writer w из RunTriggers) ДО исполнения тела. run = fire-
+	// if-true ⇒ без маркера ребра (withEdge=false). Числа/оператор форматируются единым
+	// ExplainFire — формат совпадает с serve.
+	fmt.Fprintln(i.out, ExplainFire(spec.Metric.Name, spec.Op, metricVal, threshVal, false))
 	// (4) истинно: read-only «значение» = снимок метрики (§TR-5) в локальном env тела.
 	// Env тела — граница записи: чтение глобалов/метрик поднимается вверх, но запись в
 	// глобал забарьерена (TR-BODY-RO, §TR-5/§TR-7.G); локальные «пусть» тела эфемерны.

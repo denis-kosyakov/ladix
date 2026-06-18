@@ -1,6 +1,27 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
+specs/022-human-explain-fire/plan.md (фича 022-human-explain-fire — M3 «Надёжность» пункт C5:
+человеко-explain срабатывания (наблюдаемость «почему»), в дополнение к inspect («где»). При
+срабатывании метрик-триггера ВСЕГДА (always-on, D-C-6) печатать одну человеко-читаемую строку §C-5.3:
+run → i.out (fire-if-true, без ребра; протянуть i.out в runMetricTrigger, eval/trigger_run.go:78-92,
+писатель тела НЕ w); serve → d.logf (с маркером ребра ложь→истина; ветка if fired daemon/metrics.go:82,
+ДО тела). ЕДИНСТВЕННАЯ протяжка — расширить СВОБОДНУЮ функцию EvalMetricCondition (eval/
+trigger_daemon.go:31) на +threshold value.Value во ВСЕХ ветках (не-success→None), один call-site
+daemon/metrics.go:39; это НЕ метод ProcessRuntime → ProcessRuntime ОСТАЁТСЯ 8 байт-цел. Формат §C-5.3
+дословно: <снимок>/<порог>=value.String (repr.go:20, БЕЗ подчёркиваний), <оп>=BinOp.String (op.go:35);
+explain одностроч (не §13 двухстрочный — не ошибка; запись в Complexity Tracking). ОБЯЗАТЕЛЬНЫЙ
+golden-churn co-land §C-5.5: обновить РОВНО 8 тестов в 4 файлах (tick_test.go ×2
+PhaseOrderAllThreeFire/FourPhasesOrder; trigger_golden_test.go ×5 Fires/DBRepeatEphemeral/
+MultiMetricOrder/MixedKindsOrder/BodyReadShadow; metric_window_golden_test.go ×1
+TestWindowMetricTriggerFires — explain в out не w, stubs.Len()==0 цел) + GUARD «НЕ затронуты»
+(count/contains metrics_test/schedule_test/daemon_test MFIRE/m2_endtoend; no-fire source_negatives/
+WindowMetricTriggerSilent/events-FIFO A\nB\nC — НЕ ТРОГАТЬ). Новые замки TestRunTriggerExplain/
+TestServeTriggerExplain (exact-match) + silence (тик уже-истина, нет новой строки) + inversion (не
+протянуть порог→serve-строка неверна→краснит). ГРАНИЦЫ: дифф в eval(explain+EvalMetricCondition)+
+daemon(call-site+serve logf)+перечисленные golden; inspect НЕ менять; ПУСТОЙ прод-дифф store/engine;
+Store 18 / ProcessRuntime 8 целы; 0 новых KW/SE/eval-кодов/builtins/зависимостей; детерминизм. Якорь —
+docs/reliability-model.md §C-5. Constitution 9/9 PASS. Предыдущая фича C4 021 — в
 specs/021-unified-cli-clock/plan.md (фича 021-unified-cli-clock — M3 «Надёжность» пункт C4: единые
 часы во всех путях CLI, развилка §8 «двойные часы». ОДИН engine.Clock протягивается в run/start/
 complete/tasks/metric (сегодня — независимые реальные SystemClock в 2–3 точках на путь). Рецепт §C-4.2:
@@ -57,7 +78,7 @@ plan.md; Триггеры 007a — в specs/007a-trigger-frontend/plan.md; дв�
 процессов 006 — в specs/006-process-engine/plan.md; фронтенд процессов 005 — в
 specs/005-process-frontend/plan.md; декларативный слой 004 — в specs/004-source-metric/plan.md;
 интерпретатор 003 — в specs/003-interpreter-eval/plan.md; парсер+AST 002 — в
-specs/002-parser-ast/plan.md; лексер 001 — в specs/001-lexer-tokens/plan.md))).
+specs/002-parser-ast/plan.md; лексер 001 — в specs/001-lexer-tokens/plan.md)))).
 <!-- SPECKIT END -->
 
 ## Контекст основного потока ≤20%

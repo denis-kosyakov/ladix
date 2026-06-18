@@ -105,7 +105,10 @@ func TestWindowMetricTriggerFires(t *testing.T) {
 	if err := i.RunTriggers(&stubs); err != nil {
 		t.Fatalf("RunTriggers вернул ошибку: %v", err)
 	}
-	want := "оконная метрика: 23\n"
+	// always-on explain (§C-5) печатается в i.out ДО тела → строка-explain, затем
+	// печать тела. explain в out (НЕ в w/stubs) — подтверждает выбор писателя i.out.
+	want := "триггер 'm < 100' сработал: m = 23 (снимок) < 100 (порог) → истина\n" +
+		"оконная метрика: 23\n"
 	if got := out.String(); got != want {
 		t.Errorf("вывод триггера = %q, хотим %q", got, want)
 	}
