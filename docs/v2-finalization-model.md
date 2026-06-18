@@ -325,7 +325,7 @@ emit/расписание/explain (grep-положительно); MANIFEST-оп
 | # | Facet §2-DoD | Веха | Доказательство (имя-теста / file:line) |
 |---|---|---|---|
 | 1 | CSV-источник + схема `поля:` | M1 | `examples/контроль_плана.ladix` (источник заказы); `source-connectors-model §SC-*`; T-GOLD-METRIC |
-| 2 | Метрика как скользящее окно `последние 30дн` | M1 | `метрика выручка_30д`; `metric_window_golden_test.go` (FixedClock); `metric-windows-model §MW-*` |
+| 2 | Метрика как скользящее окно `последние 30дн` | M1 | `метрика выручка_30д`; `metric_window_golden_test.go` (FixedClock) **+** `TestCLIControlPlanScalarFixedClock` (`control_plan_golden_test.go`, окно §2-примера, NIT-2); `metric-windows-model §MW-*` |
 | 3 | Триггер `когда метрика < план` → запуск процесса | M1↔M2 | `когда метрика выручка_30д < 3_000_000`; T-GOLD-METRIC (старт p-000001) |
 | 4 | Человеческий шаг + срок | M2 | `шаг связаться_с_клиентом`; T-LIFECYCLE (задача t-000001) |
 | 5 | Эскалация дедлайна | M2 | `когда задача просрочена`; `TestM2GoldenEndToEnd` (эскалация POST) |

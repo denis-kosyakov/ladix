@@ -69,3 +69,26 @@
 - [x] Есть тесты циклов. — `src/internal/eval/stmt_test.go:103`
 - [x] Есть тесты функций. — `src/internal/eval/call_test.go:6`
 - [x] Есть тесты ошибок. — `src/internal/errors/evalerrors_test.go:11`
+
+## Приёмка v2 (золотой сквозной сценарий §2 хартии)
+
+Формальная приёмка v2 (`docs/v2-finalization-model.md` §F-6, Q3=A). Каждый facet
+DoD §2 хартии подтверждён файлом-доказательством или зелёным тест-замком. Золотой
+сценарий целиком прошит одним запускаемым примером `examples/контроль_плана.ladix`
+(CSV-источник → окно-метрика → триггер `когда метрика < план` → процесс с человеком и
+сроком → эскалация → payload → реальный эффект → exactly-once на рестарте).
+
+- [x] CSV-источник со схемой полей `поля:`. — `examples/контроль_плана.ladix:10` · `TestCLIControlPlanScalarFixedClock` (`src/cmd/ladix/control_plan_golden_test.go:33`) · `docs/source-connectors-model.md`
+- [x] Метрика как скользящее окно `последние 30дн`. — `examples/контроль_плана.ladix:18` · `TestCLIControlPlanScalarFixedClock` (FixedClock, `src/cmd/ladix/control_plan_golden_test.go:33`) · `TestCLIMetricWindowDoDGolden` (`src/cmd/ladix/metric_window_golden_test.go:30`) · `docs/metric-windows-model.md`
+- [x] Триггер `когда метрика < план` запускает процесс. — `examples/контроль_плана.ladix:26` · `TestCLIControlPlanRunFixedClock` (старт `p-000001`, `src/cmd/ladix/control_plan_golden_test.go:62`)
+- [x] Человеческий шаг с дедлайном. — `examples/контроль_плана.ladix:31` · `TestQuickstartSmoke_EscalationLifecycle` (задача `t-000001`, `src/cmd/ladix/quickstart_smoke_test.go:155`)
+- [x] Эскалация дедлайна. — `examples/контроль_плана.ladix:43` · `TestM2GoldenEndToEnd` (эскалация POST, `src/internal/daemon/m2_endtoend_test.go:167`)
+- [x] Payload в `ladix complete --данные`. — `TestQuickstartSmoke_EscalationLifecycle` (`данные.итог`, `src/cmd/ladix/quickstart_smoke_test.go:155`) · `SPEC.md:564`
+- [x] Реальный эффект тела шага. — `examples/контроль_плана.ladix:40` · `TestM2GoldenEndToEnd` (webhook POST, `src/internal/daemon/m2_endtoend_test.go:167`) · `TestQuickstartSmoke_EscalationLifecycle` (`[уведомление] crm`)
+- [x] Exactly-once доставка эффекта на рестарте. — `TestStepEffectExactlyOnceRestart` (POST == 1, `src/cmd/ladix/outbox_exactly_once_test.go:71`)
+- [x] Forward-only миграции схемы Store. — `PRAGMA user_version` · `TestMigrateFreshDB` / `TestMigrateLegacyV0` / `TestMigrateIdempotent` (`src/internal/store/migrate_test.go:55`) · `docs/reliability-model.md` §C-2a
+- [x] Единые часы CLI во всех путях. — `TestCompleteClockInjected` (`src/cmd/ladix/clock_unify_test.go:167`) · `engine.WithClock` (`src/cmd/ladix/start.go:142`)
+- [x] Наблюдаемость `explain` (почему сработал триггер). — `src/internal/eval/explain.go:23` · `TestCLIControlPlanRunFixedClock` (строка explain, `src/cmd/ladix/control_plan_golden_test.go:62`) · `TestRevenueExampleFixedClockGolden` (`src/cmd/ladix/trigger_golden_test.go:507`)
+- [x] Инспекция инстанса `ladix inspect`. — `TestInspectGoldenCanon` (`src/cmd/ladix/inspect_golden_test.go:57`)
+- [x] Ручной старт `ladix start`. — `TestStartGoldenCanon` (`src/cmd/ladix/start_golden_test.go:107`)
+- [x] Диагностика ошибочной программы. — `examples/ошибочная.ladix` · `TestCLINegativeSourceSchema` (`src/cmd/ladix/golden_test.go:175`) · `docs/diagnostics-model.md`
