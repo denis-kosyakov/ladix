@@ -136,3 +136,50 @@ func TestQuickstartSmoke_ProcessLifecycle(t *testing.T) {
 		t.Fatalf("хвост tasks: ожидали %q, получили %q", want, got)
 	}
 }
+
+// TestQuickstartSmoke_EscalationLifecycle — T-LIFECYCLE (фича 023-v2-finalization,
+// W3/§F-1): герметичный дата-независимый замок ПРОЦЕССНОЙ половины §2-цепочки золотого
+// примера examples/контроль_плана.ladix. Build-from-README бинарь, прогон из КОРНЯ репо
+// (data/orders.csv резолвится), свежая БД в t.TempDir() (id t-000001/p-000001).
+//
+// Последовательность: ручной start процесса эскалация_плана → человеческая задача
+// t-000001 (шаг связаться_с_клиентом) → complete --данные '{"итог":"перезвонит"}' →
+// движок будит инстанс, исполняет авто-шаги догона зафиксировать_итог (durable-захват
+// payload) → уведомить_crm (реальный эффект) → строка эффекта
+// «[уведомление] crm: итог звонка: перезвонит» (M2/M3) → терминал «инстанс p-000001:
+// выполнен». Дедлайн в выводе start маскируется (maskDeadlines → «срок до <DT>») →
+// замок не плывёт по календарю; в эффект-строке дат нет (дата-независимость).
+//
+// 🔁 ИНВЕРСИЯ: текст эффекта «итог звонка: » / ключ payload `итог` / имена авто-шагов
+// разошлись с примером → строка эффекта не совпадёт → красный.
+func TestQuickstartSmoke_EscalationLifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("smoke: пропуск в -short (компилирует бинарник)")
+	}
+	binPath, root := buildQuickstartBin(t)
+	procFile := filepath.Join("examples", "контроль_плана.ladix")
+	dbPath := filepath.Join(t.TempDir(), "escalation.db")
+
+	// 1) start: ручной запуск инстанса до человеческой задачи t-000001.
+	//    Дедлайн дата-зависим (SystemClock) — маскируется.
+	got := maskDeadlines(runFromRoot(t, binPath, root, "start", procFile, "эскалация_плана", "2500000", "--db", dbPath))
+	want := "[задача] t-000001 → менеджер, шаг 'связаться_с_клиентом', срок до <DT>\n" +
+		"запущен инстанс p-000001\n"
+	if got != want {
+		t.Fatalf("start stdout (с маской <DT>) байт-не-точен:\nполучено %q\nхотим   %q", got, want)
+	}
+
+	// 2) complete --данные: завершение задачи будит инстанс, исполняются авто-шаги
+	//    догона → durable-захват итога → реальный эффект в crm → процесс выполнен.
+	got = runFromRoot(t, binPath, root, "complete", procFile, "t-000001", "--данные", `{"итог":"перезвонит"}`, "--db", dbPath)
+	want = "задача t-000001 завершена\n" +
+		"[уведомление] crm: итог звонка: перезвонит\n" +
+		"инстанс p-000001: выполнен\n"
+	if got != want {
+		t.Fatalf("complete stdout байт-не-точен:\nполучено %q\nхотим   %q", got, want)
+	}
+	// Дата-независимость эффект-строки: в наблюдаемом эффекте дат нет.
+	if deadlineMaskRE.MatchString(got) {
+		t.Errorf("в complete-выводе просочилась дата дедлайна: %q", got)
+	}
+}
