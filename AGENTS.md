@@ -14,11 +14,11 @@
 .
 ├── README.md          # концепция + полный контракт CLI (основной справочник)
 ├── SPEC.md            # спецификация языка (лексика, грамматика, типы, семантика, ошибки)
-├── CHECKLIST.md       # учебный чек-лист (закрыт «внутри» Ladix)
+├── CHECKLIST.md       # функциональный чек-лист (закрыт «внутри» Ladix)
 ├── TASK.md            # исходное ТЗ
 ├── ARCHITECTURE.md    # модули реализации, их ответственность и зависимости
 ├── docs/              # модель-доки (eval/engine/trigger/source/window/automation/reliability…) + grammar/stdlib/quickstart
-├── examples/          # программы на .ladix (учебные + бизнес-витрины + ошибочные) + MANIFEST.md
+├── examples/          # программы на .ladix (ядро языка + бизнес-витрины + ошибочные) + MANIFEST.md
 ├── specs/             # SpecKit-артефакты по фичам (001–023): spec/plan/tasks
 ├── tests/             # честная заглушка-отсылка (тесты живут рядом с кодом в src/)
 └── src/               # Go-модуль: cmd/ladix + internal/{lexer,parser,ast,eval,engine,store,daemon,errors,value,jsonval}
@@ -46,6 +46,6 @@ cd src && go vet ./...
 
 - **Реализация — Go**, идиоматичный: `gofmt`, `errors.Is`/`errors.As`, явные error-типы с позицией, без глобального состояния и беспричинных паник. Без CGO (чистый Go, `modernc.org/sqlite`).
 - **Парсер** — ручной recursive descent.
-- **Оцениваемая документация — русская** (README/SPEC/CHECKLIST/examples/docs); английский — только в Go-коде и комментариях.
+- **Продуктовая документация — русская** (README/SPEC/CHECKLIST/examples/docs); английский — только в Go-коде и комментариях.
 - **Spec-driven**: спецификация (SPEC.md + `docs/*-model.md`) — источник истины; код — производное. Изменения проходят через SpecKit-артефакты в `specs/NNN/` (см. `.specify/`).
 - Расширение файлов программ — `.ladix`.
