@@ -306,6 +306,22 @@ func (e *Engine) advance(inst *store.ProcessInstance, data value.Запись) e
 
 		// (3) развилка: человеческий шаг → заснуть; иначе продвижение/терминал.
 		if hasAssignee {
+			// Идемпотентность создания задачи (Фикс A): если на ЭТОМ шаге уже есть
+			// открытая задача (рестарт демона дошёл сюда повторно), не минтить новый
+			// id и не сохранять дубль — просто заснуть. Гарантия «ровно одна задача».
+			existing, err := e.st.ListTasksByInstance(inst.ID)
+			if err != nil {
+				return NewStoreError(err)
+			}
+			for _, t := range existing {
+				if t.Status == store.TaskPending && t.StepName == step.Name.Name {
+					inst.Status = store.StatusWaiting
+					if err := e.save(inst); err != nil {
+						return err
+					}
+					return nil // засыпание без дубля (EM-10)
+				}
+			}
 			now := e.clock.Now()
 			tid, err := e.st.NextTaskID()
 			if err != nil {

@@ -1,6 +1,9 @@
 package value
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // Equal — §3.3/C-3: численное Целое↔Дробное, поэлементные списки, структурные
 // записи, разные типы → false.
@@ -103,6 +106,29 @@ func TestCompare(t *testing.T) {
 			}
 			if gotOK && gotCmp != tt.wantCmp {
 				t.Errorf("Compare = %d, хотим %d", gotCmp, tt.wantCmp)
+			}
+		})
+	}
+}
+
+// TestCompareNaN: NaN несравним по IEEE-754 — Compare возвращает ok == false
+// во всех float-ветках промоушена (фикс B). Inf не затрагивается.
+func TestCompareNaN(t *testing.T) {
+	nan := math.NaN()
+	tests := []struct {
+		name string
+		a, b Value
+	}{
+		{"NaN ? дробное", Дробное{V: nan}, Дробное{V: 5}},
+		{"дробное ? NaN", Дробное{V: 5}, Дробное{V: nan}},
+		{"NaN ? NaN", Дробное{V: nan}, Дробное{V: nan}},
+		{"NaN ? целое (промоушен)", Дробное{V: nan}, Целое{V: 5}},
+		{"целое ? NaN (промоушен)", Целое{V: 5}, Дробное{V: nan}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, ok := Compare(tt.a, tt.b); ok {
+				t.Errorf("Compare(%v, %v) ok = true, хотим false (NaN несравним)", tt.a, tt.b)
 			}
 		})
 	}

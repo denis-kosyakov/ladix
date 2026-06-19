@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"math"
 	"testing"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
@@ -163,5 +164,128 @@ func TestBuiltinDatetimeCallable(t *testing.T) {
 				t.Fatalf("неожиданная ошибка: %v", err)
 			}
 		})
+	}
+}
+
+// Фикс C: дробное/число отвергают нечисловые ±Inf/NaN и hex-формы (0x1p4),
+// которые ParseFloat принимает молча → ОшибкаВыполнения «не является конечным
+// числом». Непарсимые строки («abc») по-прежнему дают ОшибкаТипа «не является
+// числом» (сообщение не смешивать). Валидные строки конвертируются штатно.
+func TestConvertNonFinite(t *testing.T) {
+	// runtime-ветка: успешный ParseFloat, но не конечное/hex → ОшибкаВыполнения.
+	nonfinite := []struct{ name, src, msg string }{
+		{"дробное nan", `дробное("nan")`, "дробное: «nan» не является конечным числом"},
+		{"дробное +inf", `дробное("+inf")`, "дробное: «+inf» не является конечным числом"},
+		{"дробное 0x1p4", `дробное("0x1p4")`, "дробное: «0x1p4» не является конечным числом"},
+		{"число inf", `число("inf")`, "число: «inf» не является конечным числом"},
+	}
+	for _, tt := range nonfinite {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := run(t, "печать("+tt.src+")")
+			if err == nil {
+				t.Fatalf("%s: ожидалась ошибка", tt.src)
+			}
+			_, _, msg := evalErr(t, err)
+			if msg != tt.msg {
+				t.Errorf("msg = %q, хотим %q", msg, tt.msg)
+			}
+			if !isRuntime(err) {
+				t.Errorf("%s: категория не ОшибкаВыполнения", tt.src)
+			}
+		})
+	}
+
+	// type-ветка: непарсимая строка → ОшибкаТипа «не является числом» (сохранено).
+	typecases := []struct{ name, src, msg string }{
+		{"дробное abc", `дробное("abc")`, "дробное: строка «abc» не является числом"},
+		{"число abc", `число("abc")`, "число: строка «abc» не является числом"},
+	}
+	for _, tt := range typecases {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := run(t, "печать("+tt.src+")")
+			if err == nil {
+				t.Fatalf("%s: ожидалась ошибка", tt.src)
+			}
+			_, _, msg := evalErr(t, err)
+			if msg != tt.msg {
+				t.Errorf("msg = %q, хотим %q", msg, tt.msg)
+			}
+			if !isType(err) {
+				t.Errorf("%s: категория не ОшибкаТипа", tt.src)
+			}
+		})
+	}
+
+	// happy-путь: конечные строки конвертируются штатно.
+	ok := []struct{ name, src, want string }{
+		{"дробное 3.5", `дробное("3.5")`, "3.5"},
+		{"число 42", `число("42")`, "42"},
+	}
+	for _, tt := range ok {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := run(t, "печать("+tt.src+")")
+			if err != nil {
+				t.Fatalf("неожиданная ошибка: %v", err)
+			}
+			if out != tt.want+"\n" {
+				t.Errorf("= %q, хотим %q", out, tt.want+"\n")
+			}
+		})
+	}
+}
+
+// Фикс E: сумма со смешанным Дробным НЕ срабатывает на int-overflow-гарде —
+// гард активен только когда все элементы Целые. Смешанный список с краевыми
+// Целыми + Дробным суммируется во float → Дробное (без ложного «переполнения»).
+// Регресс: чисто-целый список с переполнением по-прежнему даёт ОшибкаВыполнения.
+func TestSummaOverflowGatedByFloat(t *testing.T) {
+	// Смешанное: 2×MaxInt64 (целая сумма переполнилась бы) + 1.5 → float-путь, ОК.
+	out, err := run(t, "печать(сумма([9223372036854775807, 9223372036854775807, 1.5]))")
+	if err != nil {
+		t.Fatalf("смешанная сумма: неожиданная ошибка: %v", err)
+	}
+	want := value.String(value.Дробное{V: float64(math.MaxInt64) + float64(math.MaxInt64) + 1.5}) + "\n"
+	if out != want {
+		t.Errorf("смешанная сумма = %q, хотим %q", out, want)
+	}
+
+	// Регресс: чисто целочисленное переполнение → ОшибкаВыполнения.
+	_, err = run(t, "печать(сумма([9223372036854775807, 1]))")
+	if err == nil {
+		t.Fatal("целочисленное переполнение: ожидалась ошибка")
+	}
+	_, _, msg := evalErr(t, err)
+	if msg != "переполнение целого числа" {
+		t.Errorf("msg = %q, хотим «переполнение целого числа»", msg)
+	}
+	if !isRuntime(err) {
+		t.Errorf("категория не ОшибкаВыполнения")
+	}
+}
+
+// Фикс B (eval-уровень): после фиксов C/D ±Inf/NaN недостижимы из ИСХОДНИКА
+// (дробное/число их отвергают, source_loader тоже; деление на 0 — ошибка; нет
+// sqrt/log/степени). Поэтому NaN конструируется белым ящиком (как
+// TestBuiltinTipDirect) и подаётся в сортировать/мин напрямую: value.Compare
+// возвращает ok==false для NaN → ОшибкаТипа «<имя>: элементы несравнимы».
+// Замыкает сиблинг-фикс value/equal.go (NaN-гард в Compare).
+func TestSortMinNaNIncomparable(t *testing.T) {
+	nan := value.Дробное{V: math.NaN()}
+	lst := value.NewList([]value.Value{value.Целое{V: 1}, nan})
+
+	if _, err := builtinSortirovat(nil, []value.Value{lst}, ast.Position{}); err == nil {
+		t.Error("сортировать(NaN): ожидалась ошибка несравнимости")
+	} else if !isType(err) {
+		t.Errorf("сортировать(NaN): категория не ОшибкаТипа: %v", err)
+	} else if _, _, msg := evalErr(t, err); msg != "сортировать: элементы несравнимы" {
+		t.Errorf("сортировать(NaN): msg = %q", msg)
+	}
+
+	if _, err := builtinMin(nil, []value.Value{lst}, ast.Position{}); err == nil {
+		t.Error("мин(NaN): ожидалась ошибка несравнимости")
+	} else if !isType(err) {
+		t.Errorf("мин(NaN): категория не ОшибкаТипа: %v", err)
+	} else if _, _, msg := evalErr(t, err); msg != "мин: элементы несравнимы" {
+		t.Errorf("мин(NaN): msg = %q", msg)
 	}
 }

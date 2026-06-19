@@ -67,6 +67,50 @@ func TestReactivateInstanceValidStep(t *testing.T) {
 	}
 }
 
+// TestReactivateInstanceIdempotentTask — инстанс «выполняется» уже на человеческом шаге
+// «согласовать» с УЖЕ сохранённой открытой задачей (рестарт демона повторно дошёл до
+// шага) → реактивация НЕ создаёт дубль: ровно 1 открытая задача, id прежней не изменился
+// (Фикс A, идемпотентность создания задачи).
+func TestReactivateInstanceIdempotentTask(t *testing.T) {
+	_, st, eng, _ := buildStack(t, reactSrc, goldenMoment())
+	inst := stuckInstance("p-000010", "согласовать", store.StatusRunning)
+	if err := st.SaveInstance(inst); err != nil {
+		t.Fatalf("SaveInstance: %v", err)
+	}
+	// Предзаливаем открытую задачу на этом же шаге (остаток прерванного прогона).
+	tid, err := st.NextTaskID()
+	if err != nil {
+		t.Fatalf("NextTaskID: %v", err)
+	}
+	preTask := &store.Task{
+		ID:         tid,
+		InstanceID: inst.ID,
+		StepName:   "согласовать",
+		Assignee:   "менеджер",
+		Status:     store.TaskPending,
+		CreatedAt:  goldenMoment(),
+	}
+	if err := st.SaveTask(preTask); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+
+	if err := eng.ReactivateInstance(inst); err != nil {
+		t.Fatalf("ReactivateInstance: неожиданная ошибка %v", err)
+	}
+
+	tasks, _ := st.ListPendingTasks("")
+	if len(tasks) != 1 {
+		t.Fatalf("ожидалась 1 открытая задача (без дубля), получено %d", len(tasks))
+	}
+	if tasks[0].ID != tid {
+		t.Fatalf("id задачи изменился: было %q, стало %q (минт дубля)", tid, tasks[0].ID)
+	}
+	got, _ := st.LoadInstance("p-000010")
+	if got.Status != store.StatusWaiting {
+		t.Fatalf("статус после реактивации = %q, ожидался %q", got.Status, store.StatusWaiting)
+	}
+}
+
 // TestReactivateInstanceCreatedStatus — инстанс «создан» (первый шаг не активирован) →
 // реактивация прогоняет с первого шага так же, как «выполняется» (оба залипших статуса
 // сканируются демоном).

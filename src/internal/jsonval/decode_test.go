@@ -2,6 +2,7 @@ package jsonval
 
 import (
 	"bytes"
+	"math"
 	"testing"
 
 	"github.com/denis-kosyakov/ladix/internal/value"
@@ -109,5 +110,27 @@ func TestDecodeValueScalarAndObject(t *testing.T) {
 	}
 	if got, ok := rec.Get("статус").(value.Строка); !ok || got.V != "ок" {
 		t.Errorf("статус = %#v, хотим Строка{ок}", rec.Get("статус"))
+	}
+}
+
+// TestDecodeValueFloatOverflow — число вне диапазона float64 деградирует в
+// Дробное{±Inf}, а НЕ в None (фикс D: толерантный контракт payload — число
+// никогда не теряется при доставке). Float64 при ErrRange отдаёт ±Inf.
+func TestDecodeValueFloatOverflow(t *testing.T) {
+	// Положительный overflow → Дробное{+Inf}.
+	v, err := DecodeValue(NewDecoder(bytes.NewReader([]byte(`1e400`))))
+	if err != nil {
+		t.Fatalf("DecodeValue(1e400): %v", err)
+	}
+	if d, ok := v.(value.Дробное); !ok || !math.IsInf(d.V, 1) {
+		t.Errorf("1e400 = %#v, хотим value.Дробное{V:+Inf}", v)
+	}
+	// Отрицательный overflow → Дробное{-Inf}.
+	nv, err := DecodeValue(NewDecoder(bytes.NewReader([]byte(`-1e400`))))
+	if err != nil {
+		t.Fatalf("DecodeValue(-1e400): %v", err)
+	}
+	if d, ok := nv.(value.Дробное); !ok || !math.IsInf(d.V, -1) {
+		t.Errorf("-1e400 = %#v, хотим value.Дробное{V:-Inf}", nv)
 	}
 }

@@ -139,10 +139,11 @@ func numberToValue(n json.Number) value.Value {
 			return value.Целое{V: v}
 		}
 	}
-	if f, err := n.Float64(); err == nil {
-		return value.Дробное{V: f}
-	}
-	return value.None
+	// Float64 при overflow возвращает ErrRange, но при этом f уже = ±Inf
+	// (strconv-семантика). Толерантный контракт: число НИКОГДА не деградирует
+	// в None — overflow даёт Дробное{±Inf}, а не сбой доставки.
+	f, _ := n.Float64()
+	return value.Дробное{V: f}
 }
 
 // NewDecoder строит потоковый JSON-декодер с UseNumber() (различение Целое/Дробное

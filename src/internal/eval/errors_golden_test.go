@@ -163,6 +163,14 @@ func TestErrorsRegistryExactMatch(t *testing.T) {
     добавить(s, x)`,
 			line: 3, col: 5, cat: rt, msg: "список изменён во время итерации",
 		},
+		{
+			code: "RT-DROBNOE-NONFINITE", src: `печать(дробное("nan"))`,
+			line: 1, col: 8, cat: rt, msg: "дробное: «nan» не является конечным числом",
+		},
+		{
+			code: "RT-CHISLO-NONFINITE", src: `печать(число("inf"))`,
+			line: 1, col: 8, cat: rt, msg: "число: «inf» не является конечным числом",
+		},
 		// SEM-DEFERRED-CONSTRUCT retired in 006: all deferred AST nodes activated
 		// (DurationLit/RunProcessExpr/действия — §EN-5/D-7), deferredConstruct
 		// removed. No code path emits «конструкция … не поддерживается» anymore.
@@ -202,8 +210,8 @@ func TestErrorsRegistryExactMatch(t *testing.T) {
 			}
 		})
 	}
-	if len(seen) != 28 {
-		t.Errorf("покрыто кодов = %d, хотим 28", len(seen))
+	if len(seen) != 30 {
+		t.Errorf("покрыто кодов = %d, хотим 30", len(seen))
 	}
 }
 
