@@ -20,27 +20,39 @@ func builtinSumma(i *Interpreter, args []value.Value, pos ast.Position) (value.V
 	if err != nil {
 		return nil, err
 	}
+	// Сначала определяем режим: смешанное с Дробным → float-путь (без int-гарда,
+	// переполнение int64 неприменимо); все Целые → int-путь с overflow-гардом.
 	hasFloat := false
-	var iSum int64
-	var fSum float64
 	for _, e := range *lst.Elems {
-		switch x := e.(type) {
-		case value.Целое:
-			s, ov := addInt64(iSum, x.V)
-			if ov {
-				return nil, runtimeErr(pos, "переполнение целого числа")
+		switch e.(type) {
+		case value.Целое, value.Дробное:
+			if _, ok := e.(value.Дробное); ok {
+				hasFloat = true
 			}
-			iSum = s
-			fSum += float64(x.V)
-		case value.Дробное:
-			hasFloat = true
-			fSum += x.V
 		default:
 			return nil, typeErr(pos, "сумма: элемент типа "+e.TypeName()+" не является числом")
 		}
 	}
 	if hasFloat {
+		var fSum float64
+		for _, e := range *lst.Elems {
+			switch x := e.(type) {
+			case value.Целое:
+				fSum += float64(x.V)
+			case value.Дробное:
+				fSum += x.V
+			}
+		}
 		return value.Дробное{V: fSum}, nil
+	}
+	var iSum int64
+	for _, e := range *lst.Elems {
+		x := e.(value.Целое)
+		s, ov := addInt64(iSum, x.V)
+		if ov {
+			return nil, runtimeErr(pos, "переполнение целого числа")
+		}
+		iSum = s
 	}
 	return value.Целое{V: iSum}, nil
 }

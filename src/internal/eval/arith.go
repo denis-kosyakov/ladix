@@ -177,7 +177,11 @@ func (i *Interpreter) evalFloorDiv(b *ast.BinaryExpr, left, right value.Value) (
 	if ri.V == 0 {
 		return nil, runtimeErr(b.Pos(), "деление на ноль")
 	}
-	return value.Целое{V: floorDivInt64(li.V, ri.V)}, nil
+	q, ov := floorDivInt64(li.V, ri.V)
+	if ov {
+		return nil, runtimeErr(b.Pos(), "переполнение целого числа")
+	}
+	return value.Целое{V: q}, nil
 }
 
 // evalMod — оператор % (§3.3): Цел%Цел → Целое; Дроб%Дроб → Дробное (fmod);
@@ -273,13 +277,18 @@ func mulInt64(a, b int64) (int64, bool) {
 }
 
 // floorDivInt64 — целочисленное деление с округлением к минус бесконечности
-// (Python-семантика), согласовано с modInt64.
-func floorDivInt64(a, b int64) int64 {
+// (Python-семантика), согласовано с modInt64. Возвращает признак переполнения:
+// MinInt64 // -1 невыразимо в int64 (a/b заворачивается обратно в MinInt64) —
+// явная ловушка, зеркально mulInt64.
+func floorDivInt64(a, b int64) (int64, bool) {
+	if a == math.MinInt64 && b == -1 {
+		return 0, true
+	}
 	q := a / b
 	if (a%b != 0) && ((a < 0) != (b < 0)) {
 		q--
 	}
-	return q
+	return q, false
 }
 
 // modInt64 — остаток, согласованный с floorDivInt64 (знак результата = знак b).

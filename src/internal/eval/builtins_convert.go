@@ -1,12 +1,28 @@
 package eval
 
 import (
+	"math"
 	"strconv"
 	"strings"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
+
+// parseFiniteFloat парсит конечное Дробное из строки. Возвращает ok==false если
+// строка непарсима (err!=nil), содержит шестнадцатеричную/двоичную экспоненту
+// (xXpP — формы вроде «0x1p4», принимаемые ParseFloat), либо даёт ±Inf/NaN.
+// Зеркалит фильтр source_loader (нечисловые ±Inf/NaN не допускаются в язык).
+func parseFiniteFloat(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	if strings.ContainsAny(s, "xXpP") || math.IsInf(f, 0) || math.IsNaN(f) {
+		return 0, false
+	}
+	return f, true
+}
 
 // строка(x) — строковое представление §7 (всегда успешно).
 func builtinStroka(i *Interpreter, args []value.Value, pos ast.Position) (value.Value, error) {
@@ -77,9 +93,13 @@ func builtinDrobnoe(i *Interpreter, args []value.Value, pos ast.Position) (value
 		}
 		return value.Дробное{V: 0}, nil
 	case value.Строка:
-		f, err := strconv.ParseFloat(strings.TrimSpace(x.V), 64)
-		if err != nil {
+		s := strings.TrimSpace(x.V)
+		if _, err := strconv.ParseFloat(s, 64); err != nil {
 			return nil, typeErr(pos, "дробное: строка «"+x.V+"» не является числом")
+		}
+		f, ok := parseFiniteFloat(s)
+		if !ok {
+			return nil, runtimeErr(pos, "дробное: «"+s+"» не является конечным числом")
 		}
 		return value.Дробное{V: f}, nil
 	}
@@ -98,10 +118,14 @@ func builtinChislo(i *Interpreter, args []value.Value, pos ast.Position) (value.
 		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
 			return value.Целое{V: n}, nil
 		}
-		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			return value.Дробное{V: f}, nil
+		if _, err := strconv.ParseFloat(s, 64); err != nil {
+			return nil, typeErr(pos, "число: строка «"+x.V+"» не является числом")
 		}
-		return nil, typeErr(pos, "число: строка «"+x.V+"» не является числом")
+		f, ok := parseFiniteFloat(s)
+		if !ok {
+			return nil, runtimeErr(pos, "число: «"+s+"» не является конечным числом")
+		}
+		return value.Дробное{V: f}, nil
 	}
 	return nil, typeErr(pos, "число: значение типа "+args[0].TypeName()+" не преобразуется в число")
 }

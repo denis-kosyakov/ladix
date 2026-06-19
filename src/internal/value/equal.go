@@ -1,6 +1,9 @@
 package value
 
-import "strings"
+import (
+	"math"
+	"strings"
+)
 
 // Equal реализует == / != по §3.3 (FR-012, C-3). Чистая функция.
 //
@@ -95,14 +98,25 @@ func Compare(a, b Value) (int, bool) {
 		case Целое:
 			return cmpInt64(x.V, y.V), true
 		case Дробное:
-			return cmpFloat(float64(x.V), y.V), true
+			af := float64(x.V)
+			if math.IsNaN(af) || math.IsNaN(y.V) {
+				return 0, false
+			}
+			return cmpFloat(af, y.V), true
 		}
 	case Дробное:
 		switch y := b.(type) {
 		case Дробное:
+			if math.IsNaN(x.V) || math.IsNaN(y.V) {
+				return 0, false
+			}
 			return cmpFloat(x.V, y.V), true
 		case Целое:
-			return cmpFloat(x.V, float64(y.V)), true
+			bf := float64(y.V)
+			if math.IsNaN(x.V) || math.IsNaN(bf) {
+				return 0, false
+			}
+			return cmpFloat(x.V, bf), true
 		}
 	case Строка:
 		if y, ok := b.(Строка); ok {
