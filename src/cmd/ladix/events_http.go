@@ -26,8 +26,11 @@ import (
 func eventsHandler(st store.Store, clock engine.Clock, token string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 1. Метод: только POST (FR-IE-10). Свой дословный RU-текст (Принцип VIII), не
-		// дефолтное тело ServeMux.
+		// дефолтное тело ServeMux. Заголовок Allow (RFC 7231 §6.5.5 SHOULD) — полировка
+		// сверх канона §IE-2; ставится СТРОГО до WriteHeader (после него игнорируется).
+		// Тело/код 405 БАЙТ-идентичны (golden не сдвигается).
 		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			fmt.Fprintln(w, "ladix: метод не поддерживается, только POST")
 			return

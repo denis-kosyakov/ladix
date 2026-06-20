@@ -192,6 +192,10 @@ func TestInboundMethodAndEmptyName(t *testing.T) {
 	if want := "ladix: метод не поддерживается, только POST\n"; string(gb) != want {
 		t.Errorf("405 тело = %q, хотим %q", string(gb), want)
 	}
+	// N1: заголовок Allow: POST на 405 (RFC 7231 §6.5.5). Тело/код выше — НЕ менялись.
+	if got := resp.Header.Get("Allow"); got != "POST" {
+		t.Errorf("405 Allow = %q, хотим %q", got, "POST")
+	}
 
 	// POST /events/ (пустое имя) → 400.
 	code, body := httpPost(t, srv.URL+"/events/", `{}`, nil)
