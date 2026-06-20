@@ -33,7 +33,7 @@ description: "Задачи реализации трека B «Входящие 
 
 - [ ] T003 В `src/cmd/ladix/emit.go` добавить СВОБОДНУЮ функцию `enqueueEvent(st store.Store, name, payload string, clock engine.Clock) (string, error)` по контракту `contracts/enqueue-helper.md`: `NextEventID` → `&store.Event{ID,Name,PayloadJSON,CreatedAt:clock.Now(),Processed:false}` → `EnqueueEvent` → `(id, nil)`; ack-печать НЕ входит.
 - [ ] T004 В `src/cmd/ladix/emit.go` переписать тело `emitEvent` (строки 65-83) на использование `enqueueEvent(sq, name, payload, clock)`; при ошибке — прежний текст `ladix: сбой хранилища: <err>` + `return 2`; при успехе — прежний ack `событие %s '%s' поставлено в очередь` (сигнатура `emitEvent` неизменна, поведение байт-идентично).
-- [ ] T005 Регресс-замок рефактора: в `src/cmd/ladix/emit_cli_test.go` (или существующем emit-тесте) убедиться/добавить, что `emit <имя> <json> --db D` печатает дословно `событие e-000001 '<имя>' поставлено в очередь` (ack `emit` НЕ изменился). `go test ./cmd/ladix/ -run Emit` зелёный.
+- [ ] T005 Регресс-замок рефактора: в `src/cmd/ladix/emit_golden_test.go` (существующий emit-тест) убедиться/добавить, что `emit <имя> <json> --db D` печатает дословно `событие e-000001 '<имя>' поставлено в очередь` (ack `emit` НЕ изменился). `go test ./cmd/ladix/ -run Emit` зелёный.
 
 **Checkpoint**: `enqueueEvent` готов; `emit` без регресса.
 
@@ -55,9 +55,9 @@ description: "Задачи реализации трека B «Входящие 
 
 ### Тесты US1 (`src/cmd/ladix/events_http_test.go`, новый; httptest)
 
-- [ ] T011 [P] [US1] FR-IE-3 golden: `httptest.NewServer(eventsHandler(st, fixedClock{...}, ""))`; `http.Post(srv.URL+"/events/"+url.PathEscape("падение_выручки"), …, body)` → `202`, тело `событие e-000001 'падение_выручки' принято`; затем `buildServeDaemon(prog, st, …, fixedClock{...})` над ТЕМ ЖЕ `st` + `d.tick()` → тело триггера `когда событие падение_выручки` сработало (вывод в out). Кириллица percent-кодирована (ловит регресс декода).
+- [ ] T011 [P] [US1] FR-IE-3 golden: `httptest.NewServer(eventsHandler(st, fixedClock{...}, ""))`; `http.Post(srv.URL+"/events/"+url.PathEscape("падение_выручки"), …, body)` → `202`, тело `событие e-000001 'падение_выручки' принято`; затем `buildServeDaemon(prog, st, …, fixedClock{...})` над ТЕМ ЖЕ `st`, `go func(){ done<-d.Run(ctx) }()` + `waitUntil(t, func()bool{ evs,_:=st.ListUnprocessedEvents(); return len(evs)==0 })` + `cancel()`+`<-done` → тело триггера `когда событие падение_выручки` сработало (вывод в out). **НЕ `d.tick()`** — он неэкспортирован (пакет `daemon`); гонять через `d.Run(ctx)`, как webhook_cli_test.go:191. Кириллица percent-кодирована (ловит регресс декода).
 - [ ] T012 [P] [US1] FR-IE-3 эквивалентность: то же событие через `enqueueEvent`/`emit`-путь и через HTTP дают идентичную `store.Event` (Name/PayloadJSON/детерм. CreatedAt от fixedClock) — сравнение по `ListUnprocessedEvents`.
-- [ ] T013 [P] [US1] FR-IE-7: `POST /events/x` с телом `{битый` (невалидный JSON) → `202`; на `d.tick()` тело всё равно исполняется, событие `processed` (замок кусается, если приём начнёт валидировать JSON).
+- [ ] T013 [P] [US1] FR-IE-7: `POST /events/x` с телом `{битый` (невалидный JSON) → `202`; затем гнать тик через `d.Run(ctx)`+`waitUntil(ListUnprocessedEvents==0)` (НЕ `d.tick()`) — тело всё равно исполняется, событие `processed` (замок кусается, если приём начнёт валидировать JSON).
 - [ ] T014 [P] [US1] FR-IE-10: `GET /events/x` → `405` (`ladix: метод не поддерживается, только POST`); `POST /events/` (пустой сегмент) → `400` (`ladix: пустое имя события`).
 - [ ] T015 [P] [US1] FR-IE-6 (500): `type failEnqueueStore struct{ store.Store }` поверх `NewMemoryStore()`, `EnqueueEvent` → ошибка (R9); `POST` → `500` (`ladix: сбой хранилища`), событие НЕ в очереди (202 строго после успешного enqueue).
 - [ ] T016 [P] [US1] FR-IE-2 (статическая изоляция): компилируемый замок — `var _ = func() http.Handler { return eventsHandler(store.NewMemoryStore(), engine.SystemClock{}, "") }` (сигнатура принимает Store+Clock+string, НЕ `*Engine`). Комментарий-барьер: если в сигнатуру протечёт движок — не скомпилится.
@@ -100,7 +100,7 @@ description: "Задачи реализации трека B «Входящие 
 ## Phase 6: Polish & Cross-Cutting
 
 - [ ] T026 `cd src && gofmt -l cmd/ladix/` пусто; `go vet ./...` чисто.
-- [ ] T027 Регресс-барьеры FR-IE-1: `go test ./cmd/ladix/ -run 'Serve|Goroutine|Webhook'` и `go test ./internal/daemon/ -run Shutdown` зелёные НЕТРОНУТЫ (без правки сути). Подтвердить: serve без `--listen` не стартует сервер.
+- [ ] T027 Регресс-барьеры FR-IE-1: `go test ./cmd/ladix/ -run 'Serve|Webhook'` и `go test ./internal/daemon/ -run Shutdown` (вкл. `TestServeGracefulShutdownNoLeak`, `TestRunGracefulShutdown`) зелёные НЕТРОНУТЫ (без правки сути). Подтвердить: serve без `--listen` не стартует сервер.
 - [ ] T028 Полный прогон: `cd src && go build ./... && go vet ./... && go test ./...` — всё зелёное. `go test -race ./cmd/ladix/ ./internal/daemon/` зелёный (хендлер∥тик).
 - [ ] T029 Замок зависимостей: `grep require src/go.mod` — по-прежнему только `modernc.org/sqlite` (0 новых). ПУСТОЙ дифф `internal/*`: `git diff --stat master -- src/internal/` пуст.
 - [ ] T030 Мутпробы (выборочно): снять проверку метода → T014 краснеет; снять auth-ветку → T020 краснеет; вернуть `time.Now()` вместо `clock.Now()` → T011/T012 краснеют; убрать `wg.Wait()` → T017 краснеет. Восстановить.
