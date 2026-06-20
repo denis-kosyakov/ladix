@@ -396,7 +396,7 @@ type CompleteResult struct {
     CaughtUp bool                   // true = гард-догон D-4 (до-продвижение уже-завершённой задачи)
 }
 
-// M2/B3: добавлен параметр payload `data` (флаг `--данные`, §EN-10) — read-only
+// M2/B3: добавлен параметр payload `data` (флаг `--data`, §EN-10) — read-only
 // эфемерная `Запись` `данные` первому шагу догона; на момент 006 — `Complete(taskID string)`.
 func (e *Engine) Complete(taskID string, data value.Запись) (CompleteResult, error)
 
@@ -462,7 +462,7 @@ type ProcessRuntime interface {
 
     // CallExternal — statement-форма «вызвать» (D-13): под дефолт-драйвером одна
     // строка в stdout (§EN-7); делегирует CallExternalResult, отбрасывая значение
-    // (эффект РОВНО один раз). Под HTTP-драйвером (--вебхук, ниже) сбой доставки →
+    // (эффект РОВНО один раз). Под HTTP-драйвером (--webhook, ниже) сбой доставки →
     // не-nil ошибка → шаг провален (D-14, M2 — путь теперь достижим).
     CallExternal(target string, args []value.Value) error
 
@@ -497,7 +497,7 @@ type ProcessRuntime interface {
 `printCaller` (`caller.go:26`, §EN-7) и реальная HTTP-доставка `webhookCaller` (`caller.go:60`,
 §AU-4.3). `NewEngine` ставит `printCaller{out: e.out}` (`engine.go:54`); опция
 `WithExternalCaller(c)` (`clock.go:29`) подменяет его ПОСЛЕ дефолта — CLI применяет её под
-флагом `--вебхук <URL>` / env `LADIX_WEBHOOK` (корень композиции валидирует URL: невалидный →
+флагом `--webhook <URL>` / env `LADIX_WEBHOOK` (корень композиции валидирует URL: невалидный →
 CLI-ошибка `ladix: неверный URL вебхука '<URL>'`, §EN-8.B). Engine-методы — тонкие
 делегаторы (`runtime.go:44-62`).
 
@@ -729,7 +729,7 @@ Task); 5-6 — сводка `run` и `tasks`; 7-10 — `complete`; 11 — `tasks
 **Дефолт vs реальный драйвер (M2/B2).** Строки 1-2 (`[вызов]`/`[уведомление]`) — выход
 **дефолтного** драйвера `printCaller` (§EN-4): печать-стаб, наблюдаемое поведение v1
 сохранено байт-в-байт, golden не меняется. Под HTTP-драйвером `webhookCaller` (CLI-флаг
-`--вебхук <URL>` / env `LADIX_WEBHOOK`) `вызвать`/`уведомить` вместо печати шлют `POST` тела
+`--webhook <URL>` / env `LADIX_WEBHOOK`) `вызвать`/`уведомить` вместо печати шлют `POST` тела
 `{"цель": target, "данные": [args]}` (нетегированный plain-JSON, §AU-4.3); ответ `вызвать`
 декодируется в `value.Value` (захват результата), ответ `уведомить` игнорируется (best-effort).
 Выбор драйвера — на корне композиции (CLI); реестр строк выше остаётся каноном дефолта.
@@ -888,10 +888,10 @@ t-000001  p-000001  'провести_встречу'  руководитель 
   (`store.go:43-44`), движок `outboxPrecheck`/`outboxRecord` (`runtime.go:51,75`), тип
   `OutboxRecord`+`ErrOutboxNotFound` (`types.go:88,115`); мердж 020 «outbox-леджер +
   exactly-once доставка».)*
-  **(M2-апдейт:** payload задачи реализован — `complete <file> <taskID> --данные '{…}'`
+  **(M2-апдейт:** payload задачи реализован — `complete <file> <taskID> --data '{…}'`
   пробрасывает JSON-объект как **read-only** эфемерную `Запись` `данные`, видную ТОЛЬКО первому
   шагу догона; перепривязка отвергается `AssignProcessVar`. Невалидный JSON → CLI-ошибка
-  `ladix: неверный JSON в --данные: <деталь>`, §AU/automation-model.)
+  `ladix: неверный JSON в --data: <деталь>`, §AU/automation-model.)
 - **Команды `repl`**, машинно-читаемый вывод → v2. **(M2/007-апдейт:** `serve`/`emit`
   реализованы — 007; `start <file> <процесс> [аргументы…] [--db]` и `inspect <id> [--db]` — M2/B6.)
   Миграции схемы БД → v2 (текущая стратегия — сброс, automation-model).

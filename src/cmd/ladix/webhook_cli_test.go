@@ -43,14 +43,14 @@ func notifyFixture() string { return filepath.Join("testdata", "webhook_notify.l
 
 // --- C-CLI-1 (T027): флаг + env активируют POST ---
 
-// TestRunWebhookFlagPosts — run --вебхук <httptest> → POST тела уведомить, стаб НЕ печатается.
+// TestRunWebhookFlagPosts — run --webhook <httptest> → POST тела уведомить, стаб НЕ печатается.
 func TestRunWebhookFlagPosts(t *testing.T) {
 	rec := &webhookRecorder{}
 	srv := httptest.NewServer(rec.handler())
 	defer srv.Close()
 
 	var out, errBuf bytes.Buffer
-	code := realMain([]string{"run", notifyFixture(), "--вебхук", srv.URL}, &out, &errBuf)
+	code := realMain([]string{"run", notifyFixture(), "--webhook", srv.URL}, &out, &errBuf)
 	if code != 0 {
 		t.Fatalf("код = %d, stderr=%q", code, errBuf.String())
 	}
@@ -65,7 +65,7 @@ func TestRunWebhookFlagPosts(t *testing.T) {
 		t.Errorf("тело = %q, хотим %q", bodies[0], want)
 	}
 	if strings.Contains(out.String(), "[уведомление]") {
-		t.Errorf("стаб печатался под --вебхук: %q", out.String())
+		t.Errorf("стаб печатался под --webhook: %q", out.String())
 	}
 }
 
@@ -101,7 +101,7 @@ func TestWebhookFlagBeatsEnv(t *testing.T) {
 
 	t.Setenv("LADIX_WEBHOOK", envSrv.URL)
 	var out, errBuf bytes.Buffer
-	code := realMain([]string{"run", notifyFixture(), "--вебхук", flagSrv.URL}, &out, &errBuf)
+	code := realMain([]string{"run", notifyFixture(), "--webhook", flagSrv.URL}, &out, &errBuf)
 	if code != 0 {
 		t.Fatalf("код = %d, stderr=%q", code, errBuf.String())
 	}
@@ -115,10 +115,10 @@ func TestWebhookFlagBeatsEnv(t *testing.T) {
 
 // --- C-CLI-2 (T028): ошибка неверного URL, ДОСЛОВНО ---
 
-// TestWebhookInvalidURL — run --вебхук '://мусор' → stderr ровно §AU-10.C, exit 2, stdout пуст.
+// TestWebhookInvalidURL — run --webhook '://мусор' → stderr ровно §AU-10.C, exit 2, stdout пуст.
 func TestWebhookInvalidURL(t *testing.T) {
 	var out, errBuf bytes.Buffer
-	code := realMain([]string{"run", notifyFixture(), "--вебхук", "://мусор"}, &out, &errBuf)
+	code := realMain([]string{"run", notifyFixture(), "--webhook", "://мусор"}, &out, &errBuf)
 	if code != 2 {
 		t.Errorf("код = %d, хотим 2", code)
 	}

@@ -173,13 +173,13 @@ func TestStartBadLiteralCLI(t *testing.T) {
 	}
 }
 
-// TestStartBadWebhookURL — вебхук-проводка (§AU-4.5, T020): невалидный --вебхук →
+// TestStartBadWebhookURL — вебхук-проводка (§AU-4.5, T020): невалидный --webhook →
 // «неверный URL вебхука '<URL>'» exit 2 (через openExternalCaller, B2). Валидный
 // путь без вебхука → дефолт-стаб, exit 0.
 func TestStartBadWebhookURL(t *testing.T) {
 	var out, errBuf bytes.Buffer
 	args := []string{"start", testdataPath("старт_терминальный.ladix"), "пинг",
-		"--вебхук", "://плохо", "--db", filepath.Join(t.TempDir(), "wh.db")}
+		"--webhook", "://плохо", "--db", filepath.Join(t.TempDir(), "wh.db")}
 	code := realMain(args, &out, &errBuf)
 	if code != 2 {
 		t.Fatalf("код = %d, хотим 2; stderr=%q", code, errBuf.String())

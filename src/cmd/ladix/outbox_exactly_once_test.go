@@ -55,7 +55,7 @@ func crmPOSTCount(sink *m2Sink) int {
 }
 
 // TestStepEffectExactlyOnceRestart — ГЕЙТ §2 (durable exactly-once, §C-2b.7).
-// (1) start → complete --данные: процесс доходит до уведомить_crm, тело POST'ит crm
+// (1) start → complete --data: процесс доходит до уведомить_crm, тело POST'ит crm
 //
 //	РОВНО раз (POST=1), outbox фиксирует delivered.
 //
@@ -80,7 +80,7 @@ func TestStepEffectExactlyOnceRestart(t *testing.T) {
 	srv := httptest.NewServer(sink.handler())
 	defer srv.Close()
 
-	// --- Стадия 1: start + complete --данные доводят инстанс до уведомить_crm ---
+	// --- Стадия 1: start + complete --data доводят инстанс до уведомить_crm ---
 	var so, se bytes.Buffer
 	if code := realMain([]string{"start", prog, "эскалация_плана", "2500000", "--db", db}, &so, &se); code != 0 {
 		t.Fatalf("start: код=%d stderr=%q", code, se.String())
@@ -94,7 +94,7 @@ func TestStepEffectExactlyOnceRestart(t *testing.T) {
 	// complete провязывается с тем же webhook-драйвером (через openExternalCaller),
 	// чтобы реальный эффект crm в теле шага догона ушёл POST'ом на sink.
 	if code := completeTask(prog, "t-000001", db, 0, `{"итог":"перезвонит"}`, caller, engine.SystemClock{}, &co, &ce); code != 0 {
-		t.Fatalf("complete --данные: код=%d stderr=%q out=%q", code, ce.String(), co.String())
+		t.Fatalf("complete --data: код=%d stderr=%q out=%q", code, ce.String(), co.String())
 	}
 
 	if got := crmPOSTCount(sink); got != 1 {

@@ -83,7 +83,7 @@ DoD §2 хартии подтверждён файлом-доказательс�
 - [x] Триггер `когда метрика < план` запускает процесс. — `examples/контроль_плана.ladix:26` · `TestCLIControlPlanRunFixedClock` (старт `p-000001`, `src/cmd/ladix/control_plan_golden_test.go:62`)
 - [x] Человеческий шаг с дедлайном. — `examples/контроль_плана.ladix:31` · `TestQuickstartSmoke_EscalationLifecycle` (задача `t-000001`, `src/cmd/ladix/quickstart_smoke_test.go:155`)
 - [x] Эскалация дедлайна. — `examples/контроль_плана.ladix:43` · `TestM2GoldenEndToEnd` (эскалация POST, `src/internal/daemon/m2_endtoend_test.go:167`)
-- [x] Payload в `ladix complete --данные`. — `TestQuickstartSmoke_EscalationLifecycle` (`данные.итог`, `src/cmd/ladix/quickstart_smoke_test.go:155`) · `SPEC.md:564`
+- [x] Payload в `ladix complete --data`. — `TestQuickstartSmoke_EscalationLifecycle` (`данные.итог`, `src/cmd/ladix/quickstart_smoke_test.go:155`) · `SPEC.md:564`
 - [x] Реальный эффект тела шага. — `examples/контроль_плана.ladix:40` · `TestM2GoldenEndToEnd` (webhook POST, `src/internal/daemon/m2_endtoend_test.go:167`) · `TestQuickstartSmoke_EscalationLifecycle` (`[уведомление] crm`)
 - [x] Exactly-once доставка эффекта на рестарте. — `TestStepEffectExactlyOnceRestart` (POST == 1, `src/cmd/ladix/outbox_exactly_once_test.go:71`)
 - [x] Forward-only миграции схемы Store. — `PRAGMA user_version` · `TestMigrateFreshDB` / `TestMigrateLegacyV0` / `TestMigrateIdempotent` (`src/internal/store/migrate_test.go:55`) · `docs/reliability-model.md` §C-2a

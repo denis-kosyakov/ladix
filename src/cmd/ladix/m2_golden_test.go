@@ -18,7 +18,7 @@ import (
 
 // m2_golden_test.go — CLI-форма гейт-сценария вехи M2 (§AU-12.C/B). Companion к
 // детерминированному daemon-golden (internal/daemon/m2_endtoend_test.go): здесь
-// реальные подкоманды `ladix start`/`complete --данные`/`inspect` через realMain на
+// реальные подкоманды `ladix start`/`complete --data`/`inspect` через realMain на
 // временной SQLite-БД, плюс §AU-12.B durable×рестарт В CLI-ФОРМЕ (start → прогон
 // демона до эскалации через httptest-вебхук → рестарт store → нет повтора).
 //
@@ -106,7 +106,7 @@ func (s *m2Sink) snapshot() ([]string, []string) {
 }
 
 // TestM2GoldenCLI — §AU-12.C CLI-форма: start → (демон до эскалации через webhook) →
-// complete --данные (payload виден догоном) → inspect (история с «, эскалирована»).
+// complete --data (payload виден догоном) → inspect (история с «, эскалирована»).
 // Плюс §AU-12.B durable×рестарт в CLI-форме.
 func TestM2GoldenCLI(t *testing.T) {
 	prog, db := writeM2CLIProg(t)
@@ -160,13 +160,13 @@ func TestM2GoldenCLI(t *testing.T) {
 		t.Fatalf("§AU-12.B рестарт: webhook POST суммарно = %d, хотим РОВНО 1 (нет повтора)", n2)
 	}
 
-	// --- Стадия B3: complete --данные '{"итог":"перезвонит"}' → авто-шаг догона видит payload ---
+	// --- Стадия B3: complete --data '{"итог":"перезвонит"}' → авто-шаг догона видит payload ---
 	var co, ce bytes.Buffer
-	if code := realMain([]string{"complete", prog, "t-000001", "--данные", `{"итог":"перезвонит"}`, "--db", db}, &co, &ce); code != 0 {
-		t.Fatalf("complete --данные: код=%d stderr=%q", code, ce.String())
+	if code := realMain([]string{"complete", prog, "t-000001", "--data", `{"итог":"перезвонит"}`, "--db", db}, &co, &ce); code != 0 {
+		t.Fatalf("complete --data: код=%d stderr=%q", code, ce.String())
 	}
 	if !strings.Contains(co.String(), "итог догона: перезвонит") {
-		t.Fatalf("payload --данные не дошёл до первого шага догона: %q", co.String())
+		t.Fatalf("payload --data не дошёл до первого шага догона: %q", co.String())
 	}
 
 	// --- Стадия B6: inspect показывает снимок + историю с «, эскалирована» ---

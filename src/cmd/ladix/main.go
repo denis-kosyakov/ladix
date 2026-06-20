@@ -36,7 +36,7 @@ import (
 const webhookTimeout = 30 * time.Second
 
 // openExternalCaller разрешает драйвер внешних эффектов из CLI (B2, §AU-4.5 / §AU-10.C):
-// URL = флаг --вебхук, иначе env LADIX_WEBHOOK, иначе пусто → (nil, nil) (движок берёт
+// URL = флаг --webhook, иначе env LADIX_WEBHOOK, иначе пусто → (nil, nil) (движок берёт
 // дефолт-стаб printCaller). Невалидный URL → ошибка (движок НЕ строится). Валидный →
 // webhookCaller с конечным таймаутом. Чтение env — в корне композиции, передача
 // параметром (Принцип V). Вызывающий применяет WithExternalCaller только при c != nil.
@@ -68,7 +68,7 @@ func main() {
 	os.Exit(realMain(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-const usage = "использование: ladix run [--max-depth N] [--db путь] [--вебхук URL] <файл> | ladix metric [--max-depth N] <файл> <имя> | ladix start [--db путь] [--вебхук URL] [--max-depth N] <файл> <процесс> [аргументы...] | ladix complete [--db путь] [--max-depth N] [--вебхук URL] <файл> <task-id> | ladix tasks [--db путь] [исполнитель] | ladix inspect <id> [--db путь] | ladix serve [--db путь] [--interval D] [--max-depth N] [--вебхук URL] <файл> | ladix emit <событие> [json] [--db путь]"
+const usage = "использование: ladix run [--max-depth N] [--db путь] [--webhook URL] <файл> | ladix metric [--max-depth N] <файл> <имя> | ladix start [--db путь] [--webhook URL] [--max-depth N] <файл> <процесс> [аргументы...] | ladix complete [--db путь] [--max-depth N] [--webhook URL] <файл> <task-id> | ladix tasks [--db путь] [исполнитель] | ladix inspect <id> [--db путь] | ladix serve [--db путь] [--interval D] [--max-depth N] [--webhook URL] <файл> | ladix emit <событие> [json] [--db путь]"
 
 // realMain — диспетчер подкоманд (§SM-11 CM-2): ветвление по args[0]. Возвращает
 // код возврата. Вынесен из main и параметризован вводом/выводом для тестируемости.
@@ -143,15 +143,15 @@ func runMain(rest []string, stdout, stderr io.Writer) int {
 			k++
 		case strings.HasPrefix(a, "--db="):
 			dbPath = strings.TrimPrefix(a, "--db=")
-		case a == "--вебхук":
+		case a == "--webhook":
 			if k+1 >= len(rest) {
-				fmt.Fprintln(stderr, "ladix: флаг --вебхук требует значение")
+				fmt.Fprintln(stderr, "ladix: флаг --webhook требует значение")
 				return 2
 			}
 			webhook = rest[k+1]
 			k++
-		case strings.HasPrefix(a, "--вебхук="):
-			webhook = strings.TrimPrefix(a, "--вебхук=")
+		case strings.HasPrefix(a, "--webhook="):
+			webhook = strings.TrimPrefix(a, "--webhook=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -254,7 +254,7 @@ func runFile(path, dbPath string, maxDepth int, caller engine.ExternalCaller, cl
 		interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
 		// Стек движка процессов (006, §EN-6): Store + Engine + инъекция
 		// ProcessRuntime, чтобы «запустить процесс» исполнялся. Драйвер внешних эффектов
-		// (B2): webhookCaller под --вебхук/env, иначе дефолт-стаб (caller == nil).
+		// (B2): webhookCaller под --webhook/env, иначе дефолт-стаб (caller == nil).
 		// engine.WithClock(clock) — те же часы, что и у интерпретатора (C4 §C-4.2).
 		eng := engine.NewEngine(st, interp, stdout, append([]engine.Option{engine.WithClock(clock)}, withExternalCallerOpt(caller)...)...)
 		interp.SetProcessRuntime(eng)
@@ -348,7 +348,7 @@ func completeMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) i
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := defaultDBPath
 	webhook := ""
-	payloadRaw := "" // сырое значение --данные (декод в completeTask через jsonval)
+	payloadRaw := "" // сырое значение --data (декод в completeTask через jsonval)
 	var positional []string
 	for k := 0; k < len(rest); k++ {
 		a := rest[k]
@@ -381,24 +381,24 @@ func completeMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) i
 			k++
 		case strings.HasPrefix(a, "--db="):
 			dbPath = strings.TrimPrefix(a, "--db=")
-		case a == "--вебхук":
+		case a == "--webhook":
 			if k+1 >= len(rest) {
-				fmt.Fprintln(stderr, "ladix: флаг --вебхук требует значение")
+				fmt.Fprintln(stderr, "ladix: флаг --webhook требует значение")
 				return 2
 			}
 			webhook = rest[k+1]
 			k++
-		case strings.HasPrefix(a, "--вебхук="):
-			webhook = strings.TrimPrefix(a, "--вебхук=")
-		case a == "--данные":
+		case strings.HasPrefix(a, "--webhook="):
+			webhook = strings.TrimPrefix(a, "--webhook=")
+		case a == "--data":
 			if k+1 >= len(rest) {
-				fmt.Fprintln(stderr, "ladix: флаг --данные требует значение")
+				fmt.Fprintln(stderr, "ladix: флаг --data требует значение")
 				return 2
 			}
 			payloadRaw = rest[k+1]
 			k++
-		case strings.HasPrefix(a, "--данные="):
-			payloadRaw = strings.TrimPrefix(a, "--данные=")
+		case strings.HasPrefix(a, "--data="):
+			payloadRaw = strings.TrimPrefix(a, "--data=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -426,13 +426,13 @@ func completeMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) i
 // clock — единые часы пути (C4 §C-4.2): движок штампует MarkTaskCompleted/UpdatedAt
 // от ЭТИХ часов (WithClock), интерпретатор — дату метрик от тех же (evalClockFromEngine).
 func completeTask(path, taskID, dbPath string, maxDepth int, payloadRaw string, caller engine.ExternalCaller, clock engine.Clock, stdout, stderr io.Writer) int {
-	// Декод --данные (B3, §AU-5.3) на CLI — корень композиции, импорт jsonval допустим;
+	// Декод --data (B3, §AU-5.3) на CLI — корень композиции, импорт jsonval допустим;
 	// движок получает уже готовую value.Запись. Пустой payload → пустая Запись без
 	// ошибки (поведение jsonval). Невалидный JSON / не-объект → дословная ошибка exit 2
 	// ДО любой мутации Store (валидация прежде Engine).
 	data, derr := jsonval.PayloadToRecord(payloadRaw)
 	if derr != nil {
-		fmt.Fprintf(stderr, "ladix: неверный JSON в --данные: %s\n", derr.Error())
+		fmt.Fprintf(stderr, "ladix: неверный JSON в --data: %s\n", derr.Error())
 		return 2
 	}
 	src, err := os.ReadFile(path)

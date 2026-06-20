@@ -36,7 +36,7 @@ import (
 //	   реальный POST {"цель":"руководитель","данные":[<факт>]} на тест-сервер (тело захвачено);
 //	7. §AU-12.B durable×рестарт: эскалация РОВНО раз; рестарт store/демона → НЕТ повтора.
 //
-// CLI-форма (start/complete --данные/inspect + §AU-12.B CLI start durable) — companion
+// CLI-форма (start/complete --data/inspect + §AU-12.B CLI start durable) — companion
 // cmd/ladix/m2_golden_test.go. Прод-логика НЕ тронута: тест только наблюдает.
 
 // advanceClock — мутабельные управляемые часы (engine.Clock) для пошагового продвижения
