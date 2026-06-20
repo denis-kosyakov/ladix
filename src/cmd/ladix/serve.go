@@ -28,6 +28,27 @@ import (
 // defaultInterval — период тика демона по умолчанию (--interval, FR-001).
 const defaultInterval = time.Minute
 
+// serveStore — Store с Close (закрытие durable-коннекта). store.Store сам Close не
+// несёт (его реализует только *SQLiteStore); этот алиас даёт serveFile закрыть Store
+// и допускает тест-подмену открывашки (N2b, пин §IE-5.2 Shutdown→Close).
+type serveStore interface {
+	store.Store
+	Close() error
+}
+
+// openServeStore — индирекция открытия durable-Store под --db. Прод: SQLite. Тест
+// подменяет на recorder-обёртку, фиксирующую порядок EnqueueEvent/Close (пин
+// КРИТИЧНОГО инварианта §IE-5.2: in-flight POST дописывается ДО Close). Поведение
+// прод-пути не меняет (дефолт = прежний store.NewSQLiteStore).
+var openServeStore = func(dbPath string) (serveStore, error) {
+	return store.NewSQLiteStore(dbPath)
+}
+
+// serveListenerReady — тест-хук готовности listener (вызывается ПОСЛЕ успешного
+// net.Listen). Прод — no-op; тест читает выбранный ln.Addr() при --listen :0
+// (дискавери порта). Поведение прод-пути не меняет.
+var serveListenerReady = func(net.Listener) {}
+
 // serveMain разбирает аргументы подкоманды serve и поднимает демон (007b, serve-command.md).
 // rest — аргументы ПОСЛЕ «serve»: один позиционный (<файл>) + --db/--interval/--max-depth.
 // Зеркало runMain по флагам: без --db — MemoryStore (эфемерно; durability и кросс-процессный
@@ -150,7 +171,12 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
 		return 2
 	}
-	return serveFile(file, dbPath, interval, maxDepth, caller, listen, token, stdout, stderr)
+	// Грациозная остановка: SIGINT/SIGTERM → ctx.Done() (FR-003, SC-007). Контекст
+	// строится ПОСЛЕ всех валидаций (ранние exit 2 обработчик сигналов не ставят) и
+	// инъектируется в serveFile — тест отменяет ctx без ОС-сигнала (пин §IE-5.2).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return serveFile(ctx, file, dbPath, interval, maxDepth, caller, listen, token, stdout, stderr)
 }
 
 // serveFile читает+компилирует файл и поднимает демон (serve-command.md §жизненный цикл).
@@ -160,7 +186,7 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 // стартует), Run (связать глобалы), рестарт-скан ДО тиков, затем блокирующий Run(ctx) с
 // грациозной остановкой по SIGINT/SIGTERM (выход 0). Часы планировщика — прод
 // engine.SystemClock (отсюда же дата метрик интерпретатора, FR-024, см. buildServeDaemon).
-func serveFile(path, dbPath string, interval time.Duration, maxDepth int, caller engine.ExternalCaller, listen, token string, stdout, stderr io.Writer) int {
+func serveFile(ctx context.Context, path, dbPath string, interval time.Duration, maxDepth int, caller engine.ExternalCaller, listen, token string, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -174,9 +200,10 @@ func serveFile(path, dbPath string, interval time.Duration, maxDepth int, caller
 	}
 	// Store: с --db открываем SQLite ДО guard (ошибка открытия — окружение, exit 2);
 	// без --db — эфемерный MemoryStore (durability/emit недоступны, граница FR-010).
+	// Открывашка — через openServeStore (прод = NewSQLiteStore; тест подменяет, N2b).
 	var st store.Store
 	if dbPath != "" {
-		sq, oerr := store.NewSQLiteStore(dbPath)
+		sq, oerr := openServeStore(dbPath)
 		if oerr != nil {
 			fmt.Fprintf(stderr, "ladix: не удалось открыть хранилище '%s': %s\n", dbPath, oerr.Error())
 			return 2
@@ -201,6 +228,7 @@ func serveFile(path, dbPath string, interval time.Duration, maxDepth int, caller
 			return 2
 		}
 		ln = l
+		serveListenerReady(ln) // тест-хук дискавери порта (прод no-op)
 		// Дефолт-граница loopback (§IE-3): не-loopback host без токена → предупреждение,
 		// НЕ блокируем (эндпоинт запускает процессы по сети).
 		if token == "" && !isLoopbackListen(listen) {
@@ -212,17 +240,17 @@ func serveFile(path, dbPath string, interval time.Duration, maxDepth int, caller
 		if d == nil {
 			return code // ошибка компиляции/семпрохода (exit 1)
 		}
-		// Сетевой приёмник: defer stop() ВНУТРИ guard-замыкания → по LIFO Shutdown+wg.Wait
-		// отрабатывают ДО внешнего defer sq.Close() (выше, в области serveFile): in-flight
-		// POST не пишет в закрытый Store (FR-IE-6), горутина join-ится (FR-IE-8).
+		// КРИТИЧНЫЙ инвариант §IE-5.2 (FR-IE-6): defer stopListener() ВНУТРИ
+		// guard-замыкания → по LIFO Shutdown+wg.Wait отрабатывают СТРОГО ДО внешнего
+		// defer sq.Close() (выше, в области serveFile) → in-flight POST дописывается до
+		// закрытия Store, горутина join-ится (FR-IE-8). НЕ выносить этот defer в область
+		// serveFile: пин — TestServeListenerStopsBeforeStoreClose (events_http_test.go).
 		if ln != nil {
 			stopListener := startEventListener(ln, st, clock, token)
 			defer stopListener()
 		}
-		// Грациозная остановка: SIGINT/SIGTERM → ctx.Done() ловится в select цикла Run
-		// МЕЖДУ тиками (FR-003, SC-007). defer stop() освобождает обработчик сигналов.
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
+		// ctx (SIGINT/SIGTERM или тест-cancel) ловится в select цикла Run МЕЖДУ тиками
+		// (FR-003, SC-007); создаётся/инъектируется serveMain.
 		d.RunRestartScan() // рестарт-скан ДО тиков (FR-019)
 		// Защитный no-op: Run в текущей реализации возвращает только nil (тик глотает
 		// Store-сбои в лог намеренно — serve долгоживущий, §EN-8 не нарушен). Ветка
