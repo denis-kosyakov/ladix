@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -192,6 +193,10 @@ func TestInboundMethodAndEmptyName(t *testing.T) {
 	if want := "ladix: метод не поддерживается, только POST\n"; string(gb) != want {
 		t.Errorf("405 тело = %q, хотим %q", string(gb), want)
 	}
+	// N1: заголовок Allow: POST на 405 (RFC 7231 §6.5.5). Тело/код выше — НЕ менялись.
+	if got := resp.Header.Get("Allow"); got != "POST" {
+		t.Errorf("405 Allow = %q, хотим %q", got, "POST")
+	}
 
 	// POST /events/ (пустое имя) → 400.
 	code, body := httpPost(t, srv.URL+"/events/", `{}`, nil)
@@ -300,6 +305,183 @@ func TestServeListenBindError(t *testing.T) {
 	}
 	if !strings.Contains(errBuf.String(), "ladix: не удалось открыть сокет '"+addr+"'") {
 		t.Errorf("stderr = %q, хотим префикс «не удалось открыть сокет '%s'»", errBuf.String(), addr)
+	}
+}
+
+// --- N2a: at-least-once — принятое событие переживает рестарт демона ---
+
+// TestInboundAtLeastOnceAcrossRestart пришпиливает FR-IE-6 «снизу»: событие,
+// заминченное общим хелпером (как in-flight POST, успевший записаться), переживает
+// закрытие Store и дренится НОВЫМ демоном над тем же durable-файлом. Чистый замок,
+// без прод-рефактора. Мутации, ОБЯЗАННЫЕ покраснеть: (1) минт ПОСЛЕ Close — событие
+// не персистится (enqueueEvent вернёт ошибку на закрытом Store); (2) drain не видит
+// pre-existing события — тело триггера не сработает.
+func TestInboundAtLeastOnceAcrossRestart(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "restart.db")
+
+	// 1. Первый процесс: заминтить событие durable-очередью, затем закрыть Store.
+	sq1, err := store.NewSQLiteStore(db)
+	if err != nil {
+		t.Fatalf("открытие БД (1): %v", err)
+	}
+	if _, err := enqueueEvent(sq1, "падение_выручки", `{"клиент":"ООО"}`, testClock); err != nil {
+		t.Fatalf("enqueueEvent: %v", err)
+	}
+	if err := sq1.Close(); err != nil {
+		t.Fatalf("Close (1): %v", err)
+	}
+
+	// 2. Рестарт: новый Store над ТЕМ ЖЕ файлом + демон по фикстуре с триггером.
+	sq2, err := store.NewSQLiteStore(db)
+	if err != nil {
+		t.Fatalf("открытие БД (2): %v", err)
+	}
+	defer sq2.Close()
+	prog := parseServeSrc(t, readFixture(t, "inbound.ladix"))
+	var out bytes.Buffer
+	d, dcode := buildServeDaemon(prog, sq2, 5*time.Millisecond, 0, testClock, nil, &out, &out)
+	if d == nil {
+		t.Fatalf("buildServeDaemon nil, код=%d, out=%q", dcode, out.String())
+	}
+
+	// 3. Рестарт-скан ДО тиков (как прод-путь serveFile), затем Run дренит pre-existing.
+	d.RunRestartScan()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }() // d.tick неэкспортирован → Run+waitUntil
+	waitUntil(t, func() bool {
+		evs, _ := sq2.ListUnprocessedEvents()
+		return len(evs) == 0
+	})
+	cancel()
+	if rerr := <-done; rerr != nil {
+		t.Fatalf("Run: %v", rerr)
+	}
+
+	// Тело триггера сработало РОВНО один раз с payload пережившего рестарт события.
+	if n := strings.Count(out.String(), "ООО"); n != 1 {
+		t.Errorf("тело триггера сработало %d раз, хотим 1 (at-least-once через рестарт); out=%q", n, out.String())
+	}
+}
+
+// --- N2b: §IE-5.2 — Shutdown+join СТРОГО ДО Store.Close (через реальный teardown serveFile) ---
+
+// orderRecorderStore — обёртка durable-Store, фиксирующая монотонный порядок вызовов
+// EnqueueEvent (in-flight POST) и Close. EnqueueEvent сигналит entered (in-flight
+// гарантирован), затем блокируется до releaseOn (= ctx.Done()) и спит enqueueDelay.
+// Сон РАСШИРЯЕТ окно гонки: при ВЕРНОМ порядке Close причинно ПОСЛЕ enqueue (Shutdown
+// дожидается in-flight POST), при БАГ-порядке (Close до Shutdown) Close детерминированно
+// опережает запись enqueue. Реальный Store делегируется встроенным serveStore.
+type orderRecorderStore struct {
+	serveStore // реальный SQLite (Close + 18 методов Store)
+
+	mu         sync.Mutex
+	seq        int
+	enqueueSeq int
+	closeSeq   int
+	closeCount int
+
+	enteredOnce  sync.Once
+	entered      chan struct{}
+	releaseOn    <-chan struct{}
+	enqueueDelay time.Duration
+}
+
+func (r *orderRecorderStore) EnqueueEvent(e *store.Event) error {
+	r.enteredOnce.Do(func() { close(r.entered) })
+	if r.releaseOn != nil {
+		<-r.releaseOn
+		time.Sleep(r.enqueueDelay)
+	}
+	r.mu.Lock()
+	r.seq++
+	r.enqueueSeq = r.seq
+	r.mu.Unlock()
+	return r.serveStore.EnqueueEvent(e)
+}
+
+func (r *orderRecorderStore) Close() error {
+	r.mu.Lock()
+	r.seq++
+	r.closeSeq = r.seq
+	r.closeCount++
+	r.mu.Unlock()
+	return r.serveStore.Close()
+}
+
+// TestServeListenerStopsBeforeStoreClose гоняет РЕАЛЬНЫЙ teardown serveFile (а не его
+// копию в тесте) через инъекции ctx + openServeStore + serveListenerReady и пришпиливает
+// §IE-5.2: in-flight POST (EnqueueEvent) дописывается СТРОГО ДО Store.Close. Мутация,
+// ОБЯЗАННАЯ покраснеть: перенос defer stopListener() за sq.Close (Close до Shutdown) →
+// EnqueueEvent заминается на закрытый/после Close → enqueueSeq > closeSeq → фейл.
+func TestServeListenerStopsBeforeStoreClose(t *testing.T) {
+	origOpen, origReady := openServeStore, serveListenerReady
+	defer func() { openServeStore, serveListenerReady = origOpen, origReady }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	db := filepath.Join(t.TempDir(), "order.db")
+	real, err := store.NewSQLiteStore(db)
+	if err != nil {
+		t.Fatalf("открытие БД: %v", err)
+	}
+	rec := &orderRecorderStore{
+		serveStore:   real,
+		entered:      make(chan struct{}),
+		releaseOn:    ctx.Done(),
+		enqueueDelay: 200 * time.Millisecond,
+	}
+	openServeStore = func(string) (serveStore, error) { return rec, nil } // serveFile закроет rec
+
+	addrCh := make(chan string, 1)
+	serveListenerReady = func(l net.Listener) { addrCh <- l.Addr().String() }
+
+	serveDone := make(chan int, 1)
+	var out, errBuf bytes.Buffer
+	go func() {
+		serveDone <- serveFile(ctx, filepath.Join("testdata", "inbound.ladix"), db,
+			time.Hour, 0, nil, "127.0.0.1:0", "", &out, &errBuf)
+	}()
+	addr := <-addrCh
+
+	// In-flight POST в отдельной горутине: блокируется в EnqueueEvent (без t.Fatalf —
+	// вызов из не-тестовой горутины недопустим; ответ может быть 202 либо 500).
+	postDone := make(chan struct{})
+	go func() {
+		defer close(postDone)
+		req, rerr := http.NewRequest(http.MethodPost,
+			"http://"+addr+"/events/"+url.PathEscape("падение_выручки"),
+			strings.NewReader(`{"клиент":"ООО"}`))
+		if rerr != nil {
+			return
+		}
+		if resp, derr := http.DefaultClient.Do(req); derr == nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+	}()
+
+	<-rec.entered // POST дошёл до EnqueueEvent → in-flight гарантирован
+	cancel()      // грациозный teardown без ОС-сигнала
+	<-serveDone
+	<-postDone
+
+	rec.mu.Lock()
+	enq, cls, cnt := rec.enqueueSeq, rec.closeSeq, rec.closeCount
+	rec.mu.Unlock()
+	if enq == 0 {
+		t.Fatalf("EnqueueEvent не зафиксирован — in-flight POST не записался")
+	}
+	if cls == 0 {
+		t.Fatalf("Close не зафиксирован — Store не закрыт")
+	}
+	if cnt != 1 {
+		t.Errorf("Close вызван %d раз, хотим ровно 1", cnt)
+	}
+	if enq >= cls {
+		t.Errorf("§IE-5.2 нарушен: EnqueueEvent seq=%d, Close seq=%d — хотим Enqueue СТРОГО ДО Close", enq, cls)
 	}
 }
 
