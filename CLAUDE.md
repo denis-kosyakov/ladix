@@ -1,6 +1,30 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
+specs/025-inbound-events/plan.md (фича 025-inbound-events — трек B «Входящие события»: HTTP-приём
+событий по сети ВНУТРИ демона serve (входящая парность к исходящим эффектам M2/M3). Новый opt-in
+флаг --listen host:port поднимает POST /events/{имя} → кладёт событие в durable-очередь events ОБЩИМ
+хелпером минта (рефактор D-IE-8: вынести СВОБОДНУЮ enqueueEvent(st store.Store, name, payload string,
+clock engine.Clock)(id,error) из emitEvent emit.go:58-85; ack-печать ВНЕ хелпера, тексты различны
+НАМЕРЕННО: emit «поставлено в очередь» / HTTP «принято»). drainEvents/фронтенд/контракт Store НЕ
+меняются — неразличимость источников ниже точки минта (FR-IE-3, имя кириллическое percent-кодир).
+Хендлер eventsHandler(store.Store, engine.Clock, token) касается ТОЛЬКО Store+Clock, НИКОГДА Engine/
+Interpreter (FR-IE-2, не потокобезопасны). Коды §IE-2 дословно: 202 «событие e-NNNNNN '<имя>' принято»
+/ 400 пустое имя / 401 неверный токен (X-Ladix-Token, crypto/subtle, env LADIX_LISTEN_TOKEN) / 405
+только POST / 500 сбой хранилища; битый JSON→202 (FR-IE-7). CLI §IE-3: парсинг --listen/--token
+зеркало --interval serve.go:82; --listen без --db → exit 2 ДО net.Listen (FR-IE-4); net.Listen ВНЕ
+guard рядом с SQLite serve.go:146-153 (bind-ошибка → exit 2, FR-IE-5); не-loopback без токена →
+stderr-warn. Lifecycle §IE-5 stdlib-only (sync.WaitGroup+srv.Shutdown, БЕЗ errgroup): startEventListener
+→go srv.Serve(ln); defer stop() ВНУТРИ guard-замыкания → LIFO Shutdown+wg.Wait СТРОГО ДО defer
+sq.Close serve.go:152 (FR-IE-6 at-least-once, FR-IE-8 no-leak). ГРАНИЦЫ: дифф СТРОГО в src/cmd/ladix/
+(emit.go рефактор + serve.go + НОВЫЙ events_http.go + тесты); ПУСТОЙ дифф internal/{store,engine,
+daemon,eval}; Store 18 цел; 0 новых зависимостей (go.mod = только modernc.org/sqlite; net/http stdlib);
+нулевой регресс serve без --listen — барьеры daemon_test.go:15-47 + serve_golden_test.go:361-371
+(NumGoroutine after≤before) зелёные НЕТРОНУТЫ; детерминизм fixedClock (serve_golden_test.go:21-23).
+Замки FR-IE-1..11 httptest симметрично webhook_cli_test.go. Якорь — docs/inbound-events-model.md
+§IE-0..§IE-8 (D-IE-1..D-IE-10). doc-sync канонов (execution-model EM-17.10/SPEC §12/README §99/
+automation-model/trigger-model) — спарринг-чат ПОСЛЕ мержа, НЕ в этой ветке. Constitution 9/9 PASS.
+Предыдущая фича C5 022 — в
 specs/022-human-explain-fire/plan.md (фича 022-human-explain-fire — M3 «Надёжность» пункт C5:
 человеко-explain срабатывания (наблюдаемость «почему»), в дополнение к inspect («где»). При
 срабатывании метрик-триггера ВСЕГДА (always-on, D-C-6) печатать одну человеко-читаемую строку §C-5.3:
@@ -78,7 +102,7 @@ plan.md; Триггеры 007a — в specs/007a-trigger-frontend/plan.md; дв�
 процессов 006 — в specs/006-process-engine/plan.md; фронтенд процессов 005 — в
 specs/005-process-frontend/plan.md; декларативный слой 004 — в specs/004-source-metric/plan.md;
 интерпретатор 003 — в specs/003-interpreter-eval/plan.md; парсер+AST 002 — в
-specs/002-parser-ast/plan.md; лексер 001 — в specs/001-lexer-tokens/plan.md)))).
+specs/002-parser-ast/plan.md; лексер 001 — в specs/001-lexer-tokens/plan.md))))).
 <!-- SPECKIT END -->
 
 ## Контекст основного потока ≤20%
