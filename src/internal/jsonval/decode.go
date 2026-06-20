@@ -5,7 +5,7 @@
 // value→plain-JSON для тела HTTP-вебхука. jsonval — ЕДИНСТВЕННЫЙ источник этого
 // декодера: daemon ДЕЛЕГИРУЕТ сюда (без дубля), engine.webhookCaller декодирует
 // ответ вебхука через DecodeValue, B3 (015) потребит PayloadToRecord для
-// --данные→Запись. Импортирует только value+stdlib (листовой пакет: НЕ тянет
+// --data→Запись. Импортирует только value+stdlib (листовой пакет: НЕ тянет
 // eval/engine/store/ast/parser/lexer — иначе engine→daemon циклы; D-AU-2).
 //
 // ВНИМАНИЕ: jsonval НЕ сливается со вторым декодером источников M1

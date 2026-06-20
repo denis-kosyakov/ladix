@@ -19,7 +19,7 @@ import (
 // startMain — подкоманда `ladix start <файл> <процесс> [аргументы...]` (B5, §AU-7):
 // CLI-запуск инстанса процесса с типизированными argv-литералами и сверкой арности.
 // rest — аргументы ПОСЛЕ «start». Дефолт Store — SQLite `ladix.db` (D-AU-10, НЕ
-// Memory); --вебхук/LADIX_WEBHOOK включает HTTP-драйвер внешних эффектов (§AU-4.5).
+// Memory); --webhook/LADIX_WEBHOOK включает HTTP-драйвер внешних эффектов (§AU-4.5).
 //
 // Поток: разбор флагов/позиционных → компиляция файла (lex→parse→Analyze; interp.Run
 // НЕ зовётся — top-level не исполняется, чтобы start не плодил инстансы) → типизация
@@ -65,15 +65,15 @@ func startMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) int 
 			k++
 		case strings.HasPrefix(a, "--db="):
 			dbPath = strings.TrimPrefix(a, "--db=")
-		case a == "--вебхук":
+		case a == "--webhook":
 			if k+1 >= len(rest) {
-				fmt.Fprintln(stderr, "ladix: флаг --вебхук требует значение")
+				fmt.Fprintln(stderr, "ladix: флаг --webhook требует значение")
 				return 2
 			}
 			webhook = rest[k+1]
 			k++
-		case strings.HasPrefix(a, "--вебхук="):
-			webhook = strings.TrimPrefix(a, "--вебхук=")
+		case strings.HasPrefix(a, "--webhook="):
+			webhook = strings.TrimPrefix(a, "--webhook=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -124,7 +124,7 @@ func startMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) int 
 	}
 	defer closeStore()
 
-	// Драйвер внешних эффектов (§AU-4.5): webhookCaller под --вебхук/env, иначе
+	// Драйвер внешних эффектов (§AU-4.5): webhookCaller под --webhook/env, иначе
 	// дефолт-стаб. Невалидный URL → exit 2 (паритет complete, §EN-8.B).
 	caller, cerr := openExternalCaller(webhook)
 	if cerr != nil {

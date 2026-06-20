@@ -20,7 +20,7 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
-// payloadName — предопределённое имя payload задачи (B3, §AU-5.3): значение --данные
+// payloadName — предопределённое имя payload задачи (B3, §AU-5.3): значение --data
 // инжектится под этим именем в пер-шаг stepEnv первого шага догона. Read-only:
 // присвоить данные = … отвергается в AssignProcessVar по этому же имени.
 const payloadName = "данные"
@@ -90,7 +90,7 @@ func (e *Engine) Start(name string, args []value.Value) (string, error) {
 	if err := e.save(inst); err != nil {
 		return "", err
 	}
-	// Запуск процесса не несёт payload (его несёт только complete --данные, §AU-5.3):
+	// Запуск процесса не несёт payload (его несёт только complete --data, §AU-5.3):
 	// пустая Запись по умолчанию.
 	if err := e.advance(inst, value.NewRecord(nil, nil)); err != nil {
 		return id, err
@@ -478,7 +478,7 @@ func (e *Engine) ReactivateInstance(inst *store.ProcessInstance) error {
 	if !ok || !stepInDef(pd, inst.CurrentStep) {
 		return ErrInstanceDrift
 	}
-	// Реактивация при подъёме демона (рестарт-скан 007b) — без payload: --данные
+	// Реактивация при подъёме демона (рестарт-скан 007b) — без payload: --data
 	// эфемерен и не воскрешается рестартом (§AU-5.3 / D-AU-3).
 	return e.advance(inst, value.NewRecord(nil, nil))
 }

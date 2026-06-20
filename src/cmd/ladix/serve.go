@@ -70,15 +70,15 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 			k++
 		case strings.HasPrefix(a, "--db="):
 			dbPath = strings.TrimPrefix(a, "--db=")
-		case a == "--вебхук":
+		case a == "--webhook":
 			if k+1 >= len(rest) {
-				fmt.Fprintln(stderr, "ladix: флаг --вебхук требует значение")
+				fmt.Fprintln(stderr, "ladix: флаг --webhook требует значение")
 				return 2
 			}
 			webhook = rest[k+1]
 			k++
-		case strings.HasPrefix(a, "--вебхук="):
-			webhook = strings.TrimPrefix(a, "--вебхук=")
+		case strings.HasPrefix(a, "--webhook="):
+			webhook = strings.TrimPrefix(a, "--webhook=")
 		case a == "--interval":
 			if k+1 >= len(rest) {
 				fmt.Fprintln(stderr, "ladix: флаг --interval требует значение")
