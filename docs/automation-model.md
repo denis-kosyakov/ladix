@@ -33,8 +33,9 @@
 ### Отложено за пределы M2 (путь отступления — §AU-13)
 
 - **Параллельные шаги (`параллельно`)** — единственный XL-каскад (хартия §3); вне v2.
-- **Серверная модель** (демон-владелец-БД + HTTP-приём событий + `--json`) — развилка входа M3-C3.
-  M2 идёт на варианте (а): CLI-над-общим-SQLite + аддитивные расширения.
+- **Серверная модель** (демон-владелец-БД + `--json`) — развилка входа M3-C3.
+  M2 идёт на варианте (а): CLI-над-общим-SQLite + аддитивные расширения. *HTTP-приём событий выделен
+  из этой связки и реализован отдельно после v2 (трек B, opt-in `serve --listen`, `docs/inbound-events-model.md`).*
 - **Двойные часы** (`eval.Clock` дневной vs `engine.Clock` wall-clock) — закрывается в M3-C4 (`WithClock`).
   M2 терпит: эскалация и golden используют один инжектируемый `engine.Clock` (§AU-6.4).
 - **Версионирование определений / стабильные ключи триггеров / exactly-once / миграции схемы** — M3-C1/C2.
@@ -592,7 +593,7 @@ M2 — на варианте (а) развилки §8: CLI-над-общим-SQ
 | Команда | дефолт Store без явного `--db` | др. флаги M2 | Примечание |
 |---|---|---|---|
 | `run` | `dbPath:=""` → **MemoryStore** (`main.go:191`) | `--webhook`, `--max-depth` | §EN-6 |
-| `serve` | `dbPath:=""` → **MemoryStore** (`serve.go:152`) | `--webhook`, `--interval`, `--max-depth` | демон, 4 фазы |
+| `serve` | `dbPath:=""` → **MemoryStore** (`serve.go:152`) | `--webhook`, `--interval`, `--max-depth`, `--listen`, `--token` (трек B) | демон, 4 фазы (+ опц. HTTP-приём) |
 | `complete` | `defaultDBPath="ladix.db"` → **SQLite** (`main.go:283,348`) | `--data` (B3), `--webhook` | НЕ Memory |
 | `tasks` | `"ladix.db"` → **SQLite** (`main.go:414,451`) | — | НЕ Memory |
 | `emit` | `"ladix.db"` → **SQLite** (`emit.go:19,59`) | — | НЕ Memory |
@@ -797,7 +798,8 @@ Golden фиксирует: до пересечения — тишина; пос�
 | Exactly-once доставки эффектов / outbox | M3-C2; до M3 at-least-once (эскалация идемпотентна по `Escalated`, эффекты-стабы повторяемы) |
 | Миграции схемы Store (ALTER) | M2-эра: сброс БД (D-AU-9, **ОТОЗВАНО в M3**); M3-C2a: forward-only ALTER (`PRAGMA user_version`, `reliability-model.md` §C-2a) |
 | Двойные часы (`eval.Clock` vs `engine.Clock`) | M3-C4 `WithClock`; M2 — один инжект. Clock (§AU-6.4) |
-| Сетевой демон / HTTP-приём событий / `--json` | M3-C3 (развилка); M2 — CLI-над-SQLite |
+| Сетевой демон / `--json` | M3-C3 (развилка); M2 — CLI-над-SQLite |
+| HTTP-приём событий (`serve --listen`) | Реализовано после v2 (трек B, `docs/inbound-events-model.md`); M2 — только `ladix emit` |
 | Персист payload `данные` в переменные инстанса | M3; M2 — эфемерно сквозь догон (D-AU-3), шаг сам `присвоить`-ит при нужде |
 | Запись/Список/Длительность/Период в argv `start` | M3 JSON-arg; M2 — скалярные литералы (§AU-7.2) |
 | `explain`/trace метрики/аудит-журнал в `inspect` | M3-C5; M2 — снимок + история задач |
