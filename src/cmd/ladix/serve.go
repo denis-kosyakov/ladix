@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -38,6 +39,8 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 	dbPath := ""
 	webhook := ""
 	interval := defaultInterval
+	listen := ""
+	token := ""
 	file := ""
 	for k := 0; k < len(rest); k++ {
 		a := rest[k]
@@ -79,6 +82,24 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 			k++
 		case strings.HasPrefix(a, "--webhook="):
 			webhook = strings.TrimPrefix(a, "--webhook=")
+		case a == "--listen":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --listen требует значение")
+				return 2
+			}
+			listen = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--listen="):
+			listen = strings.TrimPrefix(a, "--listen=")
+		case a == "--token":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --token требует значение")
+				return 2
+			}
+			token = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--token="):
+			token = strings.TrimPrefix(a, "--token=")
 		case a == "--interval":
 			if k+1 >= len(rest) {
 				fmt.Fprintln(stderr, "ladix: флаг --interval требует значение")
@@ -113,12 +134,23 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
+	// Токен сетевого приёмника: флаг бьёт env (§IE-6, зеркало --webhook/LADIX_WEBHOOK).
+	if token == "" {
+		token = os.Getenv("LADIX_LISTEN_TOKEN")
+	}
+	// Durability-граница (D-IE-7, FR-IE-4): --listen без --db поднял бы эфемерный
+	// MemoryStore → 202 на событие, которое исчезнет при рестарте (нарушение at-least-once).
+	// Проверка ПЕРЕД открытием сокета (в serveFile) — ошибка использования CLI, exit 2.
+	if listen != "" && dbPath == "" {
+		fmt.Fprintln(stderr, "ladix: --listen требует --db")
+		return 2
+	}
 	caller, err := openExternalCaller(webhook)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
 		return 2
 	}
-	return serveFile(file, dbPath, interval, maxDepth, caller, stdout, stderr)
+	return serveFile(file, dbPath, interval, maxDepth, caller, listen, token, stdout, stderr)
 }
 
 // serveFile читает+компилирует файл и поднимает демон (serve-command.md §жизненный цикл).
@@ -128,7 +160,7 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 // стартует), Run (связать глобалы), рестарт-скан ДО тиков, затем блокирующий Run(ctx) с
 // грациозной остановкой по SIGINT/SIGTERM (выход 0). Часы планировщика — прод
 // engine.SystemClock (отсюда же дата метрик интерпретатора, FR-024, см. buildServeDaemon).
-func serveFile(path, dbPath string, interval time.Duration, maxDepth int, caller engine.ExternalCaller, stdout, stderr io.Writer) int {
+func serveFile(path, dbPath string, interval time.Duration, maxDepth int, caller engine.ExternalCaller, listen, token string, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -154,10 +186,38 @@ func serveFile(path, dbPath string, interval time.Duration, maxDepth int, caller
 	} else {
 		st = store.NewMemoryStore()
 	}
+	// Часы планировщика — прод engine.SystemClock; ОДНИ и те же идут в демон (через
+	// buildServeDaemon) И в сетевой приёмник (CreatedAt минтится ими, FR-IE-11).
+	clock := engine.Clock(engine.SystemClock{})
+	// Сетевой приёмник (трек B, §IE-3/§IE-5): bind синхронно ВНЕ guard, рядом с открытием
+	// Store — сбой (порт занят/нет прав) = окружение → детерминированный exit 2 (НЕ exit 1
+	// «внутренняя ошибка» из guard). Без --listen (ln == nil) сервер не стартует — нулевой
+	// регресс (FR-IE-1). Уже открытый ln передаётся в startEventListener.
+	var ln net.Listener
+	if listen != "" {
+		l, lerr := net.Listen("tcp", listen)
+		if lerr != nil {
+			fmt.Fprintf(stderr, "ladix: не удалось открыть сокет '%s': %s\n", listen, lerr.Error())
+			return 2
+		}
+		ln = l
+		// Дефолт-граница loopback (§IE-3): не-loopback host без токена → предупреждение,
+		// НЕ блокируем (эндпоинт запускает процессы по сети).
+		if token == "" && !isLoopbackListen(listen) {
+			fmt.Fprintln(stderr, "ladix: ВНИМАНИЕ: --listen на не-loopback адресе без --token — эндпоинт запускает процессы без аутентификации")
+		}
+	}
 	return guard(stderr, func() int {
-		d, code := buildServeDaemon(prog, st, interval, maxDepth, engine.SystemClock{}, caller, stdout, stderr)
+		d, code := buildServeDaemon(prog, st, interval, maxDepth, clock, caller, stdout, stderr)
 		if d == nil {
 			return code // ошибка компиляции/семпрохода (exit 1)
+		}
+		// Сетевой приёмник: defer stop() ВНУТРИ guard-замыкания → по LIFO Shutdown+wg.Wait
+		// отрабатывают ДО внешнего defer sq.Close() (выше, в области serveFile): in-flight
+		// POST не пишет в закрытый Store (FR-IE-6), горутина join-ится (FR-IE-8).
+		if ln != nil {
+			stopListener := startEventListener(ln, st, clock, token)
+			defer stopListener()
 		}
 		// Грациозная остановка: SIGINT/SIGTERM → ctx.Done() ловится в select цикла Run
 		// МЕЖДУ тиками (FR-003, SC-007). defer stop() освобождает обработчик сигналов.
@@ -174,6 +234,23 @@ func serveFile(path, dbPath string, interval time.Duration, maxDepth int, caller
 		}
 		return 0
 	})
+}
+
+// isLoopbackListen сообщает, привязан ли адрес --listen к loopback (127.0.0.1/::1/
+// localhost или иной loopback-IP). Пустой host (":порт" = все интерфейсы) → НЕ loopback
+// (срабатывает предупреждение §IE-3). Ошибка разбора адреса трактуется как не-loopback.
+func isLoopbackListen(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // buildServeDaemon собирает стек интерпретатор+движок+демон над данным Store (общая

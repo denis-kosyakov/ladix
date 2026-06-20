@@ -49,6 +49,30 @@ func emitMain(rest []string, stdout, stderr io.Writer) int {
 	return emitEvent(name, payload, dbPath, engine.SystemClock{}, stdout, stderr)
 }
 
+// enqueueEvent — общий хелпер минта события в durable-очередь (D-IE-8, §IE-4.2).
+// Единый путь минта для emit (CLI) и HTTP-приёмника (serve --listen): NextEventID →
+// Event{CreatedAt: clock.Now()} → EnqueueEvent → (id, nil). Ack-печать НЕ входит —
+// вызыватель печатает сам (emit «поставлено в очередь» / HTTP «принято», тексты различны
+// НАМЕРЕННО). Принимает store.Store (интерфейс): работает над SQLite (emit) и над Store
+// демона (HTTP-хендлер). CreatedAt — инъектируемые часы (детерминизм тестов, FR-IE-11).
+func enqueueEvent(st store.Store, name, payload string, clock engine.Clock) (string, error) {
+	id, err := st.NextEventID()
+	if err != nil {
+		return "", err
+	}
+	e := &store.Event{
+		ID:          id,
+		Name:        name,
+		PayloadJSON: payload,
+		CreatedAt:   clock.Now(),
+		Processed:   false,
+	}
+	if err := st.EnqueueEvent(e); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 // emitEvent открывает Store (SQLite под dbPath), минтит ID и пишет одно событие в
 // очередь (emit-command.md §жизненный цикл). Открытие Store вне guard (сбой —
 // окружение, exit 2, зеркало §EN-8.B). Clock инжектируется (прод — SystemClock; тест —
@@ -63,19 +87,8 @@ func emitEvent(name, payload, dbPath string, clock engine.Clock, stdout, stderr 
 	}
 	defer sq.Close()
 	return guard(stderr, func() int {
-		id, err := sq.NextEventID()
+		id, err := enqueueEvent(sq, name, payload, clock)
 		if err != nil {
-			fmt.Fprintf(stderr, "ladix: сбой хранилища: %s\n", err.Error())
-			return 2
-		}
-		e := &store.Event{
-			ID:          id,
-			Name:        name,
-			PayloadJSON: payload,
-			CreatedAt:   clock.Now(),
-			Processed:   false,
-		}
-		if err := sq.EnqueueEvent(e); err != nil {
 			fmt.Fprintf(stderr, "ladix: сбой хранилища: %s\n", err.Error())
 			return 2
 		}
