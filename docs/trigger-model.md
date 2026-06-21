@@ -1067,8 +1067,8 @@ top-level.
 | TR-SYN-UNEXPECTED | синтаксическая | неожиданный ведущий токен в позиции триггера/выражения тела (`значение`/`событие`/`{`/`}` на top-level) | `неожиданный токен '<лексема>'` (`msgUnexpected`, errors.go:45) | 1 |
 | TR-SYN-EMPTYBLOCK | синтаксическая | тело триггера после `:` пустое (нет INDENT) | `пустой блок не допускается, добавьте хотя бы один оператор` (`msgEmptyBlock`, errors.go:17) | 1 |
 | SE-TRIGGER-KIND | синтаксическая | после `когда` нет `метрика`/`событие`/`расписание` (диспетчер `parseTriggerDecl`, ветка `default`) | `ожидалось 'метрика, событие, расписание или задача', получено '<лексема>'` (через `msgExpected`, errors.go:61) | 1 |
-| SE-EXPECT-COMPOP | синтаксическая | после `метрика Ident` не CompOp-токен (`expectCompOp`) | `ожидалось 'оператор сравнения', получено '<лексема>'` (через `msgExpected`, errors.go:40) | 1 |
-| SE-SCHEDULE-SPEC | синтаксическая | после `расписание` нет `каждые`/`в` (диспетчер `parseScheduleSpec`, ветка `default`) | `ожидалось 'каждые или в', получено '<лексема>'` (через `msgExpected`, errors.go:40) | 1 |
+| SE-EXPECT-COMPOP | синтаксическая | после `метрика Ident` не CompOp-токен (`expectCompOp`) | `ожидалось 'оператор сравнения', получено '<лексема>'` (через `msgExpected`, errors.go:61) | 1 |
+| SE-SCHEDULE-SPEC | синтаксическая | после `расписание` нет `каждые`/`в` (диспетчер `parseScheduleSpec`, ветка `default`) | `ожидалось 'каждые или в', получено '<лексема>'` (через `msgExpected`, errors.go:61) | 1 |
 
 После удаления `KW_WHEN` из `isUnexpectedTopLevel` ведущий `когда` больше не даёт
 `SE-UNEXPECTED` на top-level — он диспетчеризуется в `parseTriggerDecl`. `KW_VALUE`
