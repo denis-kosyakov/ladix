@@ -246,7 +246,9 @@ func jsonDetail(err error) string {
 // (поля: обязательно для csv, §SC-4-sem). Заголовок ОБЯЗАН содержать все
 // объявленные поля (иначе load-ошибка §SC-9.B); лишние столбцы сохраняются как
 // Строка (A1-6). Записи нумеруются с 1 (строки данных после заголовка). Ошибка
-// разбора CSV → §SC-9.B «некорректный CSV». Путь — os.Open от CWD (§SC-D-CACHE, §12).
+// разбора CSV → §SC-9.B «некорректный CSV». Путь резолвится resolveSourcePath от
+// базового каталога источников (каталог .ladix-файла или --source-base;
+// абсолютный — как есть), §SM-8.1.
 func (i *Interpreter) loadCSV(decl *ast.SourceDecl) ([]value.Запись, error) {
 	name := decl.Name.Name
 	path := i.resolveSourcePath(decl.File.Value)
@@ -326,7 +328,9 @@ func (i *Interpreter) loadCSV(decl *ast.SourceDecl) ([]value.Запись, error
 // декодируемый тем же путём, что и JSON-источник (decodeObject → одинаковый
 // маппинг типов/порядок ключей). Не-объект на строке → load-ошибка «запись N не
 // является объектом»; битый JSON → «запись N: некорректный JSON». Нумерация
-// записей N — с 1, сквозная по НЕпустым строкам. Путь — os.Open от CWD.
+// записей N — с 1, сквозная по НЕпустым строкам. Путь резолвится
+// resolveSourcePath от базового каталога источников (каталог .ladix-файла или
+// --source-base; абсолютный — как есть), §SM-8.1.
 func (i *Interpreter) loadNDJSON(decl *ast.SourceDecl) ([]value.Запись, error) {
 	name := decl.Name.Name
 	path := i.resolveSourcePath(decl.File.Value)
