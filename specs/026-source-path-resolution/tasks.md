@@ -51,8 +51,8 @@ description: "Декомпозиция задач — фича 026-source-path-r
 
 ### Tests for User Story 1 ⚠️ (написать ПЕРЕД impl, убедиться что краснеют)
 
-- [ ] T006 [P] [US1] eval: переписать `TestLoadSourceSalesJSON` в `src/internal/eval/source_loader_test.go` под `examples/data/sales.json` + явный `SetSourceBase` (база — каталог `examples` относительно пакета), без зависимости от cwd запуска `go test`. Мутпроба (резолвер игнорирует базу) → RED.
-- [ ] T007 [P] [US1] cmd/ladix: переработать `withRepoRoot` (`metric_test.go` ~:29) и все 14 call-sites — убрать `chdir`, передавать в CLI **абсолютный** путь примера (`filepath.Abs(examplePath(...))`). Файлы: `metric_test.go`, `control_plan_golden_test.go`, `metric_window_golden_test.go`, `golden_test.go`, `trigger_golden_test.go`, `main_test.go`. golden-байты stdout НЕ меняются. (До правки прод-кода эти тесты должны краснеть: данные переехали в `examples/data`, chdir убран.)
+- [ ] T006 [P] [US1] eval: обновить ВСЕ eval-тесты, адресующие переехавший `data/` в корне репо (blast-radius git mv, анализ C1): (а) переписать `TestLoadSourceSalesJSON` в `src/internal/eval/source_loader_test.go` (~:43-44) под `examples/data/sales.json` + явный `SetSourceBase`, без зависимости от cwd `go test`; (б) обновить `salesPath()` в `src/internal/eval/metric_engine_test.go` (~:20) `"../../../data/sales.json"` → `"../../../examples/data/sales.json"`. Пакет-локальный `testdata/` (через `testdataPath`/`source_format_golden_test.go`) НЕ трогать — он не переезжает, база `""` сохраняет резолв. Мутпроба (резолвер игнорирует базу) → RED.
+- [ ] T007 [P] [US1] cmd/ladix: переработать `withRepoRoot` (`metric_test.go` ~:29) и все 14 call-sites — убрать `chdir`, передавать в CLI **абсолютный** путь примера (`filepath.Abs(examplePath(...))`). Файлы: `metric_test.go`, `control_plan_golden_test.go`, `metric_window_golden_test.go`, `golden_test.go`, `trigger_golden_test.go`, `main_test.go`. golden-байты stdout НЕ меняются. Заодно освежить устаревшие комментарии «относительно cwd»/«из корня репо» в тронутых файлах (анализ M1). (До правки прод-кода эти тесты должны краснеть: данные переехали в `examples/data`, chdir убран.)
 - [ ] T008 [US1] cmd/ladix: новый интеграционный замок `TestRunRevenueAbsolutePathFromTempDir` в `src/cmd/ladix/main_test.go` — `chdir` в `t.TempDir()`, `realMain(["run", <abs>/examples/выручка.ladix])` → exit 0 (источник найден). Инверсия (cwd-резолв) → RED.
 
 ### Implementation for User Story 1
@@ -96,6 +96,7 @@ description: "Декомпозиция задач — фича 026-source-path-r
 
 - [ ] T017 [P] [US3] eval: подтвердить кейс абсолютного пути в `TestResolveSourcePath` (абсолют игнорирует непустую базу) — если не покрыт T004, добавить строку таблицы в `src/internal/eval/source_loader_test.go`.
 - [ ] T018 [P] [US3] cmd/ladix или eval: `TestSourceFileNotFoundShowsResolvedPath` — относительный путь + несуществующий файл при заданной базе → ошибка содержит **резолвленный** путь (`<base>/data/...`), категория/код целы. Инверсия (показывать сырой `decl.File.Value`) → RED.
+- [ ] T018b [US3] cmd/ladix: проверить/обновить существующий ассерт «файл не найден» `cmd/ladix/metric_test.go` (~:185, `«нет.json» не найден`) под FR-008 (анализ C2) — при программном пути с каталогом ошибка теперь показывает `«<base>/нет.json»`; привести ожидание к резолвленному пути. Eval-ассерты `metric_engine_test.go:148`/`source_loader_test.go:201` — НЕ трогать (база `""` → путь не меняется).
 
 **Checkpoint**: все истории независимо функциональны.
 
