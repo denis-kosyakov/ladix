@@ -88,7 +88,7 @@ func TestInboundPostFiresTrigger(t *testing.T) {
 	src := "когда событие падение_выручки:\n    печать(событие.клиент)\n"
 	var out bytes.Buffer
 	prog := parseServeSrc(t, src)
-	d, dcode := buildServeDaemon(prog, sq, 5*time.Millisecond, 0, testClock, nil, &out, &out)
+	d, dcode := buildServeDaemon(prog, sq, 5*time.Millisecond, 0, "", testClock, nil, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon nil, код=%d, out=%q", dcode, out.String())
 	}
@@ -158,7 +158,7 @@ func TestInboundBrokenJSONAccepted(t *testing.T) {
 	src := "когда событие тревога:\n    печать(\"сработал\")\n"
 	var out bytes.Buffer
 	prog := parseServeSrc(t, src)
-	d, _ := buildServeDaemon(prog, sq, 5*time.Millisecond, 0, testClock, nil, &out, &out)
+	d, _ := buildServeDaemon(prog, sq, 5*time.Millisecond, 0, "", testClock, nil, &out, &out)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -339,7 +339,7 @@ func TestInboundAtLeastOnceAcrossRestart(t *testing.T) {
 	defer sq2.Close()
 	prog := parseServeSrc(t, readFixture(t, "inbound.ladix"))
 	var out bytes.Buffer
-	d, dcode := buildServeDaemon(prog, sq2, 5*time.Millisecond, 0, testClock, nil, &out, &out)
+	d, dcode := buildServeDaemon(prog, sq2, 5*time.Millisecond, 0, "", testClock, nil, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon nil, код=%d, out=%q", dcode, out.String())
 	}
@@ -442,7 +442,7 @@ func TestServeListenerStopsBeforeStoreClose(t *testing.T) {
 	var out, errBuf bytes.Buffer
 	go func() {
 		serveDone <- serveFile(ctx, filepath.Join("testdata", "inbound.ladix"), db,
-			time.Hour, 0, nil, "127.0.0.1:0", "", &out, &errBuf)
+			time.Hour, 0, "", nil, "127.0.0.1:0", "", &out, &errBuf)
 	}()
 	addr := <-addrCh
 

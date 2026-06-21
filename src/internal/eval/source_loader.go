@@ -10,12 +10,25 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
+
+// resolveSourcePath разрешает путь к файлу-источнику относительно базового каталога
+// источников (§SM-8.1, фича 026, D-1/D-2). Абсолютный путь — как есть (база
+// игнорируется); относительный — filepath.Join(i.sourceBase, p). При пустой базе
+// ("") сводится к p (≡ резолв от cwd процесса). Чистая функция без I/O. Результат
+// идёт и в os.Open, и в текст ошибки «файл не найден» (диагностируется итоговый путь).
+func (i *Interpreter) resolveSourcePath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(i.sourceBase, p)
+}
 
 // loadSource лениво читает файл источника decl, диспетчеризует по decl.Type.Name
 // (§SC-6, A1-2: пусто/json → JSON, csv → CSV, ndjson → NDJSON) и порождает срез
@@ -65,7 +78,7 @@ func (i *Interpreter) loadSource(decl *ast.SourceDecl) ([]value.Запись, er
 // (рекурсивно), объект→Запись (рекурсивно, порядок ключей — по тексту).
 func (i *Interpreter) loadJSON(decl *ast.SourceDecl) ([]value.Запись, error) {
 	name := decl.Name.Name
-	path := decl.File.Value
+	path := i.resolveSourcePath(decl.File.Value)
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -236,7 +249,7 @@ func jsonDetail(err error) string {
 // разбора CSV → §SC-9.B «некорректный CSV». Путь — os.Open от CWD (§SC-D-CACHE, §12).
 func (i *Interpreter) loadCSV(decl *ast.SourceDecl) ([]value.Запись, error) {
 	name := decl.Name.Name
-	path := decl.File.Value
+	path := i.resolveSourcePath(decl.File.Value)
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -316,7 +329,7 @@ func (i *Interpreter) loadCSV(decl *ast.SourceDecl) ([]value.Запись, error
 // записей N — с 1, сквозная по НЕпустым строкам. Путь — os.Open от CWD.
 func (i *Interpreter) loadNDJSON(decl *ast.SourceDecl) ([]value.Запись, error) {
 	name := decl.Name.Name
-	path := decl.File.Value
+	path := i.resolveSourcePath(decl.File.Value)
 
 	f, err := os.Open(path)
 	if err != nil {

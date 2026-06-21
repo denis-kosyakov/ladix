@@ -11,13 +11,11 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
 
-// salesPath — абсолютный путь к data/sales.json (корень репозитория). Тесты eval
-// бегут из каталога пакета internal/eval; data/sales.json лежит в корне репо —
-// поднимаемся к нему (..\..\..). §SM-10 говорит про «data/sales.json относительно
-// cwd», но cwd теста — каталог пакета; чтобы 12 строк golden прошли без os.Chdir,
-// подставляем абсолютный путь в SourceDecl.File после парса (loadSource принимает
-// абсолютный путь как есть, §SM-8.1).
-func salesPath() string { return filepath.Join("..", "..", "..", "data", "sales.json") }
+// salesPath — путь к examples/data/sales.json (фича 026: каталог данных переехал
+// data/ → examples/data/). Тесты eval бегут из каталога пакета internal/eval;
+// поднимаемся к корню репо (..\..\..) и спускаемся в examples/data. Подставляем этот
+// путь в SourceDecl.File после парса (loadSource принимает его как есть, §SM-8.1).
+func salesPath() string { return filepath.Join("..", "..", "..", "examples", "data", "sales.json") }
 
 // buildMetricInterp парсит исходник декларатива src, переписывает путь файла
 // ЕДИНСТВЕННОГО источника на абсолютный salesPath() (чтобы загрузка не зависела от

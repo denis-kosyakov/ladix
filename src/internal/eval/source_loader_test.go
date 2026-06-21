@@ -36,17 +36,19 @@ func writeJSON(t *testing.T, dir, name, content string) string {
 	return p
 }
 
-// T019: загрузка data/sales.json → 3 записи; поля распознаны по §9.3.
+// T019: загрузка examples/data/sales.json → 3 записи; поля распознаны по §9.3.
+// Фича 026: каталог данных переехал data/ → examples/data/, а резолв путей источников
+// стал file-relative (от базы). Грузим относительным путём "data/sales.json" с базой
+// examples/, что проверяет НОВУЮ семантику SetSourceBase + resolveSourcePath без
+// зависимости от cwd (база примешивается к относительному пути).
 func TestLoadSourceSalesJSON(t *testing.T) {
-	// Путь относительно cwd процесса. Тест бежит из каталога пакета internal/eval;
-	// data/sales.json лежит в корне репозитория — поднимаемся к нему.
-	root := filepath.Join("..", "..", "..")
-	path := filepath.Join(root, "data", "sales.json")
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("data/sales.json недоступен из cwd теста (%v)", err)
+	base := filepath.Join("..", "..", "..", "examples")
+	if _, err := os.Stat(filepath.Join(base, "data", "sales.json")); err != nil {
+		t.Skipf("examples/data/sales.json недоступен из cwd теста (%v)", err)
 	}
 	i := newTestInterp()
-	recs, err := i.loadSource(makeSourceDecl("продажи", path))
+	i.SetSourceBase(base)
+	recs, err := i.loadSource(makeSourceDecl("продажи", filepath.Join("data", "sales.json")))
 	if err != nil {
 		t.Fatalf("loadSource вернул ошибку: %v", err)
 	}
@@ -731,6 +733,36 @@ func TestApplySchemaCSVFloatExponentStillValid(t *testing.T) {
 			}
 			if v, ok := recs[0].Get("x").(value.Дробное); !ok || v.V != tc.want {
 				t.Errorf("x = %v (%T), хотим Дробное %v", recs[0].Get("x"), recs[0].Get("x"), tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveSourcePath (фича 026, D-1/D-2) пинит приватный резолвер
+// i.resolveSourcePath напрямую (тест в package eval): база задаётся SetSourceBase,
+// абсолютный путь возвращается как есть, относительный — filepath.Join(base, rel),
+// при пустой базе относительный путь сводится к самому себе (≡ резолв от cwd).
+//
+// 🔁 ИНВЕРСИЯ: если резолвер игнорирует базу (вернёт rel без префикса базы при
+// непустой базе), кейс (б) разойдётся → красный (мутпроба прямого join).
+func TestResolveSourcePath(t *testing.T) {
+	abs := filepath.Join(string(filepath.Separator)+"tmp", "ladix", "sales.json")
+	cases := []struct {
+		name string
+		base string
+		in   string
+		want string
+	}{
+		{"абсолютный при непустой базе — как есть", filepath.Join("любая", "база"), abs, abs},
+		{"относительный → join(base, rel)", filepath.Join("корень", "examples"), filepath.Join("data", "sales.json"), filepath.Join("корень", "examples", "data", "sales.json")},
+		{"относительный при пустой базе — как есть", "", filepath.Join("data", "sales.json"), filepath.Join("data", "sales.json")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			i := newTestInterp()
+			i.SetSourceBase(tc.base)
+			if got := i.resolveSourcePath(tc.in); got != tc.want {
+				t.Errorf("resolveSourcePath(%q) при базе %q = %q, хотим %q", tc.in, tc.base, got, tc.want)
 			}
 		})
 	}

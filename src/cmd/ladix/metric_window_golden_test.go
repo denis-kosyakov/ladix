@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"path/filepath"
 	"testing"
 
 	"github.com/denis-kosyakov/ladix/internal/eval"
@@ -16,8 +15,8 @@ import (
 var fixedClock20260615 = eval.FixedClock{D: value.Дата{Year: 2026, Month: 6, Day: 15}}
 
 // T026 (Phase F, US1, SC-004/FR-019/§MW-9 #9) — GOLDEN DoD-СРЕЗА M1. Прогон САМОГО
-// examples/выручка_30д.ladix через runMetric (инжектированный FixedClock{2026,6,15})
-// для резолва data/orders.csv (через withRepoRoot, cwd=корень репо). Метрика
+// examples/выручка_30д.ladix через runMetric (инжектированный FixedClock{2026,6,15});
+// data/orders.csv резолвится от каталога примера (фича 026, абсолютный путь). Метрика
 // «последние 30дн» + по_дате: дата_заказа на CSV-источнике A1.
 //
 // Окно (2026-05-16, 2026-06-15] исключает 2026-05-04 (1.2M) и 2026-05-12 (0.8M),
@@ -28,20 +27,19 @@ var fixedClock20260615 = eval.FixedClock{D: value.Дата{Year: 2026, Month: 6,
 // 🔁 ИНВЕРСИЯ: CSV→окно→метрика разошлась / граница окна сдвинулась / Clock сменился —
 // stdout разойдётся с пином → красный.
 func TestCLIMetricWindowDoDGolden(t *testing.T) {
-	withRepoRoot(t, func() {
-		example := filepath.Join("examples", "выручка_30д.ladix")
-		var out, errBuf bytes.Buffer
-		code := runMetric(example, "выручка_30д", eval.DefaultMaxDepth, fixedClock20260615, &out, &errBuf)
-		if code != 0 {
-			t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
-		}
-		if errBuf.Len() != 0 {
-			t.Errorf("непустой stderr: %q", errBuf.String())
-		}
-		if out.String() != "300000.0\n" {
-			t.Errorf("DoD-скаляр байт-не-точен (FixedClock 2026-06-15): получено %q, хотим %q", out.String(), "300000.0\n")
-		}
-	})
+	example := absExample(t, "выручка_30д.ladix")
+	var out, errBuf bytes.Buffer
+	// Фича 026: data/orders.csv резолвится от каталога примера (examples/) — абсолютный путь.
+	code := runMetric(example, "выручка_30д", eval.DefaultMaxDepth, "", fixedClock20260615, &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+	}
+	if errBuf.Len() != 0 {
+		t.Errorf("непустой stderr: %q", errBuf.String())
+	}
+	if out.String() != "300000.0\n" {
+		t.Errorf("DoD-скаляр байт-не-точен (FixedClock 2026-06-15): получено %q, хотим %q", out.String(), "300000.0\n")
+	}
 }
 
 // T020 (Phase F, US3, FR-013/SC-005/§MW-9 #8) — РЕГРЕСС ОБР. СОВМЕСТИМОСТИ. Прогон
@@ -55,17 +53,16 @@ func TestCLIMetricWindowDoDGolden(t *testing.T) {
 // 🔁 ИНВЕРСИЯ: если ветка period «ежемесячно» (Name-only, Amount/Unit/Offset=0)
 // изменилась — скаляр разойдётся → красный.
 func TestCLIMetricCalendarPeriodBackwardCompat(t *testing.T) {
-	withRepoRoot(t, func() {
-		example := filepath.Join("examples", "выручка.ladix")
-		var out, errBuf bytes.Buffer
-		code := runMetric(example, "выручка_месяца", eval.DefaultMaxDepth, fixedClock2026, &out, &errBuf)
-		if code != 0 {
-			t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
-		}
-		if out.String() != "2000000\n" {
-			t.Errorf("v1-регресс (ежемесячно, FixedClock 2026-05-31): получено %q, хотим %q", out.String(), "2000000\n")
-		}
-	})
+	example := absExample(t, "выручка.ladix")
+	var out, errBuf bytes.Buffer
+	// Фича 026: data/sales.json резолвится от каталога примера (examples/) — абсолютный путь.
+	code := runMetric(example, "выручка_месяца", eval.DefaultMaxDepth, "", fixedClock2026, &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+	}
+	if out.String() != "2000000\n" {
+		t.Errorf("v1-регресс (ежемесячно, FixedClock 2026-05-31): получено %q, хотим %q", out.String(), "2000000\n")
+	}
 }
 
 // T028 (Phase F, US3, SC-006/§MW-9 #5/§MW-8) — NEGATIVE-ЗАМКИ ВИТРИНЫ A2 через

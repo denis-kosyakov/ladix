@@ -33,6 +33,7 @@ func startMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) int 
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := defaultDBPath // §AU-9/D-AU-10: дефолт SQLite ladix.db (НЕ Memory)
 	webhook := ""
+	sourceBase := ""
 	var positional []string
 	for k := 0; k < len(rest); k++ {
 		a := rest[k]
@@ -74,6 +75,15 @@ func startMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) int 
 			k++
 		case strings.HasPrefix(a, "--webhook="):
 			webhook = strings.TrimPrefix(a, "--webhook=")
+		case a == "--source-base":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --source-base требует значение")
+				return 2
+			}
+			sourceBase = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--source-base="):
+			sourceBase = strings.TrimPrefix(a, "--source-base=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -134,6 +144,7 @@ func startMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) int 
 
 	return guard(stderr, func() int {
 		interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
+		interp.SetSourceBase(sourceBaseDir(sourceBase, file)) // §SM-8.1: пути источников от каталога файла / --source-base
 		if err := interp.Analyze(prog); err != nil {
 			fmt.Fprintln(stderr, err.Error())
 			return 1 // семпроход (§SM-9.A) — компиляция обязана пройти чисто

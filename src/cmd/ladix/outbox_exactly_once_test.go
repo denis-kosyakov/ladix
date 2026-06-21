@@ -93,7 +93,7 @@ func TestStepEffectExactlyOnceRestart(t *testing.T) {
 	var co, ce bytes.Buffer
 	// complete провязывается с тем же webhook-драйвером (через openExternalCaller),
 	// чтобы реальный эффект crm в теле шага догона ушёл POST'ом на sink.
-	if code := completeTask(prog, "t-000001", db, 0, `{"итог":"перезвонит"}`, caller, engine.SystemClock{}, &co, &ce); code != 0 {
+	if code := completeTask(prog, "t-000001", db, 0, "", `{"итог":"перезвонит"}`, caller, engine.SystemClock{}, &co, &ce); code != 0 {
 		t.Fatalf("complete --data: код=%d stderr=%q out=%q", code, ce.String(), co.String())
 	}
 
@@ -143,7 +143,7 @@ func TestStepEffectExactlyOnceRestart(t *testing.T) {
 	rcaller, _ := openExternalCaller(srv.URL)
 	clk := &mutClock{t: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)}
 	var out bytes.Buffer
-	d, code := buildServeDaemon(progAST, sq, 5*time.Millisecond, 0, clk, rcaller, &out, &out)
+	d, code := buildServeDaemon(progAST, sq, 5*time.Millisecond, 0, "", clk, rcaller, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon вернул nil (рестарт), код=%d; out=%q", code, out.String())
 	}

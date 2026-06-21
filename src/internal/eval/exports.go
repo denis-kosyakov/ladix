@@ -14,6 +14,12 @@ import (
 // дают ОшибкуВыполнения «внутренняя ошибка: движок процессов не подключён» (§EN-8.A).
 func (i *Interpreter) SetProcessRuntime(rt ProcessRuntime) { i.runtime = rt }
 
+// SetSourceBase задаёт базовый каталог разрешения относительных путей источников
+// (§SM-8.1, фича 026; вызывается CLI до Run). Зеркало SetProcessRuntime: инъекция
+// рантайм-зависимости в значение-интерпретатор без глобального состояния (Принцип V).
+// Пусто ("") эквивалентно резолву от cwd процесса. См. resolveSourcePath.
+func (i *Interpreter) SetSourceBase(dir string) { i.sourceBase = dir }
+
 // Process — доступ к реестру процессов (i.processes; заполняет Analyze Шаг 1). Для
 // lookup определения и «следующего шага» в движке (§EN-4).
 func (i *Interpreter) Process(name string) (*ast.ProcessDecl, bool) {

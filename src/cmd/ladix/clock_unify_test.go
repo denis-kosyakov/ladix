@@ -49,7 +49,7 @@ func TestRunClockInjected(t *testing.T) {
 
 	runAt := func(c fixedClock) string {
 		var out, errBuf bytes.Buffer
-		code := runFile(prog, "", eval.DefaultMaxDepth, nil, c, &out, &errBuf)
+		code := runFile(prog, "", eval.DefaultMaxDepth, "", nil, c, &out, &errBuf)
 		if code != 0 {
 			t.Fatalf("runFile код=%d stderr=%q", code, errBuf.String())
 		}
@@ -90,7 +90,7 @@ func TestMetricClockInjected(t *testing.T) {
 
 	metricAt := func(d value.Дата) string {
 		var out, errBuf bytes.Buffer
-		code := runMetric(prog, "выручка_мая", eval.DefaultMaxDepth, eval.FixedClock{D: d}, &out, &errBuf)
+		code := runMetric(prog, "выручка_мая", eval.DefaultMaxDepth, "", eval.FixedClock{D: d}, &out, &errBuf)
 		if code != 0 {
 			t.Fatalf("runMetric код=%d stderr=%q", code, errBuf.String())
 		}
@@ -176,7 +176,7 @@ func TestCompleteClockInjected(t *testing.T) {
 	}
 
 	var co, ce bytes.Buffer
-	if code := completeTask(prog, "t-000001", db, eval.DefaultMaxDepth, `{"итог":"перезвонит"}`, nil, fixedClock{Tc}, &co, &ce); code != 0 {
+	if code := completeTask(prog, "t-000001", db, eval.DefaultMaxDepth, "", `{"итог":"перезвонит"}`, nil, fixedClock{Tc}, &co, &ce); code != 0 {
 		t.Fatalf("complete код=%d stderr=%q", code, ce.String())
 	}
 
