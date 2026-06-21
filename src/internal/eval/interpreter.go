@@ -39,6 +39,12 @@ type Interpreter struct {
 	// реентерабельно, зеркало recordCtx).
 	runtime ProcessRuntime
 	procEnv *Environment
+	// Базовый каталог разрешения относительных путей источников (§SM-8.1, фича 026).
+	// Инжектируется CLI сеттером SetSourceBase (зеркало SetProcessRuntime): по умолчанию
+	// каталог .ladix-файла, либо значение --source-base. Пусто ("") → резолв от cwd
+	// процесса (filepath.Join("", rel) == rel) — сохраняет старое поведение для кода,
+	// не задающего базу. Абсолютный путь источника базу игнорирует (resolveSourcePath).
+	sourceBase string
 }
 
 // recordContext — контекст вычисления выражений метрики per-record (§SM-8, D-9).

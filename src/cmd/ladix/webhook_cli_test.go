@@ -179,7 +179,7 @@ func TestServeWebhookEscalationPosts(t *testing.T) {
 	if cerr != nil {
 		t.Fatalf("openExternalCaller: %v", cerr)
 	}
-	d, code := buildServeDaemon(prog, sq, 5*time.Millisecond, 0,
+	d, code := buildServeDaemon(prog, sq, 5*time.Millisecond, 0, "",
 		fixedClock{time.Date(2026, 5, 31, 12, 0, 0, 0, time.Local)}, caller, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon вернул nil, код=%d; out=%q", code, out.String())

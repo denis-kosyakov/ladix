@@ -211,7 +211,7 @@ func driveServeToEscalation(t *testing.T, prog, db, webhookURL string, clockAt t
 	}
 	clk := &mutClock{t: clockAt}
 	var out bytes.Buffer
-	d, code := buildServeDaemon(progAST, sq, 5*time.Millisecond, 0, clk, caller, &out, &out)
+	d, code := buildServeDaemon(progAST, sq, 5*time.Millisecond, 0, "", clk, caller, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon вернул nil, код=%d; out=%q", code, out.String())
 	}
@@ -260,7 +260,7 @@ func driveServeToNoRepeat(t *testing.T, prog, db, webhookURL string, clockAt tim
 	}
 	clk := &mutClock{t: clockAt}
 	var out bytes.Buffer
-	d, code := buildServeDaemon(progAST, sq, 5*time.Millisecond, 0, clk, caller, &out, &out)
+	d, code := buildServeDaemon(progAST, sq, 5*time.Millisecond, 0, "", clk, caller, &out, &out)
 	if d == nil {
 		t.Fatalf("buildServeDaemon вернул nil (рестарт), код=%d; out=%q", code, out.String())
 	}

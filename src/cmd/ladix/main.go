@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,17 @@ import (
 	"github.com/denis-kosyakov/ladix/internal/store"
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
+
+// sourceBaseDir выбирает базовый каталог разрешения относительных путей источников
+// (§SM-8.1, фича 026): явный --source-base имеет приоритет; иначе каталог .ladix-файла
+// (filepath.Dir(path); путь без каталога вида "прог.ladix" → "." → cwd). Передаётся в
+// interp.SetSourceBase до Run/Analyze (абсолютный путь источника базу игнорирует).
+func sourceBaseDir(sourceBase, path string) string {
+	if sourceBase != "" {
+		return sourceBase
+	}
+	return filepath.Dir(path)
+}
 
 // webhookTimeout — конечный таймаут HTTP-клиента вебхука (FR-011: реальный драйвер
 // не висит на неотвечающем адресе). Композиционный корень — единственное место выбора.
@@ -111,6 +123,7 @@ func runMain(rest []string, stdout, stderr io.Writer) int {
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := ""
 	webhook := ""
+	sourceBase := ""
 	file := ""
 	for k := 0; k < len(rest); k++ {
 		a := rest[k]
@@ -152,6 +165,15 @@ func runMain(rest []string, stdout, stderr io.Writer) int {
 			k++
 		case strings.HasPrefix(a, "--webhook="):
 			webhook = strings.TrimPrefix(a, "--webhook=")
+		case a == "--source-base":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --source-base требует значение")
+				return 2
+			}
+			sourceBase = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--source-base="):
+			sourceBase = strings.TrimPrefix(a, "--source-base=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -172,7 +194,7 @@ func runMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
 		return 2
 	}
-	return runFile(file, dbPath, maxDepth, caller, engine.SystemClock{}, stdout, stderr)
+	return runFile(file, dbPath, maxDepth, sourceBase, caller, engine.SystemClock{}, stdout, stderr)
 }
 
 // metricMain разбирает аргументы подкоманды metric и вычисляет одну метрику (§SM-11
@@ -181,6 +203,7 @@ func runMain(rest []string, stdout, stderr io.Writer) int {
 // запуск). Меньше/больше двух позиционных, неверный флаг, лишний аргумент → код 2.
 func metricMain(rest []string, stdout, stderr io.Writer) int {
 	maxDepth := eval.DefaultMaxDepth
+	sourceBase := ""
 	var positional []string
 	for k := 0; k < len(rest); k++ {
 		a := rest[k]
@@ -204,6 +227,15 @@ func metricMain(rest []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			maxDepth = n
+		case a == "--source-base":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --source-base требует значение")
+				return 2
+			}
+			sourceBase = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--source-base="):
+			sourceBase = strings.TrimPrefix(a, "--source-base=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -215,7 +247,7 @@ func metricMain(rest []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
-	return runMetric(positional[0], positional[1], maxDepth, eval.SystemClock{}, stdout, stderr)
+	return runMetric(positional[0], positional[1], maxDepth, sourceBase, eval.SystemClock{}, stdout, stderr)
 }
 
 // runFile исполняет один файл и возвращает код возврата (0/1/2). dbPath=="" —
@@ -224,7 +256,7 @@ func metricMain(rest []string, stdout, stderr io.Writer) int {
 // clock — единые часы пути (C4 §C-4.2, прод engine.SystemClock{}): дата метрик
 // интерпретатора (через evalClockFromEngine), lifecycle-штампы движка (WithClock)
 // и «сейчас» сводки задач берутся ОТ ОДНИХ И ТЕХ ЖЕ часов (тест — fixedClock).
-func runFile(path, dbPath string, maxDepth int, caller engine.ExternalCaller, clock engine.Clock, stdout, stderr io.Writer) int {
+func runFile(path, dbPath string, maxDepth int, sourceBase string, caller engine.ExternalCaller, clock engine.Clock, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -252,6 +284,7 @@ func runFile(path, dbPath string, maxDepth int, caller engine.ExternalCaller, cl
 	}
 	return guard(stderr, func() int {
 		interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
+		interp.SetSourceBase(sourceBaseDir(sourceBase, path)) // §SM-8.1: пути источников от каталога файла / --source-base
 		// Стек движка процессов (006, §EN-6): Store + Engine + инъекция
 		// ProcessRuntime, чтобы «запустить процесс» исполнялся. Драйвер внешних эффектов
 		// (B2): webhookCaller под --webhook/env, иначе дефолт-стаб (caller == nil).
@@ -297,7 +330,7 @@ func runFile(path, dbPath string, maxDepth int, caller engine.ExternalCaller, cl
 // Clock инжектируется (прод — SystemClock; тест — FixedClock для детерминированного
 // golden). Коды: чтение файла → 2 (использование); лекс/синт, Analyze, поиск метрики
 // (§SM-9.D), загрузка/вычисление (§SM-9.B/C), Go-паника → 1; успех → 0.
-func runMetric(path, metricName string, maxDepth int, clock eval.Clock, stdout, stderr io.Writer) int {
+func runMetric(path, metricName string, maxDepth int, sourceBase string, clock eval.Clock, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -311,6 +344,7 @@ func runMetric(path, metricName string, maxDepth int, clock eval.Clock, stdout, 
 	}
 	return guard(stderr, func() int {
 		interp := eval.NewInterpreter(stdout, maxDepth, clock)
+		interp.SetSourceBase(sourceBaseDir(sourceBase, path)) // §SM-8.1: пути источников от каталога файла / --source-base
 		if err := interp.Analyze(prog); err != nil {
 			fmt.Fprintln(stderr, err.Error())
 			return 1 // семпроход (§SM-4/§SM-9.A)
@@ -348,6 +382,7 @@ func completeMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) i
 	maxDepth := eval.DefaultMaxDepth
 	dbPath := defaultDBPath
 	webhook := ""
+	sourceBase := ""
 	payloadRaw := "" // сырое значение --data (декод в completeTask через jsonval)
 	var positional []string
 	for k := 0; k < len(rest); k++ {
@@ -399,6 +434,15 @@ func completeMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) i
 			k++
 		case strings.HasPrefix(a, "--data="):
 			payloadRaw = strings.TrimPrefix(a, "--data=")
+		case a == "--source-base":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --source-base требует значение")
+				return 2
+			}
+			sourceBase = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--source-base="):
+			sourceBase = strings.TrimPrefix(a, "--source-base=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -415,7 +459,7 @@ func completeMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) i
 		fmt.Fprintf(stderr, "ladix: %s\n", err.Error())
 		return 2
 	}
-	return completeTask(positional[0], positional[1], dbPath, maxDepth, payloadRaw, caller, clock, stdout, stderr)
+	return completeTask(positional[0], positional[1], dbPath, maxDepth, sourceBase, payloadRaw, caller, clock, stdout, stderr)
 }
 
 // completeTask компилирует файл, собирает стек (SQLiteStore) и завершает задачу
@@ -425,7 +469,7 @@ func completeMain(rest []string, clock engine.Clock, stdout, stderr io.Writer) i
 // §13, exit 1. Подкоманда обёрнута guard/recover-барьером (конституция III).
 // clock — единые часы пути (C4 §C-4.2): движок штампует MarkTaskCompleted/UpdatedAt
 // от ЭТИХ часов (WithClock), интерпретатор — дату метрик от тех же (evalClockFromEngine).
-func completeTask(path, taskID, dbPath string, maxDepth int, payloadRaw string, caller engine.ExternalCaller, clock engine.Clock, stdout, stderr io.Writer) int {
+func completeTask(path, taskID, dbPath string, maxDepth int, sourceBase, payloadRaw string, caller engine.ExternalCaller, clock engine.Clock, stdout, stderr io.Writer) int {
 	// Декод --data (B3, §AU-5.3) на CLI — корень композиции, импорт jsonval допустим;
 	// движок получает уже готовую value.Запись. Пустой payload → пустая Запись без
 	// ошибки (поведение jsonval). Невалидный JSON / не-объект → дословная ошибка exit 2
@@ -455,6 +499,7 @@ func completeTask(path, taskID, dbPath string, maxDepth int, payloadRaw string, 
 	defer sq.Close()
 	return guard(stderr, func() int {
 		interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
+		interp.SetSourceBase(sourceBaseDir(sourceBase, path)) // §SM-8.1: пути источников от каталога файла / --source-base
 		if err := interp.Analyze(prog); err != nil {
 			fmt.Fprintln(stderr, err.Error())
 			return 1 // семпроход (§SM-9.A) — компиляция обязана пройти чисто

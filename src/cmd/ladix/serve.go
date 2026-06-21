@@ -62,6 +62,7 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 	interval := defaultInterval
 	listen := ""
 	token := ""
+	sourceBase := ""
 	file := ""
 	for k := 0; k < len(rest); k++ {
 		a := rest[k]
@@ -140,6 +141,15 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			interval = d
+		case a == "--source-base":
+			if k+1 >= len(rest) {
+				fmt.Fprintln(stderr, "ladix: флаг --source-base требует значение")
+				return 2
+			}
+			sourceBase = rest[k+1]
+			k++
+		case strings.HasPrefix(a, "--source-base="):
+			sourceBase = strings.TrimPrefix(a, "--source-base=")
 		case strings.HasPrefix(a, "-"):
 			fmt.Fprintf(stderr, "ladix: неизвестный флаг %s\n", a)
 			return 2
@@ -176,7 +186,7 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 	// инъектируется в serveFile — тест отменяет ctx без ОС-сигнала (пин §IE-5.2).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return serveFile(ctx, file, dbPath, interval, maxDepth, caller, listen, token, stdout, stderr)
+	return serveFile(ctx, file, dbPath, interval, maxDepth, sourceBase, caller, listen, token, stdout, stderr)
 }
 
 // serveFile читает+компилирует файл и поднимает демон (serve-command.md §жизненный цикл).
@@ -186,7 +196,7 @@ func serveMain(rest []string, stdout, stderr io.Writer) int {
 // стартует), Run (связать глобалы), рестарт-скан ДО тиков, затем блокирующий Run(ctx) с
 // грациозной остановкой по SIGINT/SIGTERM (выход 0). Часы планировщика — прод
 // engine.SystemClock (отсюда же дата метрик интерпретатора, FR-024, см. buildServeDaemon).
-func serveFile(ctx context.Context, path, dbPath string, interval time.Duration, maxDepth int, caller engine.ExternalCaller, listen, token string, stdout, stderr io.Writer) int {
+func serveFile(ctx context.Context, path, dbPath string, interval time.Duration, maxDepth int, sourceBase string, caller engine.ExternalCaller, listen, token string, stdout, stderr io.Writer) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "ladix: не удалось прочитать файл %q\n", path)
@@ -236,7 +246,7 @@ func serveFile(ctx context.Context, path, dbPath string, interval time.Duration,
 		}
 	}
 	return guard(stderr, func() int {
-		d, code := buildServeDaemon(prog, st, interval, maxDepth, clock, caller, stdout, stderr)
+		d, code := buildServeDaemon(prog, st, interval, maxDepth, sourceBaseDir(sourceBase, path), clock, caller, stdout, stderr)
 		if d == nil {
 			return code // ошибка компиляции/семпрохода (exit 1)
 		}
@@ -290,7 +300,7 @@ func isLoopbackListen(addr string) bool {
 // инъекция часов планировщика (прод engine.SystemClock; тест — фиксированные):
 // одни и те же часы идут И в движок (WithClock), И в интерпретатор (через адаптер
 // evalClockFromEngine), И в демон — двойные часы едины (FR-024).
-func buildServeDaemon(prog *ast.Program, st store.Store, interval time.Duration, maxDepth int, clock engine.Clock, caller engine.ExternalCaller, stdout, stderr io.Writer) (*daemon.Daemon, int) {
+func buildServeDaemon(prog *ast.Program, st store.Store, interval time.Duration, maxDepth int, sourceBase string, clock engine.Clock, caller engine.ExternalCaller, stdout, stderr io.Writer) (*daemon.Daemon, int) {
 	// Интерпретатор читает дату метрик ОТ инъектированных часов планировщика
 	// (через адаптер engine.Clock→eval.Clock), а не из независимого eval.SystemClock:
 	// иначе ResetRunState на тике перевычислял бы дату от собственных часов
@@ -298,6 +308,7 @@ func buildServeDaemon(prog *ast.Program, st store.Store, interval time.Duration,
 	// Драйвер внешних эффектов (B2): ОДИН eng на демон — догон дедлайнов, тела
 	// триггеров и эскалации идут через ЭТОТ движок (FR-017, единый вебхук под флагом).
 	interp := eval.NewInterpreter(stdout, maxDepth, evalClockFromEngine{clock})
+	interp.SetSourceBase(sourceBase) // §SM-8.1: serveFile уже резолвил базу (sourceBaseDir), демон перечитывает источники по ней на тиках
 	opts := append([]engine.Option{engine.WithClock(clock)}, withExternalCallerOpt(caller)...)
 	eng := engine.NewEngine(st, interp, stdout, opts...)
 	interp.SetProcessRuntime(eng)

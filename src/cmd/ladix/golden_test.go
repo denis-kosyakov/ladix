@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -81,8 +80,8 @@ func TestCLIGoldenSchedule(t *testing.T) {
 // периода/по_дате, поэтому значения детерминированы (не зависят от сегодня()): на
 // фиксированных данных метрики печатаются метрика-триггерами (форма 007a) одними и
 // теми же числами в порядке объявления. Источники адресуют data/*.json относительно
-// cwd → прогон из корня репо (withRepoRoot, зеркало metric_test.go), путь к примеру
-// также из корня (examples/метрики.ladix). Байт-точный stdout.
+// КАТАЛОГА ПРИМЕРА (фича 026), поэтому examplePath (абсолютный/package-relative путь
+// примера) достаточен — os.Chdir в корень репо не нужен. Байт-точный stdout.
 // ИНВЕРСИЯ: данные/метрики/порядок изменились → вывод разойдётся → красный.
 func TestCLIGoldenMetrics(t *testing.T) {
 	// always-on explain (§C-5): каждый из трёх метрика-триггеров печатает строку-explain
@@ -94,19 +93,19 @@ func TestCLIGoldenMetrics(t *testing.T) {
 		"всего заказов: 3\n" +
 		"триггер 'расходы_оплачено < 10000000' сработал: расходы_оплачено = 1000000 (снимок) < 10000000 (порог) → истина\n" +
 		"расходы оплаченных: 1000000\n"
-	withRepoRoot(t, func() {
-		var out, errBuf bytes.Buffer
-		code := realMain([]string{"run", filepath.Join("examples", "метрики.ladix")}, &out, &errBuf)
-		if code != 0 {
-			t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
-		}
-		if errBuf.Len() != 0 {
-			t.Errorf("непустой stderr: %q", errBuf.String())
-		}
-		if out.String() != want {
-			t.Errorf("stdout байт-не-точен:\nполучено %q\nхотим   %q", out.String(), want)
-		}
-	})
+	var out, errBuf bytes.Buffer
+	// Фича 026: источники data/*.json резолвятся от каталога примера (examples/),
+	// поэтому examplePath (../../../examples/метрики.ladix) достаточен — os.Chdir не нужен.
+	code := realMain([]string{"run", examplePath("метрики.ladix")}, &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+	}
+	if errBuf.Len() != 0 {
+		t.Errorf("непустой stderr: %q", errBuf.String())
+	}
+	if out.String() != want {
+		t.Errorf("stdout байт-не-точен:\nполучено %q\nхотим   %q", out.String(), want)
+	}
 }
 
 // assertNegativeExample прогоняет негатив-пример витрины через realMain и утверждает:
@@ -138,7 +137,7 @@ func assertNegativeExample(t *testing.T, name, wantStderr string) {
 // T028 (010-A1, Phase F, SC-003) — Golden CSV-демо: прогон examples/источник_csv.ladix
 // через CLI `run`. Метрика БЕЗ периода/по_дате (фильтр `где` + сумма) → дата-независима,
 // поэтому байт-точный stdout детерминирован под прод-Clock (без FixedClock). Источник
-// адресует data/orders.csv относительно cwd → прогон из корня репо (withRepoRoot).
+// адресует data/orders.csv относительно каталога примера (фича 026) → examplePath достаточен.
 // Оплаченные заказы CSV: 1200000 + 800000.50 + 300000 = 2300000.5 (отменённый 450000
 // отфильтрован `где статус == "оплачен"`).
 // 🔁 ИНВЕРСИЯ: если CSV-загрузка/коэрсия/фильтр разошлись → stdout разойдётся → красный.
@@ -148,49 +147,47 @@ func TestCLIGoldenSourceCSV(t *testing.T) {
 	want := "" +
 		"триггер 'выручка_оплачено < 10000000' сработал: выручка_оплачено = 2300000.5 (снимок) < 10000000 (порог) → истина\n" +
 		"выручка оплаченных (CSV): 2300000.5\n"
-	withRepoRoot(t, func() {
-		var out, errBuf bytes.Buffer
-		code := realMain([]string{"run", filepath.Join("examples", "источник_csv.ladix")}, &out, &errBuf)
-		if code != 0 {
-			t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
-		}
-		if errBuf.Len() != 0 {
-			t.Errorf("непустой stderr: %q", errBuf.String())
-		}
-		if out.String() != want {
-			t.Errorf("stdout байт-не-точен:\nполучено %q\nхотим   %q", out.String(), want)
-		}
-	})
+	var out, errBuf bytes.Buffer
+	// Фича 026: data/orders.csv резолвится от каталога примера (examples/) — examplePath достаточен.
+	code := realMain([]string{"run", examplePath("источник_csv.ladix")}, &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+	}
+	if errBuf.Len() != 0 {
+		t.Errorf("непустой stderr: %q", errBuf.String())
+	}
+	if out.String() != want {
+		t.Errorf("stdout байт-не-точен:\nполучено %q\nхотим   %q", out.String(), want)
+	}
 }
 
 // T029 (010-A1, Phase F, US2, §SC-10 #6) — NEGATIVE-замок examples/ошибочная.ladix:
 // объявленный тип поля `сумма_заказа: Целое` НЕ совпадает с дробным 800000.50 в
 // data/orders.json (запись 2) → §SC-9.B «ожидался Целое, получено Дробное», exit 1,
-// канон §13, без Go stack trace. Источник адресует data/orders.json относительно cwd →
-// прогон из корня репо (withRepoRoot); assertNegativeExample неприменим (его examplePath
-// адресует из каталога пакета, а пример требует cwd=корень для резолва data/orders.json).
+// канон §13, без Go stack trace. Источник адресует data/orders.json относительно
+// каталога примера (фича 026) → examplePath достаточен; assertNegativeExample здесь
+// не применяется лишь из-за отдельного пина stderr (а не из-за cwd).
 // stderr пиннится из T026 (фактический прогон бинаря).
 // 🔁 ИНВЕРСИЯ: если коэрсия начнёт демоутить Дробное→Целое или сменит класс ошибки →
 // красный.
 func TestCLINegativeSourceSchema(t *testing.T) {
 	wantStderr := "Ошибка в строке 9, колонка 1:\n" +
 		"источник 'заказы': запись 2, поле 'сумма_заказа': ожидался Целое, получено Дробное\n"
-	withRepoRoot(t, func() {
-		var out, errBuf bytes.Buffer
-		code := realMain([]string{"run", filepath.Join("examples", "ошибочная.ladix")}, &out, &errBuf)
-		if code != 1 {
-			t.Fatalf("код = %d, хотим 1; stderr=%q", code, errBuf.String())
-		}
-		if got := errBuf.String(); got != wantStderr {
-			t.Errorf("stderr байт-не-точен:\nполучено %q\nхотим   %q", got, wantStderr)
-		}
-		if out.Len() != 0 {
-			t.Errorf("stdout не пуст: %q", out.String())
-		}
-		if s := errBuf.String(); strings.Contains(s, ".go:") || strings.Contains(s, "goroutine") {
-			t.Errorf("в stderr просочился Go stack trace: %q", s)
-		}
-	})
+	var out, errBuf bytes.Buffer
+	// Фича 026: data/orders.json резолвится от каталога примера (examples/) — examplePath достаточен.
+	code := realMain([]string{"run", examplePath("ошибочная.ladix")}, &out, &errBuf)
+	if code != 1 {
+		t.Fatalf("код = %d, хотим 1; stderr=%q", code, errBuf.String())
+	}
+	if got := errBuf.String(); got != wantStderr {
+		t.Errorf("stderr байт-не-точен:\nполучено %q\nхотим   %q", got, wantStderr)
+	}
+	if out.Len() != 0 {
+		t.Errorf("stdout не пуст: %q", out.String())
+	}
+	if s := errBuf.String(); strings.Contains(s, ".go:") || strings.Contains(s, "goroutine") {
+		t.Errorf("в stderr просочился Go stack trace: %q", s)
+	}
 }
 
 // T026 (US3, класс 5 — СИНТАКСИЧЕСКАЯ ошибка) — examples/ошибка_синтаксис.ladix

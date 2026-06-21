@@ -10,12 +10,25 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
 	"github.com/denis-kosyakov/ladix/internal/value"
 )
+
+// resolveSourcePath разрешает путь к файлу-источнику относительно базового каталога
+// источников (§SM-8.1, фича 026, D-1/D-2). Абсолютный путь — как есть (база
+// игнорируется); относительный — filepath.Join(i.sourceBase, p). При пустой базе
+// ("") сводится к p (≡ резолв от cwd процесса). Чистая функция без I/O. Результат
+// идёт и в os.Open, и в текст ошибки «файл не найден» (диагностируется итоговый путь).
+func (i *Interpreter) resolveSourcePath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(i.sourceBase, p)
+}
 
 // loadSource лениво читает файл источника decl, диспетчеризует по decl.Type.Name
 // (§SC-6, A1-2: пусто/json → JSON, csv → CSV, ndjson → NDJSON) и порождает срез
@@ -65,7 +78,7 @@ func (i *Interpreter) loadSource(decl *ast.SourceDecl) ([]value.Запись, er
 // (рекурсивно), объект→Запись (рекурсивно, порядок ключей — по тексту).
 func (i *Interpreter) loadJSON(decl *ast.SourceDecl) ([]value.Запись, error) {
 	name := decl.Name.Name
-	path := decl.File.Value
+	path := i.resolveSourcePath(decl.File.Value)
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -233,10 +246,12 @@ func jsonDetail(err error) string {
 // (поля: обязательно для csv, §SC-4-sem). Заголовок ОБЯЗАН содержать все
 // объявленные поля (иначе load-ошибка §SC-9.B); лишние столбцы сохраняются как
 // Строка (A1-6). Записи нумеруются с 1 (строки данных после заголовка). Ошибка
-// разбора CSV → §SC-9.B «некорректный CSV». Путь — os.Open от CWD (§SC-D-CACHE, §12).
+// разбора CSV → §SC-9.B «некорректный CSV». Путь резолвится resolveSourcePath от
+// базового каталога источников (каталог .ladix-файла или --source-base;
+// абсолютный — как есть), §SM-8.1.
 func (i *Interpreter) loadCSV(decl *ast.SourceDecl) ([]value.Запись, error) {
 	name := decl.Name.Name
-	path := decl.File.Value
+	path := i.resolveSourcePath(decl.File.Value)
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -313,10 +328,12 @@ func (i *Interpreter) loadCSV(decl *ast.SourceDecl) ([]value.Запись, error
 // декодируемый тем же путём, что и JSON-источник (decodeObject → одинаковый
 // маппинг типов/порядок ключей). Не-объект на строке → load-ошибка «запись N не
 // является объектом»; битый JSON → «запись N: некорректный JSON». Нумерация
-// записей N — с 1, сквозная по НЕпустым строкам. Путь — os.Open от CWD.
+// записей N — с 1, сквозная по НЕпустым строкам. Путь резолвится
+// resolveSourcePath от базового каталога источников (каталог .ladix-файла или
+// --source-base; абсолютный — как есть), §SM-8.1.
 func (i *Interpreter) loadNDJSON(decl *ast.SourceDecl) ([]value.Запись, error) {
 	name := decl.Name.Name
-	path := decl.File.Value
+	path := i.resolveSourcePath(decl.File.Value)
 
 	f, err := os.Open(path)
 	if err != nil {

@@ -141,25 +141,65 @@ func TestRunOnboardingProcessDeferred(t *testing.T) {
 // Устойчивость к US2 (T022, врезка fire-if-true): после неё метрика-триггер
 // СРАБАТЫВАЕТ — выручка_месяца вычисляется (метрика с периодом, окно зависит от
 // сегодня()) и дописывает задачу в сводку. Поэтому тест НЕ пинит полный stdout;
-// утверждает только (а) exit 0 и (б) отсутствие маркеров диагностик. Прогон — из
-// корня репо (withRepoRoot, как metric-тесты): относительный путь источника
-// «data/sales.json» в выручка.ladix резолвится только оттуда, иначе сработавший
-// триггер упёрся бы в «файл не найден» (exit 1). Так замок остаётся зелёным и после US2.
+// утверждает только (а) exit 0 и (б) отсутствие маркеров диагностик. Фича 026:
+// относительный путь источника «data/sales.json» в выручка.ladix резолвится от
+// каталога примера (examples/), поэтому examplePath достаточен — os.Chdir не нужен.
+// Так замок остаётся зелёным и после US2.
 func TestRunRevenueParsesClean(t *testing.T) {
-	withRepoRoot(t, func() {
-		var out, errBuf bytes.Buffer
-		code := realMain([]string{"run", filepath.Join("examples", "выручка.ladix")}, &out, &errBuf)
-		if code != 0 {
-			t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+	var out, errBuf bytes.Buffer
+	// Фича 026: «data/sales.json» источника в выручка.ladix резолвится от каталога примера
+	// (examples/), поэтому examplePath достаточен — иначе сработавший триггер упёрся бы в
+	// «файл не найден» (exit 1). os.Chdir в корень репо не нужен.
+	code := realMain([]string{"run", examplePath("выручка.ladix")}, &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+	}
+	// Ноль диагностик: маркеры канона §13 не должны встречаться ни в stdout, ни в stderr.
+	combined := out.String() + errBuf.String()
+	for _, marker := range []string{"Ошибка в строке", "неожиданный элемент"} {
+		if strings.Contains(combined, marker) {
+			t.Errorf("в выводе просочилась диагностика %q: %q", marker, combined)
 		}
-		// Ноль диагностик: маркеры канона §13 не должны встречаться ни в stdout, ни в stderr.
-		combined := out.String() + errBuf.String()
-		for _, marker := range []string{"Ошибка в строке", "неожиданный элемент"} {
-			if strings.Contains(combined, marker) {
-				t.Errorf("в выводе просочилась диагностика %q: %q", marker, combined)
-			}
+	}
+}
+
+// TestRunRevenueAbsolutePathFromTempDir (фича 026, D-1/D-2) — интеграционный замок
+// cwd-независимости: выручка.ladix ссылается на «data/sales.json» относительным путём,
+// который под file-relative-резолвом берётся от каталога ПРИМЕРА (examples/), а НЕ от
+// cwd процесса. Доказательство: меняем cwd на пустой t.TempDir() (где нет ни examples/,
+// ни data/) и прогоняем run с АБСОЛЮТНЫМ путём примера → exit 0 (источник всё равно
+// нашёлся от каталога файла).
+//
+// 🔁 ИНВЕРСИЯ: если резолв снова станет cwd-relative, источник не найдётся из TempDir →
+// сработавший триггер упрётся в «файл не найден» → exit 1 → красный.
+func TestRunRevenueAbsolutePathFromTempDir(t *testing.T) {
+	abs := absExample(t, "выручка.ladix")
+
+	// Сменить cwd на пустой каталог с гарантированным восстановлением: это и есть
+	// доказательство cwd-независимости (под старой семантикой здесь был бы провал).
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(prev); err != nil {
+			t.Fatal(err)
 		}
-	})
+	}()
+
+	var out, errBuf bytes.Buffer
+	code := realMain([]string{"run", abs}, &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("код = %d, хотим 0 (cwd-независимость нарушена); stderr=%q", code, errBuf.String())
+	}
+	// Триггер «когда метрика выручка_месяца …» сработал бы только если источник загрузился
+	// — что подтверждает резолв от каталога примера, а не от пустого TempDir.
+	if strings.Contains(errBuf.String(), "не найден") {
+		t.Errorf("источник не резолвится от каталога примера (cwd-relative регресс): %q", errBuf.String())
+	}
 }
 
 // 005/FR-023 (CP-3): программа, ТОЛЬКО объявляющая процесс (без top-level

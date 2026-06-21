@@ -1,6 +1,34 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
+specs/026-source-path-resolution/plan.md (фича 026-source-path-resolution — резолв относительных путей
+файлов-источников от каталога .ladix-файла (file-relative) вместо cwd + CLI-флаг --source-base. Механизм
+(eval): +поле Interpreter.sourceBase +сеттер SetSourceBase (зеркало SetProcessRuntime; NewInterpreter
+сигнатура ЦЕЛА — 37 call-sites не тронуты, дефолт base="" ≡ cwd-резолв); метод resolveSourcePath
+(filepath.IsAbs→как есть / filepath.Join(base,rel)) в 3 загрузчиках source_loader.go:68/239/319
+(JSON/CSV/NDJSON); текст ошибки «источник '%s': файл «%s» не найден» показывает РЕЗОЛВЛЕННЫЙ путь
+(FR-008, runtimeErr/ОшибкаВыполнения код/категория ЦЕЛЫ). CLI (cmd/ladix): флаг --source-base обе формы
+(--flag val/--flag=val, дословное зеркало --db; пропуск значения → stderr «ladix: флаг --source-base
+требует значение» exit 2) во ВСЕХ 5 подкомандах run/metric/complete (main.go) + start (start.go) + serve
+(serve.go); база = sourceBaseDir(флаг ?? filepath.Dir(programPath)) → interp.SetSourceBase ПОСЛЕ
+NewInterpreter; serve пробрасывает резолвленную базу serveFile→buildServeDaemon (+11 тест call-sites ""),
+демон перечитывает источники по той же базе на тиках (ResetRunState НЕ сбрасывает sourceBase). git mv
+data→examples/data (5 файлов; пути "data/..." в examples/*.ladix НЕ менялись — стали file-relative к
+examples/data). ГРАНИЦЫ: дифф СТРОГО в src/internal/eval (interpreter.go+exports.go+source_loader.go) +
+src/cmd/ladix (main/start/serve+тесты) + examples/ (git mv) + docs; ПУСТОЙ дифф internal/{store,engine,
+daemon}; Store 18 цел; 0 новых зависимостей (path/filepath stdlib); 0 новых KW/builtins/eval-кодов.
+Замки: TestResolveSourcePath (table-driven) / TestLoadSourceSalesJSON (examples/data+явный SetSourceBase) /
+TestRunRevenueAbsolutePathFromTempDir (smoke t.TempDir абс.путь→exit0) / TestSourceBaseFlagOverride (обе
+формы) / TestSourceBaseFlagMissingValue (exit2); withRepoRoot СНЯТ (14 call-sites → filepath.Abs(examplePath));
+metric_engine_test.go salesPath()→examples/data; ассерт «не найден» под резолвленный путь; golden-байты
+stdout НЕ изменены (строгая проверка мультимножества литералов); мутпроба (резолвер игнорит базу) краснит
+TestResolveSourcePath/TestLoadSourceSalesJSON/TestSourceBaseFlagOverride. Doc-sync (источник истины
+docs/source-metric-model.md §SM-8.1): SPEC §9.1/§9.7/§12, README «Примечание о путях»+флаг-таблица,
+examples/MANIFEST, specs/004 помечен устаревшим; SC-004 (нет «cwd-relative»/«из корня репо»/«отложен в v2»).
+go build/vet/test ./... зелёные. Constitution 9/9 PASS. Анализ-стадия поймала 2 MAJOR blast-radius git mv
+(metric_engine_test salesPath + ассерт metric_test:185) — закрыты до implement. Коммиты: spec 892ffae →
+plan 8a02746 → tasks f8c5f1c (+нит 21745ef) → feat e9827e7 → docs 5bed334, ветка 026-source-path-resolution
+(НЕ смержена — ждёт ревью/мерж). Предыдущая фича C-IE 025 — в
 specs/025-inbound-events/plan.md (фича 025-inbound-events — трек B «Входящие события»: HTTP-приём
 событий по сети ВНУТРИ демона serve (входящая парность к исходящим эффектам M2/M3). Новый opt-in
 флаг --listen host:port поднимает POST /events/{имя} → кладёт событие в durable-очередь events ОБЩИМ

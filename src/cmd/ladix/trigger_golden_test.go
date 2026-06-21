@@ -501,27 +501,25 @@ func TestRunTriggerFnCallWritesGlobal(t *testing.T) {
 // инжектируется; прод-путь metricMain строит SystemClock). FixedClock D=2026-05-31
 // (fixedClock2026, см. metric_test.go) ставит окно «ежемесячно» на май 2026 → оба
 // оплаченных майских заказа (1_200_000 + 800_000) попадают → 2_000_000; отменённый
-// отфильтрован `где статус == "оплачен"`. Прогон из корня репо (withRepoRoot), чтобы
-// относительный «data/sales.json» источника резолвился. НЕ хардкодим «сегодня».
+// отфильтрован `где статус == "оплачен"`. Абсолютный путь примера (фича 026:
+// относительный «data/sales.json» источника резолвится от каталога примера). НЕ хардкодим «сегодня».
 // ИНВЕРСИЯ: сменилась формула/данные/окно — стд-аут разойдётся с пином → красный.
 func TestRevenueExampleFixedClockGolden(t *testing.T) {
-	withRepoRoot(t, func() {
-		// cwd = корень репо (withRepoRoot), путь к примеру — относительно корня (НЕ
-		// examplePath, который адресует из каталога пакета через ../../../).
-		revenueExample := filepath.Join("examples", "выручка.ladix")
-		var out, errBuf bytes.Buffer
-		code := runMetric(revenueExample, "выручка_месяца",
-			eval.DefaultMaxDepth, fixedClock2026, &out, &errBuf)
-		if code != 0 {
-			t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
-		}
-		if errBuf.Len() != 0 {
-			t.Errorf("непустой stderr: %q", errBuf.String())
-		}
-		if out.String() != "2000000\n" {
-			t.Errorf("stdout байт-не-точен (фикс-Clock 2026-05-31): получено %q, хотим %q", out.String(), "2000000\n")
-		}
-	})
+	// Фича 026: «data/sales.json» источника резолвится от каталога примера (examples/),
+	// поэтому абсолютный путь примера достаточен — os.Chdir в корень репо не нужен.
+	revenueExample := absExample(t, "выручка.ladix")
+	var out, errBuf bytes.Buffer
+	code := runMetric(revenueExample, "выручка_месяца",
+		eval.DefaultMaxDepth, "", fixedClock2026, &out, &errBuf)
+	if code != 0 {
+		t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())
+	}
+	if errBuf.Len() != 0 {
+		t.Errorf("непустой stderr: %q", errBuf.String())
+	}
+	if out.String() != "2000000\n" {
+		t.Errorf("stdout байт-не-точен (фикс-Clock 2026-05-31): получено %q, хотим %q", out.String(), "2000000\n")
+	}
 }
 
 // TestRunBadTimeFormat / SE-TIME-FORMAT (FR-014/SC-010/FR-026) — РУН-СТОРОННИЙ замок на
