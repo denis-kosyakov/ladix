@@ -1,6 +1,44 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
+specs/027-stable-trigger-keys/plan.md (фича 027-stable-trigger-keys — замена ПОЗИЦИОННОГО durable-ключа
+метрика-/расписание-триггеров (triggerID(idx)="trg-<N>" по индексу в interp.Triggers()) на КОНТЕНТНЫЙ
+ключ из условия триггера: "trg-"+hex16(FNV-1a-64(canonical(условие)+"#"+ord)). Устраняет тихую порчу
+edge-baseline: вставка/перестановка/удаление несвязанного (в т.ч. событие-/дедлайн-) триггера больше не
+сдвигает idx и не заставляет триггер унаследовать чужую строку trigger_state. (1) НОВЫЙ
+src/internal/ast/canon.go (листовой пакет, импорт только fmt/strconv): CanonicalTriggerCondition(spec)
+type-switch (*MetricTrigger→"metric|"+Metric.Name+"|"+Op.String()+"|"+canonExpr(Threshold);
+*ScheduleTrigger→*EverySchedule "every|"+Amount+"|"+Unit / *AtSchedule "at|"+At.Value;
+*EventTrigger/*DeadlineTrigger→"" не-ключевой) + ТОТАЛЬНЫЙ рекурсивный canonExpr по ВСЕМ 19 видам
+Expression с ГРОМКИМ default-panic (инвариант «не должно случиться», Конституция III) — нет молчащего
+схлопывания; числа нормализуются по разобранному значению (strconv.FormatInt/FormatFloat('g',-1,64);
+10_000_000≡10000000), строки strconv.Quote. (2) НОВЫЙ ключ-билдер buildTriggerKeys([]*ast.TriggerDecl)
+[]string в internal/daemon (keys.go/tick.go, импорт hash/fnv): группировка по канон.строке + 0-based ord
+внутри группы дубликатов + FNV-1a-64 → массив выровнен по idx; ""-слоты событие/дедлайн не читаются.
+НАХОДКА: конструктор демона New (daemon.go:37-49) УЖЕ принимает interp → triggerKeys []string новое поле
+структуры Daemon (daemon.go:25-33), заполняется ВНУТРИ New из interp.Triggers() — сигнатура New НЕ
+меняется, call-sites serve.go:326 + 4 теста НЕ трогаются, cmd/ladix ВНЕ диффа (рецепт допускал иначе —
+опровергнуто кодом). metrics.go:38/schedule.go:47 triggerID(idx)→d.triggerKeys[idx]; старый triggerID
+УДАЛЁН. (3) Миграция Store 2→3: schemaMigrations += "DELETE FROM trigger_state;" + currentSchemaVersion
+2→3 (sqlite.go:82-84,106-122); INV-R1 init():91-97 1+2=3 двойной замок; DDL/тип TriggerState/контракт
+Store ЦЕЛЫ (FR-007); переход = сброс+ленивый ре-прайминг (миграция видит только БД, не AST). (4) FR-010
+(Complexity Tracking — СМЕНА поведения, санкц.спекой): checkAt (schedule.go:105-133) на первом промахе
+miss=ErrTriggerStateNotFound && !now.Before(target) → Save{Kind:atKind,LastFiredDate:today}+return (прайм,
+НЕ догонять тело); случай now<target НЕ трогается (штатно в target). Иначе сброс trigger_state дал бы
+ложные catch-up-запуски. ГРАНИЦЫ: дифф СТРОГО в internal/ast(canon)+internal/daemon(билдер+2 call-site
++checkAt+поле/New+тесты)+internal/store(миграция+тест)+docs/SPEC; ПУСТОЙ функц.дифф eval/engine/cmd;
+0 новых внешних зависимостей (hash/fnv/strconv/hash stdlib); 0 новых KW/builtins/eval-кодов. 9 ЗАМКОВ:
+T1 исчерпываемость canonExpr (19 типов + stub→default-panic) / T2 канон.равенство parse→canon
+(10_000_000≡10000000) / T3 различие / T4 дубликаты ord 0,1 / T5 🔁ЯДРО стабильность ключа метрики под
+вставкой событие-триггера ПЕРЕД (инверсия: вернуть triggerID(idx)→краснеет; ревьюер проверит мутпробой)
+/ T6 ре-прайминг при правке условия / T7 миграция v2-БД→user_version==3+trigger_state пуста (паттерн
+store/migrate_test.go) / T8 🔁 нейтральность 1-го тика (метрика/каждые/в праймят НЕ срабатывают; инверсия
+checkAt→краснеет) / T9 паритет Memory/SQLite eachStore. Маркер инверсии в докстрингах 🔁. Doc-sync
+(implement-стадия, СИМВОЛЬНЫЕ ссылки на canonExpr/buildTriggerKeys, без захардкоженного trg-<N>): SPEC
+FR-023+§C-9/§12 закрыт, engine-model §EM-17.2.1, trigger-/reliability-§C-9/automation-model. SC-008 греп
+«нет triggerID/trg-%d в прод». Constitution 9/9 PASS (V — ключи поле демона НЕ пакетный var; III — громкий
+default-panic; I — 0 новых зависимостей). plan/research/data-model/contracts(canon/trigger-keys/migration)/
+quickstart СОЗДАНЫ, НЕ имплементировано — ждёт /speckit-tasks. Предыдущая фича 026 — в
 specs/026-source-path-resolution/plan.md (фича 026-source-path-resolution — резолв относительных путей
 файлов-источников от каталога .ladix-файла (file-relative) вместо cwd + CLI-флаг --source-base. Механизм
 (eval): +поле Interpreter.sourceBase +сеттер SetSourceBase (зеркало SetProcessRuntime; NewInterpreter
