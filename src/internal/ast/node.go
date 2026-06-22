@@ -28,6 +28,10 @@ type Decl interface {
 }
 
 // Expression — маркер-интерфейс выражений (sum-type через пустой метод exprNode()).
+//
+// ВНИМАНИЕ: при добавлении нового узла-выражения ОБЯЗАТЕЛЬНО обновить тотальный
+// сериализатор canonExpr в internal/ast/canon.go И таблицу TestCanonExprExhaustive (T1) —
+// иначе новый узел уйдёт в default-panic канонизатора в рантайме serve (минт ключа триггера).
 type Expression interface {
 	Node
 	exprNode()

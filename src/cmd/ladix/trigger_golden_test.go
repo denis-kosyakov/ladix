@@ -159,8 +159,10 @@ func TestRunTriggerDBRepeatEphemeral(t *testing.T) {
 	// `run`/fire-if-true НЕ читает и НЕ пишет trigger_state (потому оба прогона
 	// снова срабатывают). Схема trigger_state/events существует с 007b (DDL
 	// безусловный), но `run` оставляет её ПУСТОЙ. Проверяем поведенческий
-	// инвариант: после двух прогонов в trigger_state нет строки триггера trg-0
-	// (LoadTriggerState → ErrTriggerStateNotFound), а очередь events пуста.
+	// инвариант: после двух прогонов в trigger_state нет НИ ОДНОЙ строки триггера
+	// (LoadTriggerState по любому ключу → ErrTriggerStateNotFound), а очередь events
+	// пуста. `run` не пишет состояние, поэтому представительный ключ-зонд гарантированно
+	// отсутствует (контентный или позиционный — без разницы, строки нет вовсе).
 	sq, oerr := store.NewSQLiteStore(db)
 	if oerr != nil {
 		t.Fatalf("открытие БД: %v", oerr)

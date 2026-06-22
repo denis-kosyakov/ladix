@@ -60,8 +60,8 @@ func TestMigrateFreshDB(t *testing.T) {
 	}
 	defer st.Close()
 
-	if got := readUserVersion(t, path); got != 2 {
-		t.Errorf("user_version = %d, want 2", got)
+	if got := readUserVersion(t, path); got != 3 {
+		t.Errorf("user_version = %d, want 3", got)
 	}
 	if got := countTables(t, path, "outbox"); got != 1 {
 		t.Errorf("outbox table count = %d, want 1", got)
@@ -134,9 +134,9 @@ func TestMigrateLegacyV0(t *testing.T) {
 	}
 	defer st2.Close()
 
-	// (c) версия поднялась до 2.
-	if got := readUserVersion(t, path); got != 2 {
-		t.Errorf("user_version after reopen = %d, want 2", got)
+	// (c) версия поднялась до 3.
+	if got := readUserVersion(t, path); got != 3 {
+		t.Errorf("user_version after reopen = %d, want 3", got)
 	}
 	// (b) outbox создана из отсутствия и реально запрашиваема (SELECT, не только
 	// присутствие в sqlite_master).
@@ -187,8 +187,8 @@ func TestMigrateIdempotent(t *testing.T) {
 	}
 	defer st2.Close()
 
-	if got := readUserVersion(t, path); got != 2 {
-		t.Errorf("user_version after second open = %d, want 2", got)
+	if got := readUserVersion(t, path); got != 3 {
+		t.Errorf("user_version after second open = %d, want 3", got)
 	}
 	if got := countTables(t, path, "outbox"); got != 1 {
 		t.Errorf("outbox table count = %d, want 1 (no duplicate)", got)

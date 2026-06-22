@@ -62,7 +62,7 @@ type Task struct {
 // / не праймлен». Читается/пишется только демоном (FR-025). Заводится только для
 // метрика- и расписание-триггеров; событие-триггер строки не имеет (FR-023).
 type TriggerState struct {
-	TriggerID     string     // ключ: "trg-<N>", N 0-based порядок объявления (EM-17.2.1, FR-023)
+	TriggerID     string     // контентный ключ, минтится из условия триггера (см. buildTriggerKeys/CanonicalTriggerCondition)
 	Kind          string     // "metric" | "schedule_every" | "schedule_at"
 	LastBool      *bool      // metric: базовая линия edge-детекта; nil = ещё не праймлен (FR-006/007)
 	LastFire      *time.Time // schedule_every: момент последнего срабатывания (RFC3339); nil = не зарегистрирован (FR-011)

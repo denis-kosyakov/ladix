@@ -80,7 +80,7 @@ PRAGMA foreign_keys = ON;
 // Инвариант (INV-R1): currentSchemaVersion == baselineVersion + len(schemaMigrations).
 const (
 	baselineVersion      = 1 // схема const ddl (instances/tasks/counters/trigger_state/events + индексы)
-	currentSchemaVersion = 2 // после миграции 1→2 (таблица outbox + индекс)
+	currentSchemaVersion = 3 // после миграции 2→3 (ре-кей триггеров на контентные ключи)
 )
 
 // init форсирует INV-R1: currentSchemaVersion должна РОВНО соответствовать длине
@@ -119,6 +119,11 @@ var schemaMigrations = []string{
         delivered_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_outbox_instance ON outbox(instance_id, step_name);`,
+	// 2 → 3: ре-кей триггеров на контентные ключи (§FR-009), сброс позиционного состояния.
+	// ИНВАРИАНТ: безопасность сброса опирается на прайм-без-срабатывания ВСЕХ трёх видов
+	// триггеров (метрика / каждые / в) на первом промахе после очистки (§FR-010) — иначе
+	// сброс вызвал бы ложный фронт/плановый догон. Замок — daemon.TestFirstTickPrimesWithoutFire.
+	`DELETE FROM trigger_state;`,
 }
 
 // NewSQLiteStore открывает БД и ЯВНО исполняет PRAGMA + DDL (включая сид counters;

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -30,6 +32,30 @@ func readFixture(t *testing.T, name string) string {
 		t.Fatalf("чтение фикстуры %s: %v", name, err)
 	}
 	return string(data)
+}
+
+// firstTriggerKey минтит контентный durable-ключ ПЕРВОГО ключевого триггера программы
+// (ordinal 0), зеркало daemon.buildTriggerKeys (FNV-1a-64 от «канон#0», префикс «trg-»).
+// Тесты serve-пути не могут читать приватный d.triggerKeys (другой пакет), поэтому
+// резолвят ключ из AST. Программы-фикстуры metric_edge/metric_dated содержат РОВНО один
+// триггер → его ключ это и есть «trg-» + 16 hex канона#0.
+func firstTriggerKey(t *testing.T, prog *ast.Program) string {
+	t.Helper()
+	for _, it := range prog.Items {
+		td, ok := it.(*ast.TriggerDecl)
+		if !ok {
+			continue
+		}
+		canon := ast.CanonicalTriggerCondition(td.Spec)
+		if canon == "" {
+			continue // событие/дедлайн — durable-ключа нет
+		}
+		h := fnv.New64a()
+		h.Write([]byte(canon + "#0"))
+		return "trg-" + fmt.Sprintf("%016x", h.Sum64())
+	}
+	t.Fatalf("в программе нет ключевого триггера")
+	return ""
 }
 
 // --- SE-TIME-FORMAT в serve: компиляция отклоняется, демон не стартует ---
@@ -183,8 +209,9 @@ func TestServeMetricPrimingNoFalsePositive(t *testing.T) {
 	go func() { done <- d.Run(ctx) }()
 
 	// Ждём, пока триггер запраймится (LastBool записан) — детерминированный сигнал.
+	key := firstTriggerKey(t, prog)
 	waitUntil(t, func() bool {
-		ts, err := st.LoadTriggerState("trg-0")
+		ts, err := st.LoadTriggerState(key)
 		return err == nil && ts.LastBool != nil
 	})
 	cancel()
@@ -239,8 +266,9 @@ func TestServeMetricDateFollowsSchedulerClock(t *testing.T) {
 	go func() { done <- d.Run(ctx) }()
 
 	// Ждём прайминга (LastBool записан первым тиком).
+	key := firstTriggerKey(t, prog)
 	waitUntil(t, func() bool {
-		ts, err := st.LoadTriggerState("trg-0")
+		ts, err := st.LoadTriggerState(key)
 		return err == nil && ts.LastBool != nil
 	})
 	cancel()
@@ -248,7 +276,7 @@ func TestServeMetricDateFollowsSchedulerClock(t *testing.T) {
 		t.Fatalf("Run вернул ошибку: %v", err)
 	}
 
-	ts, err := st.LoadTriggerState("trg-0")
+	ts, err := st.LoadTriggerState(key)
 	if err != nil || ts.LastBool == nil {
 		t.Fatalf("trigger_state не записан: err=%v ts=%+v", err, ts)
 	}

@@ -37,7 +37,7 @@ func TestCheckSchedulesEveryDayPrimingAndFire(t *testing.T) {
 	if got := out.count(); got != 0 {
 		t.Fatalf("якорь расписания: срабатываний = %d, хотим 0", got)
 	}
-	ts, err := st.LoadTriggerState("trg-0")
+	ts, err := st.LoadTriggerState(trigKey(t, d, 0))
 	if err != nil || ts.Kind != everyKind || ts.LastFire == nil {
 		t.Fatalf("якорь должен записать schedule_every+LastFire: ts=%+v err=%v", ts, err)
 	}
@@ -59,7 +59,7 @@ func TestCheckSchedulesEveryDayPrimingAndFire(t *testing.T) {
 	if got := out.count(); got != 1 {
 		t.Fatalf("после интервала: срабатываний = %d, хотим 1", got)
 	}
-	ts, _ = st.LoadTriggerState("trg-0")
+	ts, _ = st.LoadTriggerState(trigKey(t, d, 0))
 	if ts.LastFire == nil || !ts.LastFire.Equal(fireMoment) {
 		t.Fatalf("дрейф: LastFire=%v, хотим %v (якорь = факт, не +1дн от старта)", ts.LastFire, fireMoment)
 	}
@@ -269,7 +269,7 @@ func TestCheckSchedulesEveryCatchUpOneFirePerTick(t *testing.T) {
 		t.Fatalf("catch-up: проспали 5 периодов → %d срабатываний, хотим 1 (долг не копится)", got)
 	}
 	// Якорь сдвинут на ФАКТ=now (не +1дн от старта): дрейф не накоплен.
-	ts, _ := st.LoadTriggerState("trg-0")
+	ts, _ := st.LoadTriggerState(trigKey(t, d, 0))
 	if ts.LastFire == nil || !ts.LastFire.Equal(caught) {
 		t.Fatalf("catch-up якорь LastFire=%v, хотим %v (факт, не накопленный долг)", ts.LastFire, caught)
 	}
@@ -286,43 +286,52 @@ func TestCheckSchedulesEveryCatchUpOneFirePerTick(t *testing.T) {
 	}
 }
 
-// TestCheckSchedulesAtOncePerDay — `в "09:00"`: несколько тиков в один день → РОВНО
-// 1 срабатывание; тик на следующий день → снова срабатывание (FR-013, SC-005).
+// TestCheckSchedulesAtOncePerDay — `в "09:00"`: первое наблюдение, на котором цель уже
+// прошла, ПРАЙМИТ без срабатывания (FR-010 miss-prime — поведенчески-нейтральный первый
+// тик); затем РОВНО 1 срабатывание в сутки на последующих днях (FR-013, SC-005).
 func TestCheckSchedulesAtOncePerDay(t *testing.T) {
 	out := &countWriter{marker: "AT"}
 	st := store.NewMemoryStore()
 	d, clk := buildDaemon(t, scheduleSrc("AT", `в "09:00"`), st, out)
 
-	// 08:00 первого дня — до цели: 0.
+	// 08:00 первого дня — до цели: ни прайм (now<target), ни фаер; состояние ещё не заведено.
 	setClock(clk, time.Date(2026, 4, 10, 8, 0, 0, 0, time.UTC))
 	d.tick()
 	if got := out.count(); got != 0 {
 		t.Fatalf("08:00 до 09:00: %d, хотим 0", got)
 	}
 
-	// 09:30 — после цели → 1 срабатывание; LastFiredDate=2026-04-10.
+	// 09:30 — первое наблюдение с уже прошедшей целью: FR-010 прайм без фаера, не 1.
+	// LastFiredDate=2026-04-10 заводится, но тело НЕ исполняется (не догоняем промах).
 	setClock(clk, time.Date(2026, 4, 10, 9, 30, 0, 0, time.UTC))
 	d.tick()
-	if got := out.count(); got != 1 {
-		t.Fatalf("09:30 первый раз: %d, хотим 1", got)
+	if got := out.count(); got != 0 {
+		t.Fatalf("09:30 первое наблюдение (промах, время прошло): %d, хотим 0 (прайм без фаера, FR-010)", got)
 	}
-	ts, err := st.LoadTriggerState("trg-0")
+	ts, err := st.LoadTriggerState(trigKey(t, d, 0))
 	if err != nil || ts.Kind != atKind || ts.LastFiredDate == nil || *ts.LastFiredDate != "2026-04-10" {
-		t.Fatalf("AtSchedule persist: ts=%+v err=%v", ts, err)
+		t.Fatalf("AtSchedule prime persist: ts=%+v err=%v", ts, err)
 	}
 
-	// 12:00 того же дня — повтор в тот же день → 0 новых.
+	// 12:00 того же дня — повтор в тот же день → 0 новых (раз в сутки).
 	setClock(clk, time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC))
 	d.tick()
-	if got := out.count(); got != 1 {
-		t.Fatalf("повтор в тот же день: всего %d, хотим 1 (раз в сутки)", got)
+	if got := out.count(); got != 0 {
+		t.Fatalf("повтор в тот же день: всего %d, хотим 0 (раз в сутки, день уже праймлен)", got)
 	}
 
-	// 09:05 следующего дня → снова срабатывание.
+	// 09:05 следующего дня → первое НАСТОЯЩЕЕ срабатывание (день сменился, цель достигнута).
 	setClock(clk, time.Date(2026, 4, 11, 9, 5, 0, 0, time.UTC))
 	d.tick()
+	if got := out.count(); got != 1 {
+		t.Fatalf("следующий день: всего %d, хотим 1", got)
+	}
+
+	// 09:05 ещё через день → второе срабатывание (раз в сутки сохраняется).
+	setClock(clk, time.Date(2026, 4, 12, 9, 5, 0, 0, time.UTC))
+	d.tick()
 	if got := out.count(); got != 2 {
-		t.Fatalf("следующий день: всего %d, хотим 2", got)
+		t.Fatalf("через ещё день: всего %d, хотим 2", got)
 	}
 }
 
