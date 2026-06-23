@@ -78,7 +78,7 @@ func DecodeValue(dec *json.Decoder) (value.Value, error) {
 	case string:
 		return value.Строка{V: t}, nil
 	case json.Number:
-		return numberToValue(t), nil
+		return payloadNumberToValue(t), nil
 	default:
 		return nil, fmt.Errorf("неподдерживаемое значение")
 	}
@@ -129,10 +129,11 @@ func decodeArray(dec *json.Decoder) (value.Value, error) {
 	return value.NewList(elems), nil
 }
 
-// numberToValue различает Целое/Дробное по форме токена JSON (§9.3): наличие
+// payloadNumberToValue различает Целое/Дробное по форме токена JSON (§9.3): наличие
 // '.'/'e'/'E' → Дробное; иначе Целое. Целое вне int64 деградирует в Дробное
 // (payload толерантен: лучше приблизительное число, чем сбой доставки).
-func numberToValue(n json.Number) value.Value {
+// Строгий двойник: eval.sourceNumberToValue (вне int64 → ошибка §SM-9.B).
+func payloadNumberToValue(n json.Number) value.Value {
 	s := string(n)
 	if !strings.ContainsAny(s, ".eE") {
 		if v, err := n.Int64(); err == nil {
