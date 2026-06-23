@@ -1,6 +1,27 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
+specs/028-numeric-path-hardening/plan.md (фича 028-numeric-path-hardening — ХАРДЕНИНГ числовых путей
+движка метрик БЕЗ изменения прод-поведения: тесты-онли запирание combineBinary/combineUnary + обоих
+numberToValue ЧЕРЕЗ ДЕРИВАТИВ МЕТРИКИ + механический рейминг двух одноимённых numberToValue. Часть A
+(тесты): A1 деление на ноль (evalDiv float / evalFloorDiv,evalMod на НЕПУСТОМ окне — D4-1 короткозамыкает
+пустое в Пусто, потому знаменатель=разность агрегатов «количество(запись)-количество(запись)»=0); A2
+переполнение (evalAdd «+9223372036854775807», evalSubMul «*MaxInt64», evalFloorDiv MinInt64//-1); A3 ЯДРО
+combineUnary 0%-покрытия — кастом-фикстура поле=-9223372036854775808 (=MinInt64, в int64, грузится строгим
+как Целое) → дериватив «-(мин(поле))»→переполнение, «-(среднее(сумма_заказа))»→-1000000.0; A4 NaN/±Inf —
+кастом-фикстура поле=1e300 (конечно, строгий грузит) → «среднее*среднее»=+Inf, «(..*..)-(..*..)»=Inf-Inf=NaN,
+ассерт math.IsInf/IsNaN НЕ ==; A5 None-операнд — метрика-с-пустым-окном даёт None, читается глобалью в
+деривативе внешней непустой метрики → combineUnary default/combineBinary type-mismatch → ОшибкаТипа «к Пусто»;
+A6 строгий sourceNumberToValue целое-вне-int64→§SM-9.B; A7 толерантный payloadNumberToValue 1e400→+Inf,-1e400→
+-Inf,целое-вне-диап-без-точки→Дробное (НИКОГДА None). Часть B (рейминг): eval/source_loader.go метод
+numberToValue→sourceNumberToValue (+вызов decodeValue:158); jsonval/decode.go функция numberToValue→
+payloadNumberToValue (+вызов DecodeValue:81); +по 1 строке перекрёстной ссылки «двойник». ГРАНИЦЫ: дифф
+СТРОГО в src/internal/eval (тесты+рейминг строгого) + src/internal/jsonval (тесты+рейминг толерантного) +
+doc-sync §SM-9.B; ПУСТОЙ прод-функц.дифф combine*/arith/engine/store/daemon/cmd (FR-012/SC-005 байт-в-байт);
+0 новых зависимостей (math stdlib уже в jsonval-тестах)/KW/builtins/eval-кодов/операторов; тексты ошибок
+русские неизменны. Каждый замок краснеет при удалении гарда (мутстратегия в research.md/test-locks.md).
+Constitution 9/9 PASS, Complexity Tracking ПУСТ (самая чистая фича: тесты+рейминг). plan/research/data-model/
+contracts(test-locks)/quickstart СОЗДАНЫ, НЕ имплементировано — ждёт /speckit-tasks. Предыдущая фича 027 — в
 specs/027-stable-trigger-keys/plan.md (фича 027-stable-trigger-keys — замена ПОЗИЦИОННОГО durable-ключа
 метрика-/расписание-триггеров (triggerID(idx)="trg-<N>" по индексу в interp.Triggers()) на КОНТЕНТНЫЙ
 ключ из условия триггера: "trg-"+hex16(FNV-1a-64(canonical(условие)+"#"+ord)). Устраняет тихую порчу
