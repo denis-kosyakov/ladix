@@ -64,9 +64,9 @@ func TestTickPhaseOrder(t *testing.T) {
 	writeFixture(t, path, `[{"x":1}]`)
 	d.tick() // drainEvents(stub) → evalMetrics(прайм) → checkSchedules(stub)
 
-	// evalMetrics отработала: метрика-триггер trg-0 праймлен.
-	if _, err := st.LoadTriggerState("trg-0"); err != nil {
-		t.Fatalf("evalMetrics не вызвана в фазе тика: trg-0 не праймлен (%v)", err)
+	// evalMetrics отработала: метрика-триггер праймлен (контентный ключ слота 0).
+	if _, err := st.LoadTriggerState(trigKey(t, d, 0)); err != nil {
+		t.Fatalf("evalMetrics не вызвана в фазе тика: метрика не праймлена (%v)", err)
 	}
 }
 

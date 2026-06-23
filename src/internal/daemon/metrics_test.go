@@ -84,7 +84,7 @@ func TestEvalMetricsPrimedStatePersisted(t *testing.T) {
 	}
 
 	// Состояние осталось в Store: LastBool=true.
-	ts, err := st.LoadTriggerState("trg-0")
+	ts, err := st.LoadTriggerState(trigKey(t, d1, 0))
 	if err != nil {
 		t.Fatalf("LoadTriggerState после прайминга: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestEvalMetricsFreeze(t *testing.T) {
 		t.Fatalf("заморозка: срабатываний = %d, хотим 0", got)
 	}
 	// persist пропущен: trigger_state НЕ создан (даже не праймлен).
-	if _, err := st.LoadTriggerState("trg-0"); !stderrors.Is(err, store.ErrTriggerStateNotFound) {
+	if _, err := st.LoadTriggerState(trigKey(t, d, 0)); !stderrors.Is(err, store.ErrTriggerStateNotFound) {
 		t.Fatalf("заморозка должна пропустить persist: err = %v, хотим ErrTriggerStateNotFound", err)
 	}
 }
@@ -154,7 +154,7 @@ func TestEvalMetricsAtMostOncePanicAfterPersist(t *testing.T) {
 
 	// База персистнута true ДО паники.
 	base := st.Store.(*store.MemoryStore)
-	ts, err := base.LoadTriggerState("trg-0")
+	ts, err := base.LoadTriggerState(trigKey(t, d, 0))
 	if err != nil {
 		t.Fatalf("LoadTriggerState после паники: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestEvalMetricsConditionErrorFreeze(t *testing.T) {
 		t.Fatalf("ожидали лог «метрика не вычислена», out=%q", out.String())
 	}
 	// Ветка err идёт ДО Load/Save: ничего не персистнуто.
-	if _, err := st.LoadTriggerState("trg-0"); !stderrors.Is(err, store.ErrTriggerStateNotFound) {
+	if _, err := st.LoadTriggerState(trigKey(t, d, 0)); !stderrors.Is(err, store.ErrTriggerStateNotFound) {
 		t.Fatalf("после ошибки метрики trigger_state не должен существовать, err=%v", err)
 	}
 }

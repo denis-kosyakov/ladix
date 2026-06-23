@@ -109,8 +109,8 @@ func TestRunImmediateFirstTick(t *testing.T) {
 	if out.contains("MFIRE") {
 		t.Fatalf("первый тик должен ПРАЙМИТЬ метрику без фаера в t=0 даже при истинном условии, out=%q", out.String())
 	}
-	// Метрика реально запраймлена первым тиком (trg-1: LastBool записан).
-	if ts, err := st.LoadTriggerState("trg-1"); err != nil || ts.LastBool == nil {
+	// Метрика реально запраймлена первым тиком (контентный ключ метрики: LastBool записан).
+	if ts, err := st.LoadTriggerState(trigKey(t, d, 1)); err != nil || ts.LastBool == nil {
 		t.Fatalf("метрика не запраймлена немедленным первым тиком: ts=%+v err=%v", ts, err)
 	}
 }

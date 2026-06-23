@@ -19,7 +19,8 @@ const valueName = "значение"
 // метрика-триггеры в порядке объявления (interp.Triggers()), детектит фронт
 // ложь→истина по durable trigger_state с гарантией at-most-once (персист ДО тела).
 //
-// Для каждого метрика-триггера (TriggerID="trg-<N>", N — индекс по ВСЕМ триггерам):
+// Для каждого метрика-триггера (TriggerID — контентный ключ, минтится из условия
+// триггера, см. buildTriggerKeys/CanonicalTriggerCondition; выровнен по индексу):
 //   - вычислить текущий булев cur (+ снимок) через interp.EvalMetricCondition;
 //   - НЕ ok (метрика пуста / сравнение не-Булево / ошибка вычисления) → ЗАМОРОЗКА
 //     (FR-009): ничего не персистить, тело не исполнять, продолжить;
@@ -35,7 +36,7 @@ func (d *Daemon) evalMetrics() {
 		if !ok {
 			continue // событие/расписание — другие фазы
 		}
-		id := triggerID(idx)
+		id := d.triggerKeys[idx]
 
 		cur, snapshot, threshold, computable, err := d.interp.EvalMetricCondition(spec)
 		if err != nil {

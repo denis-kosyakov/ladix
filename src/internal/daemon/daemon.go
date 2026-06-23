@@ -30,6 +30,8 @@ type Daemon struct {
 	interval time.Duration     // период тика (--interval, дефолт 1m)
 	mu       sync.Mutex        // сериализация прогона движка (EM-11): тики не пересекаются
 	out      io.Writer         // системные строки/логи демона (русские, §VIII)
+
+	triggerKeys []string // предвычисленные контентные durable-ключи, выровнены по индексам interp.Triggers() (§FR-005)
 }
 
 // New строит демон с явной инъекцией зависимостей (serveMain, слайс 5). Без скрытого
@@ -39,12 +41,13 @@ func New(st store.Store, eng *engine.Engine, interp *eval.Interpreter, clock eng
 		interval = time.Minute
 	}
 	return &Daemon{
-		st:       st,
-		eng:      eng,
-		interp:   interp,
-		clock:    clock,
-		interval: interval,
-		out:      out,
+		st:          st,
+		eng:         eng,
+		interp:      interp,
+		clock:       clock,
+		interval:    interval,
+		out:         out,
+		triggerKeys: buildTriggerKeys(interp.Triggers()),
 	}
 }
 

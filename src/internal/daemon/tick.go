@@ -1,7 +1,5 @@
 package daemon
 
-import "fmt"
-
 // tick — один прогон демона: РОВНО ЧЕТЫРЕ фазы в СТРОГОМ порядке (FR-002, EM-17.1,
 // 016 §AU-6.2.1). Под d.mu (EM-11: тики не пересекаются по инстансу). ResetRunState ДО
 // фаз (решение #2, FR-005/024): без сброса метрика на следующем тике вернёт снимок
@@ -36,10 +34,4 @@ func (d *Daemon) safeFire(fn func() error) {
 	if err := fn(); err != nil {
 		d.logf("ошибка триггера: %s", err.Error())
 	}
-}
-
-// triggerID — durable-ключ триггера по его 0-based индексу объявления (EM-17.2.1,
-// FR-023): "trg-<N>", N — позиция в interp.Triggers() (порядок объявления).
-func triggerID(idx int) string {
-	return fmt.Sprintf("trg-%d", idx)
 }

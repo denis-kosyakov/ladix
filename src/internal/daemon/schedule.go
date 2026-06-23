@@ -44,7 +44,7 @@ func (d *Daemon) checkSchedules() {
 		if !ok {
 			continue // метрика/событие — другие фазы
 		}
-		id := triggerID(idx)
+		id := d.triggerKeys[idx]
 		switch sub := spec.Spec.(type) {
 		case *ast.EverySchedule:
 			d.checkEvery(id, sub, td.Body, now)
@@ -115,6 +115,14 @@ func (d *Daemon) checkAt(id string, sub *ast.AtSchedule, body *ast.Block, now ti
 	ts, loadErr := d.st.LoadTriggerState(id)
 	if loadErr != nil && !stderrors.Is(loadErr, store.ErrTriggerStateNotFound) {
 		d.logf("триггер '%s': сбой чтения trigger_state: %s", id, loadErr.Error())
+		return
+	}
+	miss := stderrors.Is(loadErr, store.ErrTriggerStateNotFound)
+	if miss && !now.Before(target) { // первое наблюдение, время уже прошло: прайм, тело НЕ догонять (§FR-010)
+		day := today
+		if saveErr := d.st.SaveTriggerState(&store.TriggerState{TriggerID: id, Kind: atKind, LastFiredDate: &day}); saveErr != nil {
+			d.logf("триггер '%s': сбой записи trigger_state (прайм расписания): %s", id, saveErr.Error())
+		}
 		return
 	}
 	alreadyToday := loadErr == nil && ts.LastFiredDate != nil && *ts.LastFiredDate == today
