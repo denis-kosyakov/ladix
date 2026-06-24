@@ -82,7 +82,7 @@ func (d *Daemon) markProcessed(id, name string) {
 	}
 }
 
-// Декодер payload (payloadToRecord/decodeObject/decodeValue/decodeArray/numberToValue)
+// Декодер payload (payloadToRecord/decodeObject/decodeValue/decodeArray/payloadNumberToValue)
 // ЛИФТНУТ в internal/jsonval (B2, §AU-5.2): daemon делегирует туда (jsonval.PayloadToRecord
 // в drainEvents), дубля декодера здесь больше нет. jsonval — листовой (value+stdlib),
 // engine/cmd тоже потребляют его без цикла engine→daemon. Маппинг §9 неизменен; golden

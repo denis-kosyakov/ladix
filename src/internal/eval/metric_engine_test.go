@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
@@ -377,15 +378,17 @@ func TestMetricDivByZero(t *testing.T) {
 	const byDate = `дата(дата_заказа)`
 	cases := []struct {
 		name      string
+		op        string // оператор-литерал; позиция ошибки обязана указывать на него
 		aggregate string
 	}{
-		{"div", `сумма(сумма_заказа) / (количество(запись) - количество(запись))`},
-		{"floordiv", `сумма(сумма_заказа) // (количество(запись) - количество(запись))`},
-		{"mod", `сумма(сумма_заказа) % (количество(запись) - количество(запись))`},
+		{"div", "/", `сумма(сумма_заказа) / (количество(запись) - количество(запись))`},
+		{"floordiv", "//", `сумма(сумма_заказа) // (количество(запись) - количество(запись))`},
+		{"mod", "%", `сумма(сумма_заказа) % (количество(запись) - количество(запись))`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			i := buildMetricInterp(t, goldenMetric(where, tc.aggregate, "ежемесячно", byDate))
+			src := goldenMetric(where, tc.aggregate, "ежемесячно", byDate)
+			i := buildMetricInterp(t, src)
 			_, err := i.evalMetricByName("m", ast.Position{Line: 1, Col: 1})
 			if err == nil {
 				t.Fatalf("ожидалась ошибка деления на ноль, получено nil")
@@ -397,8 +400,21 @@ func TestMetricDivByZero(t *testing.T) {
 			if msg != "деление на ноль" {
 				t.Errorf("msg = %q, хотим %q", msg, "деление на ноль")
 			}
-			if line < 1 || col < 1 {
-				t.Errorf("позиция = (%d,%d), хотим оператор (line>=1 && col>=1)", line, col)
+			// FR-001 «с номером строки»: позиция = токен оператора (BinaryExpr.Pos(),
+			// §8.2). goldenMetric детерминирован: агрегат — строка 7 (источник:1, файл:2,
+			// пусто:3, метрика:4, источник:5, где:6, агрегат:7). Колонка обязана указывать
+			// на оператор tc.op. Краснеет при любом сдвиге позиции (мутпроба §SC-004).
+			const wantLine = 7
+			if line != wantLine {
+				t.Errorf("line = %d, хотим %d (строка агрегата)", line, wantLine)
+			}
+			srcLines := strings.Split(src, "\n")
+			if line < 1 || line > len(srcLines) {
+				t.Fatalf("line %d вне источника (%d строк)", line, len(srcLines))
+			}
+			runes := []rune(srcLines[line-1])
+			if col < 1 || col > len(runes) || !strings.HasPrefix(string(runes[col-1:]), tc.op) {
+				t.Errorf("позиция (%d,%d) не указывает на оператор %q", line, col, tc.op)
 			}
 		})
 	}
