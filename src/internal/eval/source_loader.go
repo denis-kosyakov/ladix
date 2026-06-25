@@ -155,7 +155,7 @@ func (i *Interpreter) decodeValue(decl *ast.SourceDecl, idx int, field string, d
 	case string:
 		return value.Строка{V: t}, nil // даты НЕ распознаются (§9.4)
 	case json.Number:
-		return i.numberToValue(decl, idx, field, t)
+		return i.sourceNumberToValue(decl, idx, field, t)
 	default:
 		return nil, i.jsonErr(decl, fmt.Errorf("неподдерживаемое значение"))
 	}
@@ -206,9 +206,10 @@ func (i *Interpreter) decodeArray(decl *ast.SourceDecl, idx int, field string, d
 	return value.NewList(elems), nil
 }
 
-// numberToValue различает Целое/Дробное по форме токена JSON (§9.3): наличие
-// '.'/'e'/'E' → Дробное; иначе Целое (вне int64 → §SM-9.B).
-func (i *Interpreter) numberToValue(decl *ast.SourceDecl, idx int, field string, n json.Number) (value.Value, error) {
+// sourceNumberToValue различает Целое/Дробное по форме токена JSON (§9.3): наличие
+// '.'/'e'/'E' → Дробное; иначе Целое (вне int64 → §SM-9.B). Строгий контракт.
+// Толерантный двойник: jsonval.payloadNumberToValue (вне диапазона → ±Inf, никогда не None).
+func (i *Interpreter) sourceNumberToValue(decl *ast.SourceDecl, idx int, field string, n json.Number) (value.Value, error) {
 	s := string(n)
 	if strings.ContainsAny(s, ".eE") {
 		f, err := n.Float64()

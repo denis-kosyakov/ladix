@@ -2,7 +2,9 @@ package eval
 
 import (
 	"bytes"
+	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/denis-kosyakov/ladix/internal/ast"
@@ -318,6 +320,278 @@ func TestGoldenSM10(t *testing.T) {
 			got := evalGolden(t, tc.where, tc.aggregate, tc.period, tc.byDate)
 			if got != tc.want {
 				t.Errorf("метрика(%s) = %q, хотим %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// === 028: характеризационные замки числовых краевых веток combineBinary/
+// combineUnary/arith через ДЕРИВАТИВ метрики (A1–A5). Окно непустое
+// (paid+ежемесячно или единичная кастом-запись): на пустом окне корневой дериватив
+// короткозамыкается в Пусто ДО combine* (metric_engine.go:79-81, D4-1). ===
+
+// buildMetricInterpCustomSource записывает кастомную JSON-фикстуру во временный
+// каталог, парсит источник «продажи» + метрику m с агрегатом aggregate, переписывает
+// путь источника на временный файл (НЕ salesPath()), прогоняет Analyze и вычисляет m,
+// возвращая (value.Value, error). Окно фиксированное: где: статус == "оплачен" +
+// период: ежемесячно + по_дате: дата(дата_заказа) под FixedClock{2026-05-31} — записи
+// фикстуры с датой в мае 2026 и статусом «оплачен» выживают (непустое окно). Нужен
+// для A3 (поле = MinInt64) и A4 (поле = 1e300): стандартная sales.json их не несёт.
+func buildMetricInterpCustomSource(t *testing.T, jsonRecords, aggregate string) (value.Value, error) {
+	t.Helper()
+	path := writeJSON(t, t.TempDir(), "f.json", jsonRecords)
+	src := "источник продажи:\n    файл: \"f.json\"\n\n" +
+		"метрика m:\n    источник: продажи\n" +
+		"    где:      статус == \"оплачен\"\n" +
+		"    агрегат:  " + aggregate + "\n" +
+		"    период:   ежемесячно\n" +
+		"    по_дате:  дата(дата_заказа)\n"
+	tokens, errList := lexer.New(src).Tokenize()
+	prog := parser.New(tokens, errList).Parse()
+	if !errList.Empty() {
+		t.Fatalf("неожиданные лексические/синтаксические ошибки: %v", errList.Error())
+	}
+	for _, item := range prog.Items {
+		if sd, ok := item.(*ast.SourceDecl); ok {
+			sd.File.Value = path
+		}
+	}
+	i := NewInterpreter(&bytes.Buffer{}, 0, testClock)
+	if err := i.Analyze(prog); err != nil {
+		t.Fatalf("Analyze вернул ошибку: %v", err)
+	}
+	return i.evalMetricByName("m", ast.Position{Line: 1, Col: 1})
+}
+
+// customRecord — одна выживающая запись кастом-фикстуры с числовым полем field=val
+// (val — JSON-токен дословно), датой мая 2026 и статусом «оплачен».
+func customRecord(field, val string) string {
+	return `[{"` + field + `": ` + val + `, "дата_заказа": "2026-05-15", "статус": "оплачен"}]`
+}
+
+// A1 (FR-001) — деление на ноль на НЕПУСТОМ окне через дериватив. Знаменатель =
+// количество(запись) - количество(запись) = Целое 0. Три ветки: «/» (evalDiv, float),
+// «//» (evalFloorDiv, целочисл.), «%» (evalMod, целочисл.). Ассерт: isRuntime +
+// сообщение вербатим + позиция оператора (line>=1 && col>=1, Конст. IV) + не паника.
+func TestMetricDivByZero(t *testing.T) {
+	const where = `статус == "оплачен"`
+	const byDate = `дата(дата_заказа)`
+	cases := []struct {
+		name      string
+		op        string // оператор-литерал; позиция ошибки обязана указывать на него
+		aggregate string
+	}{
+		{"div", "/", `сумма(сумма_заказа) / (количество(запись) - количество(запись))`},
+		{"floordiv", "//", `сумма(сумма_заказа) // (количество(запись) - количество(запись))`},
+		{"mod", "%", `сумма(сумма_заказа) % (количество(запись) - количество(запись))`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := goldenMetric(where, tc.aggregate, "ежемесячно", byDate)
+			i := buildMetricInterp(t, src)
+			_, err := i.evalMetricByName("m", ast.Position{Line: 1, Col: 1})
+			if err == nil {
+				t.Fatalf("ожидалась ошибка деления на ноль, получено nil")
+			}
+			if !isRuntime(err) {
+				t.Fatalf("ошибка не ОшибкаВыполнения: %T %v", err, err)
+			}
+			line, col, msg := evalErr(t, err)
+			if msg != "деление на ноль" {
+				t.Errorf("msg = %q, хотим %q", msg, "деление на ноль")
+			}
+			// FR-001 «с номером строки»: позиция = токен оператора (BinaryExpr.Pos(),
+			// §8.2). goldenMetric детерминирован: агрегат — строка 7 (источник:1, файл:2,
+			// пусто:3, метрика:4, источник:5, где:6, агрегат:7). Колонка обязана указывать
+			// на оператор tc.op. Краснеет при любом сдвиге позиции (мутпроба §SC-004).
+			const wantLine = 7
+			if line != wantLine {
+				t.Errorf("line = %d, хотим %d (строка агрегата)", line, wantLine)
+			}
+			srcLines := strings.Split(src, "\n")
+			if line < 1 || line > len(srcLines) {
+				t.Fatalf("line %d вне источника (%d строк)", line, len(srcLines))
+			}
+			runes := []rune(srcLines[line-1])
+			if col < 1 || col > len(runes) || !strings.HasPrefix(string(runes[col-1:]), tc.op) {
+				t.Errorf("позиция (%d,%d) не указывает на оператор %q", line, col, tc.op)
+			}
+		})
+	}
+}
+
+// A2 (FR-002) — переполнение целого на стандартной непустой фикстуре (сумма=2000000>0).
+// add: сумма + MaxInt64 (addInt64); mul: сумма * MaxInt64 (mulInt64). Литерал
+// 9223372036854775807 = MaxInt64 (в диапазоне int64). Ассерт: isRuntime + текст вербатим.
+func TestMetricIntOverflow(t *testing.T) {
+	const where = `статус == "оплачен"`
+	const byDate = `дата(дата_заказа)`
+	cases := []struct {
+		name      string
+		aggregate string
+	}{
+		{"add", `сумма(сумма_заказа) + 9223372036854775807`},
+		{"mul", `сумма(сумма_заказа) * 9223372036854775807`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			i := buildMetricInterp(t, goldenMetric(where, tc.aggregate, "ежемесячно", byDate))
+			_, err := i.evalMetricByName("m", ast.Position{Line: 1, Col: 1})
+			if err == nil {
+				t.Fatalf("ожидалась ошибка переполнения, получено nil")
+			}
+			if !isRuntime(err) {
+				t.Fatalf("ошибка не ОшибкаВыполнения: %T %v", err, err)
+			}
+			_, _, msg := evalErr(t, err)
+			if msg != "переполнение целого числа" {
+				t.Errorf("msg = %q, хотим %q", msg, "переполнение целого числа")
+			}
+		})
+	}
+}
+
+// A2-floordiv (FR-002) — floorDivInt64(MinInt64, -1) через кастом-фикстуру. Числитель
+// мин(поле)=Целое{MinInt64}; знаменатель количество-количество-1 = 2-2-1 = -1 (НЕ 0,
+// иначе сработал бы div-zero) → ловушка a==MinInt64 && b==-1 (arith.go:284). Поле
+// -9223372036854775808 грузится строгим путём как Целое{MinInt64} без переполнения.
+func TestMetricIntOverflowFloorDiv(t *testing.T) {
+	v, err := buildMetricInterpCustomSource(t,
+		customRecord("поле", "-9223372036854775808"),
+		`мин(поле) // (количество(запись) - количество(запись) - 1)`)
+	if err == nil {
+		t.Fatalf("ожидалась ошибка переполнения, получено значение %v", v)
+	}
+	if !isRuntime(err) {
+		t.Fatalf("ошибка не ОшибкаВыполнения: %T %v", err, err)
+	}
+	_, _, msg := evalErr(t, err)
+	if msg != "переполнение целого числа" {
+		t.Errorf("msg = %q, хотим %q", msg, "переполнение целого числа")
+	}
+}
+
+// A3-neg-float (FR-003, ЯДРО combineUnary) — -(среднее(...)) над Дробным.
+// среднее(сумма_заказа) на окне paid+ежемесячно = Дробное{1000000.0} →
+// combineUnary(neg, Дробное) (metric_engine.go:293) → Дробное{-1000000.0}.
+// Реально прогоняет combineUnary (закрывает 0% покрытия, SC-002).
+func TestMetricUnaryNegFloat(t *testing.T) {
+	i := buildMetricInterp(t, goldenMetric(`статус == "оплачен"`,
+		`-(среднее(сумма_заказа))`, "ежемесячно", `дата(дата_заказа)`))
+	v, err := i.evalMetricByName("m", ast.Position{Line: 1, Col: 1})
+	if err != nil {
+		t.Fatalf("evalMetric вернул ошибку: %v", err)
+	}
+	if got := value.String(v); got != "-1000000.0" {
+		t.Errorf("value.String = %q, хотим %q", got, "-1000000.0")
+	}
+	if _, ok := v.(value.Дробное); !ok {
+		t.Errorf("тип = %T, хотим value.Дробное", v)
+	}
+}
+
+// A3-neg-min (FR-003, ЯДРО combineUnary) — -(мин(поле)) над Целое{MinInt64}.
+// Кастом-фикстура поле=-9223372036854775808 (грузится строгим путём как
+// Целое{MinInt64}); мин(поле)=Целое{MinInt64} → combineUnary(neg, Целое) ветка
+// v.V == math.MinInt64 (metric_engine.go:289) → переполнение. Реально прогоняет
+// combineUnary (закрывает 0% покрытия, SC-002).
+func TestMetricUnaryNegOverflow(t *testing.T) {
+	v, err := buildMetricInterpCustomSource(t,
+		customRecord("поле", "-9223372036854775808"), `-(мин(поле))`)
+	if err == nil {
+		t.Fatalf("ожидалась ошибка переполнения, получено значение %v", v)
+	}
+	if !isRuntime(err) {
+		t.Fatalf("ошибка не ОшибкаВыполнения: %T %v", err, err)
+	}
+	_, _, msg := evalErr(t, err)
+	if msg != "переполнение целого числа" {
+		t.Errorf("msg = %q, хотим %q", msg, "переполнение целого числа")
+	}
+}
+
+// A4 (FR-004) — пропагация ±Inf/NaN через combineBinary/combineUnary на кастом-
+// фикстуре поле=1e300 (конечное; источник ОТВЕРГает 1e400 строгим путём). Результат
+// во всех строках — value.Дробное (НЕ паника/None), спец-значение по IEEE-754.
+// Проверка через math.IsInf/math.IsNaN (НЕ ==, NaN != NaN).
+func TestMetricFloatSpecials(t *testing.T) {
+	const records = `[{"огромное": 1e300, "дата_заказа": "2026-05-15", "статус": "оплачен"}]`
+	t.Run("pinf", func(t *testing.T) {
+		v, err := buildMetricInterpCustomSource(t, records, `среднее(огромное) * среднее(огромное)`)
+		if err != nil {
+			t.Fatalf("ожидалось значение, получена ошибка: %v", err)
+		}
+		d, ok := v.(value.Дробное)
+		if !ok {
+			t.Fatalf("тип = %T, хотим value.Дробное", v)
+		}
+		if !math.IsInf(d.V, +1) {
+			t.Errorf("значение = %v, хотим +Inf", d.V)
+		}
+	})
+	t.Run("ninf", func(t *testing.T) {
+		v, err := buildMetricInterpCustomSource(t, records, `-(среднее(огромное) * среднее(огромное))`)
+		if err != nil {
+			t.Fatalf("ожидалось значение, получена ошибка: %v", err)
+		}
+		d, ok := v.(value.Дробное)
+		if !ok {
+			t.Fatalf("тип = %T, хотим value.Дробное", v)
+		}
+		if !math.IsInf(d.V, -1) {
+			t.Errorf("значение = %v, хотим -Inf", d.V)
+		}
+	})
+	t.Run("nan", func(t *testing.T) {
+		v, err := buildMetricInterpCustomSource(t, records,
+			`(среднее(огромное) * среднее(огромное)) - (среднее(огромное) * среднее(огромное))`)
+		if err != nil {
+			t.Fatalf("ожидалось значение, получена ошибка: %v", err)
+		}
+		d, ok := v.(value.Дробное)
+		if !ok {
+			t.Fatalf("тип = %T, хотим value.Дробное", v)
+		}
+		if !math.IsNaN(d.V) {
+			t.Errorf("значение = %v, хотим NaN", d.V)
+		}
+	})
+}
+
+// A5 (FR-005) — операнд None/Пусто в combineUnary (default) и combineBinary
+// (evalAdd type-mismatch). Метрика пусто_м с ПУСТЫМ окном (период: ежедневно →
+// value.None по D4-1) читается как глобаль в деривативе внешней метрики на НЕПУСТОМ
+// окне (паттерн TestMetricAsValueReentrant). НЕ путать None-операнд с пустым окном.
+// Пусто.TypeName() == "Пусто" (подтверждено эмпирически).
+func TestMetricNoneOperand(t *testing.T) {
+	const head = "источник продажи:\n    файл: \"data/sales.json\"\n\n" +
+		"метрика пусто_м:\n    источник: продажи\n    где:      статус == \"оплачен\"\n" +
+		"    агрегат:  среднее(сумма_заказа)\n    период:   ежедневно\n    по_дате:  дата(дата_заказа)\n\n"
+	cases := []struct {
+		name      string
+		aggregate string
+		wantMsg   string
+	}{
+		{"unary", `-(пусто_м)`, "унарный '-' нельзя применить к Пусто"},
+		{"binary", `сумма(сумма_заказа) + пусто_м`, "'+' нельзя применить к Целое и Пусто"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := head + "метрика m:\n    источник: продажи\n" +
+				"    где:      статус == \"оплачен\"\n" +
+				"    агрегат:  " + tc.aggregate + "\n" +
+				"    период:   ежемесячно\n    по_дате:  дата(дата_заказа)\n"
+			i := buildMetricInterp(t, src)
+			_, err := i.evalMetricByName("m", ast.Position{Line: 1, Col: 1})
+			if err == nil {
+				t.Fatalf("ожидалась ОшибкаТипа (операнд Пусто), получено nil")
+			}
+			if !isType(err) {
+				t.Fatalf("ошибка не ОшибкаТипа: %T %v", err, err)
+			}
+			_, _, msg := evalErr(t, err)
+			if msg != tc.wantMsg {
+				t.Errorf("msg = %q, хотим %q", msg, tc.wantMsg)
 			}
 		})
 	}

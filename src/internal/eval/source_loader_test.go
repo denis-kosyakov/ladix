@@ -247,6 +247,26 @@ func TestLoadSourceErrIntOverflow(t *testing.T) {
 		"источник 'продажи': запись 2, поле 'big': целое число вне диапазона")
 }
 
+// === 028 A6 (FR-007): строгий контракт numberToValue (источник) — целое вне int64
+// БЕЗ точки/e/E → n.Int64() падает → §SM-9.B «целое число вне диапазона». Замок до
+// рейминга numberToValue→sourceNumberToValue. ===
+
+// TestSourceIntOutOfRange пинит строгий гард n.Int64() err → §SM-9.B
+// (source_loader.go:221). Фикстура [{"поле": 99999999999999999999}] (вне int64, без
+// точки) → ошибка в записи idx=1 (idx 1-based, см. loadJSON :108-110), поле 'поле'.
+// assertLoadErr уже проверяет isRuntime + позицию decl.Pos(). Мутация (вернуть Дробное
+// как толерантный путь) краснит этот замок (получит значение, не ошибку).
+//
+// ОТКЛОНЕНИЕ от research/contract: предсказанный текст «запись 0» (0-based) НЕВЕРЕН —
+// idx 1-based (loadJSON делает idx++ ДО decodeValue), поэтому первая запись = «запись 1»
+// (согласовано с существующим TestLoadSourceErrIntOverflow «запись 2» для 2-й записи).
+func TestSourceIntOutOfRange(t *testing.T) {
+	dir := t.TempDir()
+	path := writeJSON(t, dir, "ooр.json", `[{"поле": 99999999999999999999}]`)
+	assertLoadErr(t, makeSourceDecl("продажи", path),
+		"источник 'продажи': запись 1, поле 'поле': целое число вне диапазона")
+}
+
 // === 010-A1: коннекторы источника (Phase E, §SC-6) ===
 
 // fieldSpec — пара (имя поля, аннотация типа) для конструкции схемы в тестах.

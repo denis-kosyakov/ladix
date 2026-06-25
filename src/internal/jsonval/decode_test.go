@@ -134,3 +134,56 @@ func TestDecodeValueFloatOverflow(t *testing.T) {
 		t.Errorf("-1e400 = %#v, хотим value.Дробное{V:-Inf}", nv)
 	}
 }
+
+// === 028 A7 (FR-008, золотой замок): толерантный контракт numberToValue (payload)
+// через КОНТРАКТНЫЙ путь PayloadToRecord — число НИКОГДА не деградирует в None.
+// Замок до рейминга numberToValue→payloadNumberToValue. Дополняет
+// TestDecodeValueFloatOverflow (тот через DecodeValue-скаляр), фиксируя поведение
+// именно у PayloadToRecord+rec.Get. ±Inf/NaN — только math.IsInf/math.IsNaN, не ==. ===
+//
+// Эмпирически (research/contract A7): 1e400/-1e400 → Дробное{±Inf} (Float64 overflow,
+// err проигнорирован); 99999999999999999999 (целое вне int64, без точки) → КОНЕЧНОЕ
+// Дробное (~1e20, НЕ ±Inf — Float64 строки даёт конечное число). Во ВСЕХ случаях
+// число остаётся Дробным (НИКОГДА не None). Мутация (вернуть None на overflow) краснит.
+func TestPayloadNumberInfinity(t *testing.T) {
+	t.Run("pinf", func(t *testing.T) {
+		rec, err := PayloadToRecord(`{"x": 1e400}`)
+		if err != nil {
+			t.Fatalf("PayloadToRecord(1e400): %v", err)
+		}
+		d, ok := rec.Get("x").(value.Дробное)
+		if !ok {
+			t.Fatalf("x = %#v, хотим value.Дробное (НИКОГДА не None)", rec.Get("x"))
+		}
+		if !math.IsInf(d.V, +1) {
+			t.Errorf("x = %v, хотим +Inf", d.V)
+		}
+	})
+	t.Run("ninf", func(t *testing.T) {
+		rec, err := PayloadToRecord(`{"x": -1e400}`)
+		if err != nil {
+			t.Fatalf("PayloadToRecord(-1e400): %v", err)
+		}
+		d, ok := rec.Get("x").(value.Дробное)
+		if !ok {
+			t.Fatalf("x = %#v, хотим value.Дробное (НИКОГДА не None)", rec.Get("x"))
+		}
+		if !math.IsInf(d.V, -1) {
+			t.Errorf("x = %v, хотим -Inf", d.V)
+		}
+	})
+	t.Run("big_int_no_dot_finite", func(t *testing.T) {
+		rec, err := PayloadToRecord(`{"x": 99999999999999999999}`)
+		if err != nil {
+			t.Fatalf("PayloadToRecord(big): %v", err)
+		}
+		// Целое вне int64 без точки: НЕ None, стало Дробным — и КОНЕЧНЫМ (~1e20).
+		d, ok := rec.Get("x").(value.Дробное)
+		if !ok {
+			t.Fatalf("x = %#v, хотим value.Дробное (число НИКОГДА не None)", rec.Get("x"))
+		}
+		if math.IsInf(d.V, 0) || math.IsNaN(d.V) {
+			t.Errorf("x = %v, хотим КОНЕЧНОЕ Дробное (НЕ ±Inf/NaN)", d.V)
+		}
+	})
+}
