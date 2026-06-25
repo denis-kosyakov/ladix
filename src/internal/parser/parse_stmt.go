@@ -76,6 +76,10 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseNestedFunc()
 	case lexer.KW_SET, lexer.KW_CALL, lexer.KW_NOTIFY:
 		return p.parseStepAction()
+	case lexer.KW_TRY:
+		return p.parseTry()
+	case lexer.KW_CATCH:
+		return p.parseDanglingCatch()
 	default:
 		return p.parseExprStatement()
 	}
@@ -190,6 +194,28 @@ func (p *Parser) parseIf() ast.Statement {
 	then := p.parseBlock()
 	els := p.parseElse()
 	return ast.NewIfStmt(toASTPos(ifTok.Pos), cond, then, els)
+}
+
+// parseTry: пытаться ":" Block словить ":" Block (029). Зеркало parseIf: оба арма —
+// обычный Block; словить-арм обязателен. Условий/биндинга ошибки нет (голый словить:).
+// Отсутствие словить/":" → SE-EXPECTED через expect. Pos() = токен пытаться.
+func (p *Parser) parseTry() ast.Statement {
+	tryTok := p.advance() // пытаться
+	p.expect(lexer.COLON, ":")
+	tryBlk := p.parseBlock()
+	p.expect(lexer.KW_CATCH, "словить")
+	p.expect(lexer.COLON, ":")
+	catchBlk := p.parseBlock()
+	return ast.NewTryStmt(toASTPos(tryTok.Pos), tryBlk, catchBlk)
+}
+
+// parseDanglingCatch: словить в позиции начала оператора (нет предшествующего
+// пытаться) → SE-CATCH-NO-TRY. error() сам синхронизируется (panic-mode), курсор
+// сдвигается к точке возобновления; узел не порождается (вызывающий пропускает nil).
+func (p *Parser) parseDanglingCatch() ast.Statement {
+	bad := p.advance() // словить
+	p.error(bad.Pos, msgCatchNoTry)
+	return nil
 }
 
 // parseElse разбирает цепочку иначе/иначе если. nil, если иначе отсутствует.

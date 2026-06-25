@@ -34,6 +34,7 @@ func isSyncLead(t lexer.TokenType) bool {
 		lexer.KW_RETURN, lexer.KW_BREAK, lexer.KW_CONTINUE,
 		lexer.KW_FUNC,
 		lexer.KW_SET, lexer.KW_CALL, lexer.KW_NOTIFY,
+		lexer.KW_TRY,
 		lexer.KW_SOURCE, lexer.KW_METRIC, lexer.KW_PROCESS, lexer.KW_WHEN:
 		return true
 	default:
