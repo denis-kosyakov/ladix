@@ -85,6 +85,13 @@ type Event struct {
 // dispatch'е эффекта тела шага по ключу (instance_id, step_name, effect_index).
 // Value-ориентирована (INV-2): []value.Value/value.Value лежат как есть в MemoryStore,
 // type-tagged JSON — ВНУТРИ SQLiteStore (eval/engine не сериализуют).
+//
+// Семантика статуса (029, Уровень 2 — durable-вердикт сбоя):
+//   - Delivered=true                       → УСПЕХ (для вызывать-формы хранится Result);
+//   - Delivered=false, ErrorText!=""       → ЗАМОРОЖЕННЫЙ ВЕРДИКТ СБОЯ: на реплее
+//     эффект пере-бросается из ErrorText БЕЗ повторной доставки (детерминизм try/catch).
+//
+// Старые строки (до миграции 3→4) — ErrorText="" + Delivered=true → прежнее поведение.
 type OutboxRecord struct {
 	DedupKey    string        // "<instanceID>|<stepName>|<effectIndex>" — PRIMARY KEY
 	InstanceID  string        // инстанс процесса
@@ -97,6 +104,7 @@ type OutboxRecord struct {
 	Delivered   bool          // true после успешной доставки + персиста
 	CreatedAt   time.Time     // штамп создания записи (часы движка)
 	DeliveredAt *time.Time    // штамп доставки (nil до доставки)
+	ErrorText   string        // 029 Уровень 2: текст вердикта сбоя (Delivered=false); "" = нет/успех
 }
 
 // Сентинелы Store (D-3, §EN-2). Английские: наружу не печатаются, транслируются

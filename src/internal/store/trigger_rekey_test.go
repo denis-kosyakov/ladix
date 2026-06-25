@@ -23,9 +23,10 @@ func countTriggerStateRows(t *testing.T, st *SQLiteStore) int {
 // ключи больше не действительны, состояние перепраймится демоном под контентными
 // ключами на первом тике (поведенчески-нейтрально, FR-010).
 //
-// ИНВЕРСИОННЫЙ ЗАМОК: убрать ступень 2→3 из schemaMigrations (или бамп версии) →
-// target=2 → позиционные строки УЦЕЛЕЮТ И user_version останется 2 → этот тест
-// краснеет на обеих проверках (rows!=0 и version!=3).
+// ИНВЕРСИОННЫЙ ЗАМОК: убрать ступень 2→3 (`DELETE FROM trigger_state`) из
+// schemaMigrations → позиционные строки УЦЕЛЕЮТ → этот тест краснеет на проверке
+// rows!=0 (LoadTriggerState всё ещё находит «trg-0/1»). Версия после реоткрытия
+// доходит до 4 (после 2→3 и 3→4).
 func TestMigrateTriggerRekeyV2toV3(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rekey.db")
 
@@ -50,6 +51,12 @@ func TestMigrateTriggerRekeyV2toV3(t *testing.T) {
 	if _, err := st.db.Exec(`PRAGMA user_version = 2`); err != nil {
 		t.Fatalf("reset user_version=2: %v", err)
 	}
+	// Колонка outbox.error_text добавляется лишь миграцией 3→4 (029) — настоящая v2-БД
+	// её не имела. Снимаем, иначе реплей 3→4 (ALTER ADD) при реоткрытии наткнётся на
+	// duplicate column (первое открытие уже довело схему до v4).
+	if _, err := st.db.Exec(`ALTER TABLE outbox DROP COLUMN error_text`); err != nil {
+		t.Fatalf("drop error_text (имитация v2): %v", err)
+	}
 	if err := st.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -66,9 +73,9 @@ func TestMigrateTriggerRekeyV2toV3(t *testing.T) {
 	}
 	defer st2.Close()
 
-	// (a) версия поднялась до 3.
-	if got := readUserVersion(t, path); got != 3 {
-		t.Errorf("user_version after reopen = %d, want 3", got)
+	// (a) версия поднялась до текущей (реоткрытие применяет 2→3 и 3→4).
+	if got := readUserVersion(t, path); got != 4 {
+		t.Errorf("user_version after reopen = %d, want 4", got)
 	}
 	// (b) trigger_state ОЧИЩЕН: позиционные ключи сброшены → LoadTriggerState не находит.
 	if n := countTriggerStateRows(t, st2); n != 0 {
