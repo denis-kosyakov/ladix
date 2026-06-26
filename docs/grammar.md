@@ -50,6 +50,7 @@ Statement       ::= LetStmt
                   | ReturnStmt
                   | BreakStmt
                   | ContinueStmt
+                  | TryStmt
                   | StepAction
                   | ExpressionStmt
 
@@ -67,6 +68,7 @@ ForStmt         ::= "для" Ident "в" Expression ":" Block
 ReturnStmt      ::= "вернуть" Expression? Newline
 BreakStmt       ::= "прервать" Newline
 ContinueStmt    ::= "продолжить" Newline
+TryStmt         ::= "пытаться" ":" Block "словить" ":" Block
 ```
 
 **Тонкости:**
@@ -303,6 +305,6 @@ Block           ::= Newline Indent Statement Statement* Dedent
 
 Алфавитный указатель всех нетерминалов:
 
-`Additive`, `ArgList`, `AssignAction`, `AssignStmt`, `Block`, `BreakStmt`, `CallAction`, `CallExternalExpr`, `CompOp`, `Comparison`, `ContinueStmt`, `DeadlineTrigger`, `ElseClause`, `EventTrigger`, `Expression`, `ExpressionStmt`, `FieldBlock`, `FieldDef`, `ForStmt`, `FunctionDecl`, `IfStmt`, `LetStmt`, `ListLiteral`, `LogicAnd`, `LogicNot`, `LogicOr`, `MetricAttr`, `MetricBlock`, `MetricDecl`, `MetricTrigger`, `Multiplicative`, `NotifyAction`, `ParamList`, `PeriodValue`, `Postfix`, `PostfixOp`, `Primary`, `ProcessBlock`, `ProcessDecl`, `Program`, `ReturnStmt`, `RunProcessExpr`, `ScheduleSpec`, `ScheduleTrigger`, `SourceAttr`, `SourceBlock`, `SourceDecl`, `Statement`, `StepAction`, `StepAfter`, `StepAttr`, `StepBlock`, `StepDecl`, `StepLine`, `TopLevelItem`, `TriggerDecl`, `TriggerSpec`, `Unary`, `WhileStmt`.
+`Additive`, `ArgList`, `AssignAction`, `AssignStmt`, `Block`, `BreakStmt`, `CallAction`, `CallExternalExpr`, `CompOp`, `Comparison`, `ContinueStmt`, `DeadlineTrigger`, `ElseClause`, `EventTrigger`, `Expression`, `ExpressionStmt`, `FieldBlock`, `FieldDef`, `ForStmt`, `FunctionDecl`, `IfStmt`, `LetStmt`, `ListLiteral`, `LogicAnd`, `LogicNot`, `LogicOr`, `MetricAttr`, `MetricBlock`, `MetricDecl`, `MetricTrigger`, `Multiplicative`, `NotifyAction`, `ParamList`, `PeriodValue`, `Postfix`, `PostfixOp`, `Primary`, `ProcessBlock`, `ProcessDecl`, `Program`, `ReturnStmt`, `RunProcessExpr`, `ScheduleSpec`, `ScheduleTrigger`, `SourceAttr`, `SourceBlock`, `SourceDecl`, `Statement`, `StepAction`, `StepAfter`, `StepAttr`, `StepBlock`, `StepDecl`, `StepLine`, `TopLevelItem`, `TriggerDecl`, `TriggerSpec`, `TryStmt`, `Unary`, `WhileStmt`.
 
 **Терминалы из лексера:** `Ident`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `BoolLiteral`, `NoneLiteral`, `DurationLiteral`, `Newline`, `Indent`, `Dedent`, `EOF`, плюс ключевые слова и операторы/разделители из §2.

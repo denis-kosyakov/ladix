@@ -349,13 +349,26 @@ key := outboxKey(fr.inst.ID, fr.inst.CurrentStep, idx) // fmt.Sprintf("%s|%s|%d"
    - err==nil && rec.Delivered:           // уже доставлено в прошлой жизни инстанса
        → НЕ звать e.caller; вернуть сохранённый результат
          (CallExternalResult → rec.Result; CallExternal/Notify → nil). СТОП.
-   - ErrOutboxNotFound (или не delivered): продолжаем.
+   - err==nil && !rec.Delivered:          // замороженный вердикт сбоя (трек #2 v3)
+       → НЕ звать e.caller; пере-бросить ошибку из rec.error_text (детерминированный
+         реплей: сбой воспроизводится ровно как в первой жизни). СТОП.
+   - ErrOutboxNotFound: доставляем впервые — продолжаем.
 3. v, derr := e.caller.Call|Notify(target, args)   // реальная доставка (POST/печать)
-4. derr != nil → вернуть derr (шаг провалится, D-14); outbox НЕ помечаем delivered.
+4. derr != nil → SaveOutbox(&OutboxRecord{key, …, Delivered:false, error_text:derr.Error()})
+                  (замораживаем вердикт сбоя — upsert); вернуть derr (шаг провалится, D-14,
+                  ЕСЛИ ошибка не перехвачена `пытаться`/`словить`).
 5. derr == nil → e.st.SaveOutbox(&OutboxRecord{key, inst, step, idx, kind, target, args, v,
                   Delivered:true, CreatedAt:now, DeliveredAt:&now})  (upsert)
 6. вернуть v (или nil для statement-формы).
 ```
+
+**Дискриминатор вердикта.** Замороженный вердикт сбоя различается по **одному** признаку — записи
+в outbox с `Delivered=false` (шаг 2, ветка `!rec.Delivered`). `error_text` — лишь **пояснение** к
+вердикту (на пустом тексте движок подставляет дефолтное сообщение), поэтому условие на непустоту
+`error_text` добавлять НЕЛЬЗЯ: оно сломало бы пустотекстовые вердикты. Семантика записей:
+`Delivered=true` → успех (вернуть `rec.Result`); `Delivered=false` → пере-брос без вызова
+`e.caller`; запись отсутствует → доставка впервые. Формат dedup-ключа `ID|step|idx` не меняется;
+проводки веток eval→engine нет.
 
 **Зачем `result_json`:** `CallExternalResult` (B1, выражение-форма `вызвать`) захватывает результат в
 переменную. На пропуске-по-дедупу метод обязан вернуть **тот же** результат, иначе логика процесса
@@ -367,7 +380,7 @@ key := outboxKey(fr.inst.ID, fr.inst.CurrentStep, idx) // fmt.Sprintf("%s|%s|%d"
 конца можно лишь идемпотентностью **приёмника** (мы не владеем `crm`) — вне scope. Это ровно то же
 окно, что fault-ветка-3 `checkDeadlines` (fire-then-persist `Escalated`, §C-2b.8). Гейт §2 крашится
 **после** `SaveOutbox` → POST ровно 1; узкое окно гейт не трогает (как `m2_golden` крашится после
-успешного `SaveTask`).
+успешного `SaveTask`). Симметрично для **вердикта сбоя**: запись `Delivered=false` идёт тем же швом deliver-then-record-outcome — краш между неуспешной доставкой и записью вердикта оставляет ключ отсутствующим, и на рестарте эффект переисполняется (как раньше); нового окна сверх описанного это не открывает (вердикт ещё не был заморожен).
 
 ### C-2b.6. Новые методы Store (16→18, аддитивно)
 
@@ -689,6 +702,7 @@ fire, **получают новую строку** и обязаны быть о
 | **C4 монотонные часы** | несовместимы с durable RFC3339 (§C-4.4). |
 | **C5 `--json` / audit-журнал** | пара к C3-(б)/outbox-аудиту; человеко-explain (D-C-6) самодостаточен для DoD. Audit-журнал = pending-строки outbox (поля `delivered=0`/`created_at` уже заложены в §C-2a.3). |
 | **delivered-but-unmarked окно (C2b)** | exactly-once до конца требует идемпотентности **приёмника** (не владеем `crm`); §C-2b.5/D-C-9. |
+| **замороженный вердикт сбоя (C2b, трек #2 v3)** | `Delivered=false` → `outboxPrecheck` пере-бросает ошибку без повторной доставки → детерминированный exactly-once и для сбойного пути; **реализовано** (не отложено); дискриминатор = один признак `Delivered=false`, `error_text` лишь пояснение; §C-2b.5. |
 | **payload-loss окно (D-AU-3)** | эфемерность payload; крах до захвата в durable-переменную (§C-1.4). |
 | **checkDeadlines ветка-3 fire-then-persist** | то же окно, что C2b; эскалация — НЕ эффект тела шага → вне outbox; durable-флаг `Escalated` закрывает после commit. |
 | **harden конкуренции serve×complete/emit (D-C-3 «а»)** | стресс-тест общего SQLite под `SetMaxOpenConns(1)` + `busy_timeout` — отдельный тест-набор; прод-механика уже верна, не блокирует §2. |
