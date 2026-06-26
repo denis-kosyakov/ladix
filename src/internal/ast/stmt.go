@@ -90,6 +90,21 @@ func NewWhileStmt(pos Position, cond Expression, body *Block) *WhileStmt {
 	return &WhileStmt{stmtBase: stmtBase{base{pos}}, Cond: cond, Body: body}
 }
 
+// TryStmt — обработка ошибок выполнения (029): пытаться: Try словить: Catch.
+// Если любой оператор тела Try вернул runtime-ошибку — исполнение бросает остаток
+// Try и выполняет Catch (REDIRECT). Оба арма — обычный Block (≥1 оператор).
+// Pos() = токен пытаться.
+type TryStmt struct {
+	stmtBase
+	Try   *Block // тело "пытаться" (≥1 оператор)
+	Catch *Block // тело "словить"  (≥1 оператор)
+}
+
+// NewTryStmt строит конструкцию try/catch; pos — позиция токена пытаться.
+func NewTryStmt(pos Position, try, catch *Block) *TryStmt {
+	return &TryStmt{stmtBase: stmtBase{base{pos}}, Try: try, Catch: catch}
+}
+
 // ForStmt — для Var в Iterable: Body. Pos() = токен для.
 type ForStmt struct {
 	stmtBase

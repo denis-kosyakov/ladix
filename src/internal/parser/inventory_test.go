@@ -6,9 +6,9 @@ import (
 )
 
 // TestSECatalogInventory — инвентарь-замок полноты синтаксического каталога (DX2,
-// FR-014, SC-006): реестр SE-* покрывает РОВНО 14 distinct диагностик — 7 ядровых
-// (CHAIN/NESTED-FN/EMPTY-BLOCK/ASSIGN-TARGET/INT-RANGE/EXPECTED/UNEXPECTED) + 7
-// декларативных/триггерных (SOURCE-NAME/UNKNOWN-ATTR/DUP-ATTR/DUP-FIELD/TRIGGER-KIND/
+// FR-014, SC-006): реестр SE-* покрывает РОВНО 15 distinct диагностик — 8 ядровых
+// (CHAIN/NESTED-FN/EMPTY-BLOCK/ASSIGN-TARGET/INT-RANGE/EXPECTED/UNEXPECTED/CATCH-NO-TRY)
+// + 7 декларативных/триггерных (SOURCE-NAME/UNKNOWN-ATTR/DUP-ATTR/DUP-FIELD/TRIGGER-KIND/
 // EXPECT-COMPOP/SCHEDULE-SPEC). Категория «Процесса» исключена (зарезервирована,
 // в v1 не порождается — docs/diagnostics-model.md §MDX-3). Образец — eval
 // len(seen)!=28. Каждый кейс парсит представительный исходник и проверяет, что
@@ -27,6 +27,7 @@ func TestSECatalogInventory(t *testing.T) {
 		{"SE-INT-RANGE", "пусть x = 999999999999999999999999999\n", "вне диапазона типа Целое"},
 		{"SE-EXPECTED", "пусть x 5\n", "ожидалось '='"},
 		{"SE-UNEXPECTED", "значение\n", "неожиданный элемент 'значение'"},
+		{"SE-CATCH-NO-TRY", "словить:\n    печать(1)\n", "допустимо только после блока 'пытаться'"},
 		{"SE-SOURCE-NAME", "метрика м:\n    источник: 5\n", "ожидается имя источника"},
 		{"SE-UNKNOWN-ATTR", "источник з:\n    мусор: 1\n", "неизвестный атрибут 'мусор'"},
 		{"SE-DUP-ATTR", "источник з:\n    тип: csv\n    тип: json\n", "атрибут 'тип' уже задан"},
@@ -35,7 +36,7 @@ func TestSECatalogInventory(t *testing.T) {
 		{"SE-EXPECT-COMPOP", "когда метрика m:\n    печать(1)\n", "оператор сравнения"},
 		{"SE-SCHEDULE-SPEC", "когда расписание мусор:\n    печать(1)\n", "каждые или в"},
 	}
-	const wantCodes = 14
+	const wantCodes = 15
 	seen := make(map[string]bool, wantCodes)
 	for _, c := range cases {
 		_, el := parseProgramSrc(t, c.src)

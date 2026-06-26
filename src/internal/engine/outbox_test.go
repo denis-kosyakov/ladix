@@ -168,28 +168,84 @@ func TestTwoEffectsIndependentKeys(t *testing.T) {
 	}
 }
 
-// TestOutboxDeliverFailsNotMarked — ошибка доставки → derr наверх, ключ НЕ delivered
-// (deliver-then-record: SaveOutbox только при успехе). Повтор после восстановления
-// caller → доставка происходит (не «съедена» ложной записью).
-func TestOutboxDeliverFailsNotMarked(t *testing.T) {
+// TestOutboxDeliverFreezesVerdict (029 Уровень 2) — ЗАМЕНА Уровня-1 (retry-on-restart):
+// сбой доставки ЗАМОРАЖИВАЕТ вердикт (Delivered=false + ErrorText), ошибка всплывает
+// наверх (try/catch её поймает). На реплее тела outboxPrecheck находит !Delivered →
+// пере-бросает вердикт БЕЗ повторной доставки, ДАЖЕ если caller «выздоровел» — путь
+// try/catch детерминирован (упавший эффект падает идентично). Мутпроба: убрать
+// outboxRecordFailure из effect-метода → запись отсутствует, реплей пере-доставит →
+// тест краснеет (нет вердикта И notifies==2).
+func TestOutboxDeliverFreezesVerdict(t *testing.T) {
 	c := &countingCaller{notErr: errors.New("доставка упала")}
 	e, fr := outboxEngine(t, c, true)
 
 	fr.effectIndex = 0
-	if err := e.Notify("crm", nil); err == nil {
+	err := e.Notify("crm", nil)
+	if err == nil {
 		t.Fatalf("Notify при сбое доставки вернул nil, хотим ошибку")
 	}
-	// Запись не помечена delivered → её нет (deliver-then-record).
-	if _, err := e.st.LoadOutbox("p-000001|уведомить_crm|0"); !errors.Is(err, store.ErrOutboxNotFound) {
-		t.Errorf("после сбоя доставки запись помечена delivered (err=%v)", err)
+	if err.Error() != "доставка упала" {
+		t.Errorf("текст ошибки = %q, хотим «доставка упала»", err.Error())
 	}
-	// Восстанавливаем caller; повтор «тела» доставляет.
+	// Вердикт durable-заморожен: запись ЕСТЬ, Delivered=false, ErrorText сохранён.
+	rec, lerr := e.st.LoadOutbox("p-000001|уведомить_crm|0")
+	if lerr != nil {
+		t.Fatalf("вердикт сбоя не записан (LoadOutbox: %v)", lerr)
+	}
+	if rec.Delivered {
+		t.Errorf("вердикт сбоя помечен Delivered=true, хотим false")
+	}
+	if rec.ErrorText != "доставка упала" {
+		t.Errorf("ErrorText = %q, хотим «доставка упала»", rec.ErrorText)
+	}
+
+	// Реплей тела: caller «выздоровел», но вердикт заморожен → пере-брос без доставки.
 	c.notErr = nil
 	fr.effectIndex = 0
-	if err := e.Notify("crm", nil); err != nil {
-		t.Fatalf("Notify после восстановления: %v", err)
+	err2 := e.Notify("crm", nil)
+	if err2 == nil {
+		t.Fatalf("реплей: замороженный вердикт не пере-брошен (nil), хотим ошибку")
+	}
+	if err2.Error() != "доставка упала" {
+		t.Errorf("реплей: текст = %q, хотим замороженный «доставка упала»", err2.Error())
+	}
+	if c.notifies != 1 {
+		t.Errorf("caller.Notify вызван %d раз, хотим 1 (реплей — пере-брос вердикта без доставки)", c.notifies)
+	}
+}
+
+// TestOutboxFrozenVerdictReplaySequence (029 Уровень 2) — тело шага с двумя эффектами:
+// idx0 доставлен успешно, idx1 упал → вердикт заморожен. Реплей тела (effectIndex
+// сброшен): idx0 дедупится (Delivered, без повторного Notify), idx1 пере-бросается из
+// вердикта (без повторного Notify) → exactly-once путь try/catch (пред-сбойный эффект
+// и сбойный воспроизводятся идентично, ни одного лишнего вызова caller).
+func TestOutboxFrozenVerdictReplaySequence(t *testing.T) {
+	c := &countingCaller{}
+	e, fr := outboxEngine(t, c, true)
+
+	// Первое исполнение тела: idx0 ОК, idx1 — сбой.
+	fr.effectIndex = 0
+	if err := e.Notify("ok", nil); err != nil { // idx0 доставлен
+		t.Fatalf("idx0 Notify: %v", err)
+	}
+	c.notErr = errors.New("boom") // idx1 упадёт
+	if err := e.Notify("bad", nil); err == nil {
+		t.Fatalf("idx1 Notify при сбое вернул nil, хотим ошибку")
 	}
 	if c.notifies != 2 {
-		t.Errorf("caller.Notify вызван %d раз, хотим 2 (сбой не пометил delivered)", c.notifies)
+		t.Fatalf("первый проход: notifies=%d, хотим 2", c.notifies)
+	}
+
+	// Реплей тела: caller «выздоровел», но idx0 delivered, idx1 frozen.
+	c.notErr = nil
+	fr.effectIndex = 0
+	if err := e.Notify("ok", nil); err != nil { // idx0: дедуп по Delivered → nil без вызова
+		t.Fatalf("реплей idx0: %v", err)
+	}
+	if err := e.Notify("bad", nil); err == nil { // idx1: пере-брос вердикта
+		t.Fatalf("реплей idx1: замороженный вердикт не пере-брошен")
+	}
+	if c.notifies != 2 {
+		t.Errorf("после реплея notifies=%d, хотим 2 (idx0 дедуп, idx1 пере-брос — без новых доставок)", c.notifies)
 	}
 }

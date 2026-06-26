@@ -77,6 +77,39 @@ func TestSaveLoadOutboxRoundTrip(t *testing.T) {
 			if got.DeliveredAt == nil || !got.DeliveredAt.Equal(*rec.DeliveredAt) {
 				t.Errorf("DeliveredAt: got %v, want %v", got.DeliveredAt, rec.DeliveredAt)
 			}
+			// 029 Уровень 2: успешная запись — ErrorText="" (NULL в SQLite, прежнее поведение).
+			if got.ErrorText != "" {
+				t.Errorf("ErrorText успешной записи: got %q, want \"\"", got.ErrorText)
+			}
+		})
+	}
+}
+
+// TestSaveLoadOutboxFailureVerdict (029 Уровень 2) — round-trip замороженного вердикта
+// сбоя на ОБЕИХ реализациях: Delivered=false + ErrorText сохраняются и читаются обратно.
+// Паритет Memory/SQLite: Memory копирует ErrorText (cp := *rec), SQLite — колонка
+// error_text (nullable). Мутпроба: выкинуть error_text из SQL Save/Load → SQLite-ветка
+// краснеет (ErrorText теряется), Memory зелёная — расхождение реализаций ловится.
+func TestSaveLoadOutboxFailureVerdict(t *testing.T) {
+	for name, st := range outboxStores(t) {
+		t.Run(name, func(t *testing.T) {
+			rec := sampleOutboxRecord()
+			rec.Delivered = false
+			rec.DeliveredAt = nil
+			rec.ErrorText = "CRM недоступна: 503"
+			if err := st.SaveOutbox(rec); err != nil {
+				t.Fatalf("SaveOutbox: %v", err)
+			}
+			got, err := st.LoadOutbox(rec.DedupKey)
+			if err != nil {
+				t.Fatalf("LoadOutbox: %v", err)
+			}
+			if got.Delivered {
+				t.Errorf("Delivered: got true, want false (вердикт сбоя)")
+			}
+			if got.ErrorText != "CRM недоступна: 503" {
+				t.Errorf("ErrorText round-trip: got %q, want «CRM недоступна: 503»", got.ErrorText)
+			}
 		})
 	}
 }

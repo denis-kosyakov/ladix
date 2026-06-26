@@ -524,6 +524,15 @@ func collectVars(stmts []ast.Statement, letLine map[string]int, vars map[string]
 			if err := collectVars(st.Body.Stmts, letLine, vars); err != nil {
 				return err
 			}
+		case *ast.TryStmt:
+			// 029: оба арма пытаться/словить — обычные блоки; `пусть` в них видны
+			// дальше (как у если/пока, скоуп блока не вводит новых границ).
+			if err := collectVars(st.Try.Stmts, letLine, vars); err != nil {
+				return err
+			}
+			if err := collectVars(st.Catch.Stmts, letLine, vars); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -605,6 +614,13 @@ func (i *Interpreter) checkStmt(s ast.Statement, vars map[string]bool, inFunctio
 			return err
 		}
 		return i.checkStmts(st.Body.Stmts, vars, inFunction, inStep, loopDepth+1, inMetricTrigger, inEventTrigger, inTriggerBody)
+	case *ast.TryStmt:
+		// 029: try/catch не меняет контекст сигналов — `вернуть`/`прервать`/
+		// `продолжить` проходят насквозь (loopDepth/inFunction/inStep неизменны).
+		if err := i.checkStmts(st.Try.Stmts, vars, inFunction, inStep, loopDepth, inMetricTrigger, inEventTrigger, inTriggerBody); err != nil {
+			return err
+		}
+		return i.checkStmts(st.Catch.Stmts, vars, inFunction, inStep, loopDepth, inMetricTrigger, inEventTrigger, inTriggerBody)
 	case *ast.CallAction, *ast.NotifyAction:
 		// Контекст-гард действий (§PM-4, D-11): вне шага — СемантическаяОшибка
 		// §PM-6.B; в шаге валидно, payload (Args/Value) НЕ обходится (резолв/

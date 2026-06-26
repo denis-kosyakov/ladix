@@ -1,6 +1,9 @@
 package lexer
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // T014 [US1]: IDENT / ключевые / короткие слова; BOOL/NONE.
 
@@ -32,9 +35,11 @@ func TestKeywordTable(t *testing.T) {
 		"когда": KW_WHEN, "событие": KW_EVENT, "значение": KW_VALUE, "расписание": KW_SCHEDULE,
 		"каждые": KW_EVERY, "в": KW_IN, "запустить": KW_RUN,
 		"тип": KW_TYPE, // 010-A1 §SC-D-RESERVE: разрезервировано из reservedWords
+		// 029: разрезервированы из reservedWords → ключевые слова try/catch.
+		"пытаться": KW_TRY, "словить": KW_CATCH,
 	}
-	if len(table) != 35 {
-		t.Fatalf("в таблице теста %d ключевых слов, хотим 35", len(table))
+	if len(table) != 37 {
+		t.Fatalf("в таблице теста %d ключевых слов, хотим 37", len(table))
 	}
 	for w, want := range table {
 		t.Run(w, func(t *testing.T) {
@@ -119,6 +124,36 @@ func TestTypeKeywordReserveLift(t *testing.T) {
 			if toks[0].Lexeme != w {
 				t.Errorf("%q: Lexeme = %q, хотим IDENT %q", w, toks[0].Lexeme, w)
 			}
+		}
+	})
+}
+
+// 029 try/catch: ТЕСТ-ЗАМОК разрезервирования `пытаться`/`словить`. Оба
+// становятся ключевыми словами KW_TRY/KW_CATCH (НЕ IDENT, НЕ lex-ошибка). `бросить`
+// ОСТАЁТСЯ зарезервированным (throw отложен) → продолжает давать L-11. Мутпроба:
+// вернуть слова в reservedWords → первые два сабтеста краснеют.
+func TestTryCatchKeywordReserveLift(t *testing.T) {
+	t.Run("пытаться → KW_TRY (а не IDENT, не lex-ошибка)", func(t *testing.T) {
+		toks, errs := lexAll("пытаться")
+		requireNoErrors(t, errs)
+		requireTypes(t, toks, KW_TRY, NEWLINE, EOF)
+		if toks[0].Lexeme != "пытаться" {
+			t.Errorf("KW_TRY.Lexeme = %q, хотим %q", toks[0].Lexeme, "пытаться")
+		}
+	})
+	t.Run("словить → KW_CATCH (а не IDENT, не lex-ошибка)", func(t *testing.T) {
+		toks, errs := lexAll("словить")
+		requireNoErrors(t, errs)
+		requireTypes(t, toks, KW_CATCH, NEWLINE, EOF)
+		if toks[0].Lexeme != "словить" {
+			t.Errorf("KW_CATCH.Lexeme = %q, хотим %q", toks[0].Lexeme, "словить")
+		}
+	})
+	t.Run("бросить ОСТАЁТСЯ зарезервированным → L-11", func(t *testing.T) {
+		_, errs := lexAll("бросить")
+		le := onlyError(t, errs)
+		if !strings.Contains(le.Error(), "зарезервированное слово") {
+			t.Errorf("сообщение = %q, хотим L-11 «зарезервированное слово» для `бросить`", le.Error())
 		}
 	})
 }

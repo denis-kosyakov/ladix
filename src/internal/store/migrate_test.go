@@ -60,8 +60,8 @@ func TestMigrateFreshDB(t *testing.T) {
 	}
 	defer st.Close()
 
-	if got := readUserVersion(t, path); got != 3 {
-		t.Errorf("user_version = %d, want 3", got)
+	if got := readUserVersion(t, path); got != 4 {
+		t.Errorf("user_version = %d, want 4", got)
 	}
 	if got := countTables(t, path, "outbox"); got != 1 {
 		t.Errorf("outbox table count = %d, want 1", got)
@@ -134,9 +134,9 @@ func TestMigrateLegacyV0(t *testing.T) {
 	}
 	defer st2.Close()
 
-	// (c) версия поднялась до 3.
-	if got := readUserVersion(t, path); got != 3 {
-		t.Errorf("user_version after reopen = %d, want 3", got)
+	// (c) версия поднялась до 4.
+	if got := readUserVersion(t, path); got != 4 {
+		t.Errorf("user_version after reopen = %d, want 4", got)
 	}
 	// (b) outbox создана из отсутствия и реально запрашиваема (SELECT, не только
 	// присутствие в sqlite_master).
@@ -187,8 +187,8 @@ func TestMigrateIdempotent(t *testing.T) {
 	}
 	defer st2.Close()
 
-	if got := readUserVersion(t, path); got != 3 {
-		t.Errorf("user_version after second open = %d, want 3", got)
+	if got := readUserVersion(t, path); got != 4 {
+		t.Errorf("user_version after second open = %d, want 4", got)
 	}
 	if got := countTables(t, path, "outbox"); got != 1 {
 		t.Errorf("outbox table count = %d, want 1 (no duplicate)", got)
@@ -203,5 +203,74 @@ func TestSchemaVersionInvariant(t *testing.T) {
 	if want := baselineVersion + len(schemaMigrations); currentSchemaVersion != want {
 		t.Errorf("INV-R1 нарушен: currentSchemaVersion=%d, baselineVersion+len(schemaMigrations)=%d",
 			currentSchemaVersion, want)
+	}
+}
+
+// TestMigrateOutboxErrorTextV3toV4 (029 Уровень 2 · миграция 3→4): аддитивная nullable-
+// колонка outbox.error_text. Старая БД (v3, колонки нет) с ДОСТАВЛЕННОЙ строкой: при
+// реоткрытии колонка добавляется, СТАРАЯ строка читается с ErrorText="" и Delivered=true
+// (прежнее поведение — успех; старые строки трактуются как delivered). ИНВЕРСИОННЫЙ
+// ЗАМОК: убрать ступень 3→4 → колонки нет → LoadOutbox SELECT error_text падает на
+// реоткрытии И user_version остаётся 3 → тест краснеет.
+func TestMigrateOutboxErrorTextV3toV4(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "errtext.db")
+
+	st, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	now := time.Date(2026, 6, 25, 9, 0, 0, 0, time.UTC)
+	rec := &OutboxRecord{
+		DedupKey:    "p-000001|шаг|0",
+		InstanceID:  "p-000001",
+		StepName:    "шаг",
+		EffectIndex: 0,
+		Kind:        "уведомить",
+		Target:      "crm",
+		Result:      value.None,
+		Delivered:   true,
+		CreatedAt:   now,
+		DeliveredAt: &now,
+	}
+	if err := st.SaveOutbox(rec); err != nil {
+		t.Fatalf("SaveOutbox: %v", err)
+	}
+
+	// Имитируем настоящую v3-БД: снимаем error_text и откатываем версию на 3 (первое
+	// открытие уже довело схему до v4 с колонкой; v3 её не имела).
+	if _, err := st.db.Exec(`ALTER TABLE outbox DROP COLUMN error_text`); err != nil {
+		t.Fatalf("drop error_text (имитация v3): %v", err)
+	}
+	if _, err := st.db.Exec(`PRAGMA user_version = 3`); err != nil {
+		t.Fatalf("reset user_version=3: %v", err)
+	}
+	// Санити: колонки нет — выборка падает.
+	if _, err := st.db.Exec(`SELECT error_text FROM outbox LIMIT 1`); err == nil {
+		t.Fatalf("precondition: error_text всё ещё присутствует (DROP не сработал)")
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// Реоткрытие — миграция 3→4 добавляет колонку поверх существующих данных.
+	st2, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("reopen (migrate 3→4): %v", err)
+	}
+	defer st2.Close()
+
+	if got := readUserVersion(t, path); got != 4 {
+		t.Errorf("user_version after reopen = %d, want 4", got)
+	}
+	// Старая строка читается: ErrorText="" (NULL), Delivered=true — поведение прежнее.
+	got, err := st2.LoadOutbox("p-000001|шаг|0")
+	if err != nil {
+		t.Fatalf("LoadOutbox после миграции 3→4: %v", err)
+	}
+	if !got.Delivered {
+		t.Errorf("старая строка Delivered=%v, хотим true (трактуется как успех)", got.Delivered)
+	}
+	if got.ErrorText != "" {
+		t.Errorf("старая строка ErrorText=%q, хотим \"\" (NULL)", got.ErrorText)
 	}
 }

@@ -80,7 +80,7 @@ PRAGMA foreign_keys = ON;
 // Инвариант (INV-R1): currentSchemaVersion == baselineVersion + len(schemaMigrations).
 const (
 	baselineVersion      = 1 // схема const ddl (instances/tasks/counters/trigger_state/events + индексы)
-	currentSchemaVersion = 3 // после миграции 2→3 (ре-кей триггеров на контентные ключи)
+	currentSchemaVersion = 4 // после миграции 3→4 (029: колонка outbox.error_text — durable-вердикт сбоя)
 )
 
 // init форсирует INV-R1: currentSchemaVersion должна РОВНО соответствовать длине
@@ -124,6 +124,11 @@ var schemaMigrations = []string{
 	// триггеров (метрика / каждые / в) на первом промахе после очистки (§FR-010) — иначе
 	// сброс вызвал бы ложный фронт/плановый догон. Замок — daemon.TestFirstTickPrimesWithoutFire.
 	`DELETE FROM trigger_state;`,
+	// 3 → 4: 029 try/catch Уровень 2 — durable-вердикт сбоя. Аддитивная nullable-колонка
+	// error_text к outbox: при Delivered=false хранит текст замороженного вердикта (на реплее
+	// эффект пере-бросается БЕЗ повторной доставки). Старые строки → NULL (Delivered=true,
+	// поведение прежнее). ALTER идемпотентен версионным гардом `for v < target` в migrate.
+	`ALTER TABLE outbox ADD COLUMN error_text TEXT;`,
 }
 
 // NewSQLiteStore открывает БД и ЯВНО исполняет PRAGMA + DDL (включая сид counters;
@@ -560,7 +565,7 @@ func (s *SQLiteStore) SaveTriggerState(ts *TriggerState) error {
 func (s *SQLiteStore) LoadOutbox(dedupKey string) (*OutboxRecord, error) {
 	row := s.db.QueryRow(
 		`SELECT instance_id, step_name, effect_index, kind, target,
-		        args_json, result_json, delivered, created_at, delivered_at
+		        args_json, result_json, delivered, created_at, delivered_at, error_text
 		 FROM outbox WHERE dedup_key = ?`, dedupKey)
 	var (
 		instanceID, stepName, kind, target string
@@ -568,9 +573,10 @@ func (s *SQLiteStore) LoadOutbox(dedupKey string) (*OutboxRecord, error) {
 		argsJSON, resultJSON, createdAt    string
 		delivered                          int
 		deliveredAt                        sql.NullString
+		errorText                          sql.NullString // 029 Уровень 2: NULL у старых строк
 	)
 	if err := row.Scan(&instanceID, &stepName, &effectIndex, &kind, &target,
-		&argsJSON, &resultJSON, &delivered, &createdAt, &deliveredAt); err != nil {
+		&argsJSON, &resultJSON, &delivered, &createdAt, &deliveredAt, &errorText); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrOutboxNotFound
 		}
@@ -599,6 +605,7 @@ func (s *SQLiteStore) LoadOutbox(dedupKey string) (*OutboxRecord, error) {
 		Result:      result,
 		Delivered:   delivered != 0,
 		CreatedAt:   created,
+		ErrorText:   errorText.String, // NULL → "" (старые строки/успех)
 	}
 	if deliveredAt.Valid {
 		d, err := parseTime(deliveredAt.String)
@@ -623,10 +630,15 @@ func (s *SQLiteStore) SaveOutbox(rec *OutboxRecord) error {
 	if rec.Delivered {
 		delivered = 1
 	}
+	// 029 Уровень 2: error_text — NULL при отсутствии вердикта сбоя (успех/старое поведение).
+	var errText any
+	if rec.ErrorText != "" {
+		errText = rec.ErrorText
+	}
 	_, err = s.db.Exec(
 		`INSERT INTO outbox (dedup_key, instance_id, step_name, effect_index, kind, target,
-		                     args_json, result_json, delivered, created_at, delivered_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                     args_json, result_json, delivered, created_at, delivered_at, error_text)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(dedup_key) DO UPDATE SET
 		   instance_id  = excluded.instance_id,
 		   step_name    = excluded.step_name,
@@ -637,10 +649,11 @@ func (s *SQLiteStore) SaveOutbox(rec *OutboxRecord) error {
 		   result_json  = excluded.result_json,
 		   delivered    = excluded.delivered,
 		   created_at   = excluded.created_at,
-		   delivered_at = excluded.delivered_at`,
+		   delivered_at = excluded.delivered_at,
+		   error_text   = excluded.error_text`,
 		rec.DedupKey, rec.InstanceID, rec.StepName, rec.EffectIndex, rec.Kind, rec.Target,
 		string(argsJSON), string(resultJSON), delivered,
-		rec.CreatedAt.Format(time.RFC3339), nullableTime(rec.DeliveredAt),
+		rec.CreatedAt.Format(time.RFC3339), nullableTime(rec.DeliveredAt), errText,
 	)
 	return err
 }

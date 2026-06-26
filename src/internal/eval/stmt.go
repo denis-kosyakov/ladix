@@ -45,6 +45,9 @@ func (i *Interpreter) evalStmt(env *Environment, s ast.Statement) (Signal, error
 	case *ast.IfStmt:
 		return i.evalIf(env, st)
 
+	case *ast.TryStmt:
+		return i.evalTry(env, st)
+
 	case *ast.WhileStmt:
 		return i.evalWhile(env, st)
 
@@ -165,6 +168,21 @@ func (i *Interpreter) evalBlock(env *Environment, b *ast.Block) (Signal, error) 
 		}
 	}
 	return Signal{Kind: SigNormal}, nil
+}
+
+// evalTry — обработка ошибок выполнения (029): пытаться/словить, семантика
+// REDIRECT. Если любой оператор тела Try вернул runtime-ошибку (весь канал error:
+// сбой вызвать, деление на ноль, ошибка типа, индекс…) — остаток Try бросается и
+// исполняется Catch. Ошибки нет: сигнал тела Try (вернуть/прервать/продолжить/
+// норм) проходит насквозь — Catch НЕ исполняется. Скоуп арма зеркалит evalIf
+// (то же env, без дочернего окружения). Без panic/recover (конституция III):
+// проверки err != nil достаточно, Signal — отдельный канал, в err не попадает.
+func (i *Interpreter) evalTry(env *Environment, t *ast.TryStmt) (Signal, error) {
+	sig, err := i.evalBlock(env, t.Try)
+	if err != nil {
+		return i.evalBlock(env, t.Catch)
+	}
+	return sig, nil
 }
 
 // evalIf — если/иначе если/иначе (§4.2): strict-Булево, первая истинная ветвь,
