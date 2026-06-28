@@ -49,15 +49,17 @@ escape-последовательность '%s'» и L-9 «… неизвест
 | Категория | Scope | Число | Живой замок |
 |-----------|-------|-------|-------------|
 | Лексика `L-1..L-11` | переформ. | **11** | `lexer/lexerrors_test.go` `TestLexCatalogInventory` (`len(seen)!=11`) |
-| Синтаксис `SE-*` | переформ. | **14** | `parser/inventory_test.go` `TestSECatalogInventory` (`len(seen)!=14`) |
+| Синтаксис `SE-*` | переформ. | **15** | `parser/inventory_test.go` `TestSECatalogInventory` (`len(seen)!=15`) |
 | Семантика/тип/рантайм §8.3 | reference | 28 | `eval/errors_golden_test.go:205` (`len(seen)!=28`) — не трогать |
 | Источники/метрики §SM-9 | reference | 10 CLI-пин | `cmd/ladix/source_negatives_test.go` |
 | Движок author-facing | reference | 10 | `engine/*_test.go`, `main_test.go` |
 | **Процесса** | зарезерв. | 0 (v1) | ИСКЛЮЧЕНА из критерия полноты (нет живого кейса до M2-B2) |
 
-SE-* distinct=14: 7 ядровых (CHAIN, NESTED-FN, EMPTY-BLOCK, ASSIGN-TARGET, INT-RANGE, EXPECTED,
-UNEXPECTED) + 7 декларативных/триггерных (SOURCE-NAME, UNKNOWN-ATTR, DUP-ATTR, DUP-FIELD,
-TRIGGER-KIND, EXPECT-COMPOP, SCHEDULE-SPEC).
+SE-* distinct=15: 8 ядровых (CHAIN, NESTED-FN, EMPTY-BLOCK, ASSIGN-TARGET, INT-RANGE, EXPECTED,
+UNEXPECTED, CATCH-NO-TRY) + 7 декларативных/триггерных (SOURCE-NAME, UNKNOWN-ATTR, DUP-ATTR,
+DUP-FIELD, TRIGGER-KIND, EXPECT-COMPOP, SCHEDULE-SPEC). CATCH-NO-TRY (трек #2 v3): висячий
+`словить` без `пытаться` → `'словить' допустимо только после блока 'пытаться'`
+(`parser/errors.go` `msgCatchNoTry`).
 
 ## §MDX-4. Подсказки «возможно, вы имели в виду…»
 
