@@ -16,12 +16,12 @@
 
 **Цель**: `go.mod` в корне, module-path стабилен, дерево компилируется, весь корпус зелёный.
 
-- [ ] T001 Схлопнуть `src/` в корень репозитория: `git mv src/go.mod src/go.sum src/cmd src/internal .` (и удалить `src/.gitkeep`), сохранив module-path `github.com/denis-kosyakov/ladix` **без** сегмента `/src`; import-пути `internal/*` и `cmd/*` НЕ править — они считаются от module-path (FR-001/FR-002/FR-003)
-- [ ] T002 Слить `src/README.md` и `src/AGENTS.md` в корневые аналоги (раздел «раскладка модуля») и удалить `src/README.md`, `src/AGENTS.md`; удалить артефакт сборки `src/ladix` (бинарник) — он не часть исходников
-- [ ] T003 Понизить go-директиву в `go.mod` с `1.25.0` до `1.23` (FR-011); прогнать `go mod tidy` и убедиться, что `require modernc.org/sqlite v1.52.0` и косвенный блок не изменились по составу (FR-019: 0 новых зависимостей)
-- [ ] T004 Починить тест-хелперы путей после схлопывания (FR-014): `cmd/ladix/metric_test.go` — `repoRoot()` `../../..` → `../..` и `metricFixture()` `../../../src/internal/eval/testdata/...` → `../../internal/eval/testdata/...`; `cmd/ladix/main_test.go` — `examplePath()` `../../../examples` → `../../examples`; `internal/eval/metric_engine_test.go` — `salesPath()` `../../../examples/data/sales.json` → `../../examples/data/sales.json`
-- [ ] T005 Обновить комментарий-ориентир `cmd/ladix/golden_test.go:98` (`../../../examples/метрики.ladix` → `../../examples/метрики.ladix`) — текст комментария, поведение не меняется
-- [ ] T006 Верификационный гейт Setup: из **корня** прогнать `go build ./... && go vet ./... && go test ./...` — все три зелёные, ни один тест не удалён (FR-013, A8/A9)
+- [x] T001 Схлопнуть `src/` в корень репозитория: `git mv src/go.mod src/go.sum src/cmd src/internal .` (и удалить `src/.gitkeep`), сохранив module-path `github.com/denis-kosyakov/ladix` **без** сегмента `/src`; import-пути `internal/*` и `cmd/*` НЕ править — они считаются от module-path (FR-001/FR-002/FR-003)
+- [x] T002 Слить `src/README.md` и `src/AGENTS.md` в корневые аналоги (раздел «раскладка модуля») и удалить `src/README.md`, `src/AGENTS.md`; удалить артефакт сборки `src/ladix` (бинарник) — он не часть исходников
+- [x] T003 ~~Понизить go-директиву до `1.23` (FR-011)~~ → **ОТМЕНЕНО** решением владельца 2026-08-23: `modernc.org/sqlite v1.52.0` объявляет `go 1.25.0`, директива в модуле одна на всех → `go 1.23` невозможен без отката sqlite на v1.38.0. Директива в `go.mod` остаётся `1.25.0`; запись внесена в Complexity Tracking плана
+- [x] T004 Починить тест-хелперы путей после схлопывания (FR-014): `cmd/ladix/metric_test.go` — `repoRoot()` `../../..` → `../..` и `metricFixture()` `../../../src/internal/eval/testdata/...` → `../../internal/eval/testdata/...`; `cmd/ladix/main_test.go` — `examplePath()` `../../../examples` → `../../examples`; `internal/eval/metric_engine_test.go` — `salesPath()` `../../../examples/data/sales.json` → `../../examples/data/sales.json`
+- [x] T005 Обновить комментарий-ориентир `cmd/ladix/golden_test.go:98` (`../../../examples/метрики.ladix` → `../../examples/метрики.ladix`) — текст комментария, поведение не меняется
+- [x] T006 Верификационный гейт Setup: из **корня** прогнать `go build ./... && go vet ./... && go test ./...` — все три зелёные, ни один тест не удалён (FR-013, A8/A9)
 
 **Checkpoint**: репозиторий — Go-модуль в корне; `go get github.com/denis-kosyakov/ladix` физически возможен; регрессии нет.
 
@@ -81,7 +81,7 @@
 **Independent Test**: `go.mod` в корне; `module` == `github.com/denis-kosyakov/ladix` без `/src`;
 директива `go` == `1.23`; `go build ./...` из корня зелёный.
 
-- [ ] T024 [US2] Тест-замок раскладки модуля в `module_layout_test.go` (корневой пакет): прочитать `go.mod` (файл рядом с тестом), проверить `module github.com/denis-kosyakov/ladix` **без** сегмента `/src` и директиву `go 1.23` exact-match (A5/A6/A7); замок краснеет при откате переезда или при рассинхроне go-директивы
+- [ ] T024 [US2] Тест-замок раскладки модуля в `module_layout_test.go` (корневой пакет): прочитать `go.mod` (файл рядом с тестом), проверить `module github.com/denis-kosyakov/ladix` **без** сегмента `/src` (A5/A6); директиву `go` сверить с порогом, который называет README (A7 в редакции Complexity Tracking: директива `1.25.0`, не `1.23`) — замок краснеет при откате переезда или при рассинхроне go-директивы с документацией
 - [ ] T025 [US2] Проверить отсутствие остаточных ссылок на путь `src/` в конфигурации сборки и хелперах: греп `grep -rn "src/internal\|src/cmd\|src/go.mod" --include="*.go" --include="*.md" .` — в коде 0 попаданий (в `specs/001…028` исторические ссылки ДОПУСТИМЫ и НЕ правятся)
 
 **Checkpoint US2**: модуль подключаем снаружи; версия Go согласована.

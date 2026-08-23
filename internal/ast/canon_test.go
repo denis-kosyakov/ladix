@@ -75,3 +75,39 @@ func TestCanonExprExhaustive(t *testing.T) {
 		}()
 	})
 }
+
+// TestCanonicalExpressionMirrorsCanonExpr — замок 029/T008: публичная точка входа
+// CanonicalExpression даёт для НЕ-nil выражения ту же строку, что видит
+// CanonicalTriggerCondition (общий canonExpr — канон ОДИН, не два расходящихся).
+// Сверка ведётся через метрик-триггер: его канон оканчивается каноном порога.
+func TestCanonicalExpressionMirrorsCanonExpr(t *testing.T) {
+	exprs := []Expression{
+		NewIntLit(csPos(), 42),
+		NewFloatLit(csPos(), 1.5),
+		NewStringLit(csPos(), "оплачено"),
+		NewBoolLit(csPos(), true),
+		NewNoneLit(csPos()),
+		NewIdent(csPos(), "выручка"),
+		NewBinaryExpr(csPos(), OpAdd, NewIntLit(csPos(), 1), NewIntLit(csPos(), 2)),
+		NewUnaryExpr(csPos(), OpNeg, NewIntLit(csPos(), 7)),
+		NewCallExpr(NewIdent(csPos(), "сумма"), []Expression{NewIdent(csPos(), "поле")}),
+		NewListLit(csPos(), []Expression{NewIntLit(csPos(), 1), NewIntLit(csPos(), 2)}),
+	}
+	for _, e := range exprs {
+		spec := NewMetricTrigger(csPos(), csIdent("м"), CompLt, e)
+		want := CanonicalTriggerCondition(spec)
+		got := "metric|м|" + CompLt.String() + "|" + CanonicalExpression(e)
+		if got != want {
+			t.Errorf("CanonicalExpression разошлась с canonExpr: %q vs %q", got, want)
+		}
+	}
+}
+
+// TestCanonicalExpressionNilGuard — nil-гард: отсутствующий необязательный атрибут
+// метрики/шага (где/период/по_дате/исполнитель/срок) приходит как nil Expression и
+// ШТАТНО даёт пустую строку, а не панику. Мутпроба: снятие гарда роняет тест паникой.
+func TestCanonicalExpressionNilGuard(t *testing.T) {
+	if got := CanonicalExpression(nil); got != "" {
+		t.Errorf("CanonicalExpression(nil) = %q, ожидалась пустая строка", got)
+	}
+}

@@ -101,3 +101,16 @@ func mapCanon(es []Expression) []string {
 	}
 	return out
 }
+
+// CanonicalExpression — публичная (в пределах модуля) точка входа в канонизатор
+// выражений: та же тотальная рекурсия canonExpr, плюс nil-гард. Нужна слою понижения
+// ast → ir (фича 029): необязательные атрибуты метрики/шага (где/период/по дате/
+// исполнитель/срок) при отсутствии приходят как nil Expression, и это ШТАТНЫЙ случай
+// — пустая строка, а не паника. Для НЕ-nil выражения результат байт-в-байт совпадает
+// с тем, что видит CanonicalTriggerCondition (общий canonExpr, канон один).
+func CanonicalExpression(e Expression) string {
+	if e == nil {
+		return ""
+	}
+	return canonExpr(e)
+}
