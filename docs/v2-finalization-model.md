@@ -59,7 +59,7 @@ payload → реальный эффект → exactly-once на рестарте
 в `examples/контроль_плана.ladix` (3-шаговый `эскалация_плана` + эскалация-триггер, без
 аналитики, старт хардкод-литералом `2500000` на `:25`). Связка `когда метрика < план →
 запустить процесс эскалация_плана(значение)` живёт только в Go-тесте
-`src/internal/daemon/m2_endtoend_test.go` (`m2GoldenSrc`, `TestM2GoldenEndToEnd`).
+`internal/daemon/m2_endtoend_test.go` (`m2GoldenSrc`, `TestM2GoldenEndToEnd`).
 
 **Что делаем.** Расширить `examples/контроль_плана.ladix` (вариант D-1=a) до полной
 §2-цепочки: впаять аналитическую половину дословно из `выручка_30д.ladix` (тот же источник
@@ -147,8 +147,8 @@ golden) — это сиюминутное совпадение: окно `(d−3
   они уже пинят полную цепочку (на in-test источниках). Импл вправе доп. репойнтить их на
   shipped-пример, но это не требуется.
 
-**Замена `TestCLIGoldenDeadlineEscalation` (`src/cmd/ladix/main_test.go:139`).** После добавления
-источника он ломается дважды: (1) `data/orders.csv` не резолвится из cwd теста `src/cmd/ladix`;
+**Замена `TestCLIGoldenDeadlineEscalation` (`cmd/ladix/main_test.go:139`).** После добавления
+источника он ломается дважды: (1) `data/orders.csv` не резолвится из cwd теста `cmd/ladix`;
 (2) снимок метрики дата-зависим. → удалить/переписать в FixedClock-форму T-GOLD-METRIC (прогон
 из repo-root либо абсолютный csv-путь во `t.TempDir()`, паттерн `m2GoldenSrc`). Тесты
 `start_golden_test.go`/`inspect_golden_test.go`/`clock_unify_test.go` инстанцируют процесс по

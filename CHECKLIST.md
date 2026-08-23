@@ -17,37 +17,37 @@
 
 ## Реализация
 
-- [x] Есть лексер. — `src/internal/lexer/lexer.go`
-- [x] Есть парсер. — `src/internal/parser/parser.go`
-- [x] Есть AST или аналогичная внутренняя структура. — `src/internal/ast/node.go`
-- [x] Есть интерпретатор или компилятор. — `src/internal/eval/interpreter.go`
-- [x] Программу можно запустить из файла. — `src/cmd/ladix/main.go:168`
+- [x] Есть лексер. — `internal/lexer/lexer.go`
+- [x] Есть парсер. — `internal/parser/parser.go`
+- [x] Есть AST или аналогичная внутренняя структура. — `internal/ast/node.go`
+- [x] Есть интерпретатор или компилятор. — `internal/eval/interpreter.go`
+- [x] Программу можно запустить из файла. — `cmd/ladix/main.go:168`
 - [x] Код проекта структурирован и читаем. — `docs/STRUCTURE.md:1`
 
 ## Возможности языка
 
-- [x] Есть переменные. — `src/internal/eval/stmt.go:14`
-- [x] Есть присваивание. — `src/internal/eval/stmt.go:22`
-- [x] Есть арифметические выражения. — `src/internal/eval/arith.go:42`
-- [x] Есть логические выражения. — `src/internal/eval/arith.go:77`
-- [x] Есть операции сравнения. — `src/internal/eval/arith.go:69`
-- [x] Есть приоритет операторов. — `src/internal/parser/parse_expr.go:11`
-- [x] Есть условный оператор. — `src/internal/eval/stmt.go:174`
-- [x] Есть цикл. — `src/internal/eval/stmt.go:48`
-- [x] Есть блоки кода. — `src/internal/eval/stmt.go:159`
-- [x] Есть функции. — `src/internal/eval/call.go:49`
-- [x] Есть параметры функций. — `src/internal/eval/call.go:67`
-- [x] Есть возвращаемое значение. — `src/internal/eval/call.go:49` · `examples/функция.ladix:4`
-- [x] Есть локальные переменные. — `src/internal/eval/call.go:66`
-- [x] Есть вывод данных. — `src/internal/eval/builtins.go:68`
+- [x] Есть переменные. — `internal/eval/stmt.go:14`
+- [x] Есть присваивание. — `internal/eval/stmt.go:22`
+- [x] Есть арифметические выражения. — `internal/eval/arith.go:42`
+- [x] Есть логические выражения. — `internal/eval/arith.go:77`
+- [x] Есть операции сравнения. — `internal/eval/arith.go:69`
+- [x] Есть приоритет операторов. — `internal/parser/parse_expr.go:11`
+- [x] Есть условный оператор. — `internal/eval/stmt.go:174`
+- [x] Есть цикл. — `internal/eval/stmt.go:48`
+- [x] Есть блоки кода. — `internal/eval/stmt.go:159`
+- [x] Есть функции. — `internal/eval/call.go:49`
+- [x] Есть параметры функций. — `internal/eval/call.go:67`
+- [x] Есть возвращаемое значение. — `internal/eval/call.go:49` · `examples/функция.ladix:4`
+- [x] Есть локальные переменные. — `internal/eval/call.go:66`
+- [x] Есть вывод данных. — `internal/eval/builtins.go:68`
 
 ## Ошибки
 
-- [x] Синтаксические ошибки показываются понятно. — `src/internal/errors/parserror.go:27`
-- [x] Ошибки содержат номер строки. — `src/internal/errors/position.go:11` · `SPEC.md:557`
-- [x] Ошибки типов показываются понятно. — `src/internal/errors/typeerror.go:19`
-- [x] Ошибка неизвестной переменной показывается понятно. — `src/internal/eval/expr.go:113`
-- [x] Обычная ошибка пользователя не приводит к внутреннему stack trace реализации. — `src/cmd/ladix/main.go:477` · `SPEC.md:581`
+- [x] Синтаксические ошибки показываются понятно. — `internal/errors/parserror.go:27`
+- [x] Ошибки содержат номер строки. — `internal/errors/position.go:11` · `SPEC.md:557`
+- [x] Ошибки типов показываются понятно. — `internal/errors/typeerror.go:19`
+- [x] Ошибка неизвестной переменной показывается понятно. — `internal/eval/expr.go:113`
+- [x] Обычная ошибка пользователя не приводит к внутреннему stack trace реализации. — `cmd/ladix/main.go:477` · `SPEC.md:581`
 
 ## Примеры
 
@@ -61,14 +61,14 @@
 
 ## Тесты
 
-- [x] Есть тесты лексера. — `src/internal/lexer/lexer_test.go:8`
-- [x] Есть тесты парсера. — `src/internal/parser/parse_stmt_test.go:39`
-- [x] Есть тесты выражений. — `src/internal/eval/expr_test.go:12`
-- [x] Есть тесты переменных. — `src/internal/eval/stmt_test.go:42`
-- [x] Есть тесты условий. — `src/internal/eval/stmt_test.go:68`
-- [x] Есть тесты циклов. — `src/internal/eval/stmt_test.go:103`
-- [x] Есть тесты функций. — `src/internal/eval/call_test.go:6`
-- [x] Есть тесты ошибок. — `src/internal/errors/evalerrors_test.go:11`
+- [x] Есть тесты лексера. — `internal/lexer/lexer_test.go:8`
+- [x] Есть тесты парсера. — `internal/parser/parse_stmt_test.go:39`
+- [x] Есть тесты выражений. — `internal/eval/expr_test.go:12`
+- [x] Есть тесты переменных. — `internal/eval/stmt_test.go:42`
+- [x] Есть тесты условий. — `internal/eval/stmt_test.go:68`
+- [x] Есть тесты циклов. — `internal/eval/stmt_test.go:103`
+- [x] Есть тесты функций. — `internal/eval/call_test.go:6`
+- [x] Есть тесты ошибок. — `internal/errors/evalerrors_test.go:11`
 
 ## Приёмка v2 (золотой сквозной сценарий §2 хартии)
 
@@ -78,17 +78,17 @@ DoD §2 хартии подтверждён файлом-доказательс�
 (CSV-источник → окно-метрика → триггер `когда метрика < план` → процесс с человеком и
 сроком → эскалация → payload → реальный эффект → exactly-once на рестарте).
 
-- [x] CSV-источник со схемой полей `поля:`. — `examples/контроль_плана.ladix:10` · `TestCLIControlPlanScalarFixedClock` (`src/cmd/ladix/control_plan_golden_test.go:33`) · `docs/source-connectors-model.md`
-- [x] Метрика как скользящее окно `последние 30дн`. — `examples/контроль_плана.ladix:18` · `TestCLIControlPlanScalarFixedClock` (FixedClock, `src/cmd/ladix/control_plan_golden_test.go:33`) · `TestCLIMetricWindowDoDGolden` (`src/cmd/ladix/metric_window_golden_test.go:30`) · `docs/metric-windows-model.md`
-- [x] Триггер `когда метрика < план` запускает процесс. — `examples/контроль_плана.ladix:26` · `TestCLIControlPlanRunFixedClock` (старт `p-000001`, `src/cmd/ladix/control_plan_golden_test.go:62`)
-- [x] Человеческий шаг с дедлайном. — `examples/контроль_плана.ladix:31` · `TestQuickstartSmoke_EscalationLifecycle` (задача `t-000001`, `src/cmd/ladix/quickstart_smoke_test.go:155`)
-- [x] Эскалация дедлайна. — `examples/контроль_плана.ladix:43` · `TestM2GoldenEndToEnd` (эскалация POST, `src/internal/daemon/m2_endtoend_test.go:167`)
-- [x] Payload в `ladix complete --data`. — `TestQuickstartSmoke_EscalationLifecycle` (`данные.итог`, `src/cmd/ladix/quickstart_smoke_test.go:155`) · `SPEC.md:564`
-- [x] Реальный эффект тела шага. — `examples/контроль_плана.ladix:40` · `TestM2GoldenEndToEnd` (webhook POST, `src/internal/daemon/m2_endtoend_test.go:167`) · `TestQuickstartSmoke_EscalationLifecycle` (`[уведомление] crm`)
-- [x] Exactly-once доставка эффекта на рестарте. — `TestStepEffectExactlyOnceRestart` (POST == 1, `src/cmd/ladix/outbox_exactly_once_test.go:71`)
-- [x] Forward-only миграции схемы Store. — `PRAGMA user_version` · `TestMigrateFreshDB` / `TestMigrateLegacyV0` / `TestMigrateIdempotent` (`src/internal/store/migrate_test.go:55`) · `docs/reliability-model.md` §C-2a
-- [x] Единые часы CLI во всех путях. — `TestCompleteClockInjected` (`src/cmd/ladix/clock_unify_test.go:167`) · `engine.WithClock` (`src/cmd/ladix/start.go:142`)
-- [x] Наблюдаемость `explain` (почему сработал триггер). — `src/internal/eval/explain.go:23` · `TestCLIControlPlanRunFixedClock` (строка explain, `src/cmd/ladix/control_plan_golden_test.go:62`) · `TestRevenueExampleFixedClockGolden` (`src/cmd/ladix/trigger_golden_test.go:507`)
-- [x] Инспекция инстанса `ladix inspect`. — `TestInspectGoldenCanon` (`src/cmd/ladix/inspect_golden_test.go:57`)
-- [x] Ручной старт `ladix start`. — `TestStartGoldenCanon` (`src/cmd/ladix/start_golden_test.go:107`)
-- [x] Диагностика ошибочной программы. — `examples/ошибочная.ladix` · `TestCLINegativeSourceSchema` (`src/cmd/ladix/golden_test.go:175`) · `docs/diagnostics-model.md`
+- [x] CSV-источник со схемой полей `поля:`. — `examples/контроль_плана.ladix:10` · `TestCLIControlPlanScalarFixedClock` (`cmd/ladix/control_plan_golden_test.go:33`) · `docs/source-connectors-model.md`
+- [x] Метрика как скользящее окно `последние 30дн`. — `examples/контроль_плана.ladix:18` · `TestCLIControlPlanScalarFixedClock` (FixedClock, `cmd/ladix/control_plan_golden_test.go:33`) · `TestCLIMetricWindowDoDGolden` (`cmd/ladix/metric_window_golden_test.go:30`) · `docs/metric-windows-model.md`
+- [x] Триггер `когда метрика < план` запускает процесс. — `examples/контроль_плана.ladix:26` · `TestCLIControlPlanRunFixedClock` (старт `p-000001`, `cmd/ladix/control_plan_golden_test.go:62`)
+- [x] Человеческий шаг с дедлайном. — `examples/контроль_плана.ladix:31` · `TestQuickstartSmoke_EscalationLifecycle` (задача `t-000001`, `cmd/ladix/quickstart_smoke_test.go:155`)
+- [x] Эскалация дедлайна. — `examples/контроль_плана.ladix:43` · `TestM2GoldenEndToEnd` (эскалация POST, `internal/daemon/m2_endtoend_test.go:167`)
+- [x] Payload в `ladix complete --data`. — `TestQuickstartSmoke_EscalationLifecycle` (`данные.итог`, `cmd/ladix/quickstart_smoke_test.go:155`) · `SPEC.md:564`
+- [x] Реальный эффект тела шага. — `examples/контроль_плана.ladix:40` · `TestM2GoldenEndToEnd` (webhook POST, `internal/daemon/m2_endtoend_test.go:167`) · `TestQuickstartSmoke_EscalationLifecycle` (`[уведомление] crm`)
+- [x] Exactly-once доставка эффекта на рестарте. — `TestStepEffectExactlyOnceRestart` (POST == 1, `cmd/ladix/outbox_exactly_once_test.go:71`)
+- [x] Forward-only миграции схемы Store. — `PRAGMA user_version` · `TestMigrateFreshDB` / `TestMigrateLegacyV0` / `TestMigrateIdempotent` (`internal/store/migrate_test.go:55`) · `docs/reliability-model.md` §C-2a
+- [x] Единые часы CLI во всех путях. — `TestCompleteClockInjected` (`cmd/ladix/clock_unify_test.go:167`) · `engine.WithClock` (`cmd/ladix/start.go:142`)
+- [x] Наблюдаемость `explain` (почему сработал триггер). — `internal/eval/explain.go:23` · `TestCLIControlPlanRunFixedClock` (строка explain, `cmd/ladix/control_plan_golden_test.go:62`) · `TestRevenueExampleFixedClockGolden` (`cmd/ladix/trigger_golden_test.go:507`)
+- [x] Инспекция инстанса `ladix inspect`. — `TestInspectGoldenCanon` (`cmd/ladix/inspect_golden_test.go:57`)
+- [x] Ручной старт `ladix start`. — `TestStartGoldenCanon` (`cmd/ladix/start_golden_test.go:107`)
+- [x] Диагностика ошибочной программы. — `examples/ошибочная.ladix` · `TestCLINegativeSourceSchema` (`cmd/ladix/golden_test.go:175`) · `docs/diagnostics-model.md`

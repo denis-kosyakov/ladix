@@ -17,7 +17,7 @@
 ├── CHECKLIST.md       # функциональный чек-лист (закрыт «внутри» Ladix)
 ├── TASK.md            # исходное ТЗ
 ├── ARCHITECTURE.md    # модули реализации, их ответственность и зависимости
-├── docs/              # модель-доки (eval/engine/trigger/source/window/automation/reliability…) + grammar/stdlib/quickstart
+├── docs/              # модель-доки (eval/engine/trigger/source/window/automation/reliability/module-contract…) + grammar/stdlib/quickstart
 ├── examples/          # программы на .ladix (ядро языка + бизнес-витрины + ошибочные) + MANIFEST.md
 ├── specs/             # SpecKit-артефакты по фичам (001–029): spec/plan/tasks
 ├── tests/             # честная заглушка-отсылка (тесты живут рядом с кодом)

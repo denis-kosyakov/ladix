@@ -6,7 +6,7 @@
 
 ---
 
-## Раздел 1. Потребитель библиотеки (платформа «Уклад», go 1.23)
+## Раздел 1. Потребитель библиотеки (платформа «Уклад»)
 
 Уклад исполняет бизнес-определения нативно (вариант B) и подключает LADIX только как
 парсер/валидатор/нормализатор с пином версии через semver. SQLite, движок процессов и демон
@@ -19,7 +19,9 @@ go get github.com/denis-kosyakov/ladix@v0.1.0
 ```
 
 `go.mod` лежит в корне репозитория, module-path — `github.com/denis-kosyakov/ladix`
-(без сегмента `/src`), go-директива — `1.23`.
+(без сегмента `/src`), go-директива — `1.25.0` (FR-011 «понизить до 1.23» отменён:
+`modernc.org/sqlite v1.52.0` требует `go 1.25.0`, см. `docs/module-contract.md` §MC-6).
+Публичное замыкание `ladix`+`ir` при этом stdlib-only — ограничение только на тулчейн.
 
 ### Минимальный пример: компиляция исходника
 
@@ -36,7 +38,13 @@ import (
 )
 
 func main() {
-	source := `метрика выручка = сумма(заказ.сумма)`
+	source := `источник заказы:
+    файл: "data/sales.json"
+
+метрика выручка:
+    источник: заказы
+    агрегат:  сумма(сумма_заказа)
+`
 
 	program, diags, err := ladix.Compile(source)
 	if err != nil {
@@ -140,13 +148,16 @@ gofmt -l .   # должно быть пусто
 ### Новые проверки фичи
 
 ```sh
-# Тест-страж границы фронтенд↔backend (SQLite/internal не протекли):
-go test -run TestImportBoundary ./...
+# Тест-страж границы публичное↔backend (SQLite/internal не протекли):
+go test -run TestBoundary .
 
 # Golden-тесты фасада Compile (дословность диагностик §13, SchemaVersion == 1):
-go test -run TestCompile ./...
+go test -run TestCompile .
 
-# Unit публичного пакета ir:
+# Замки раскладки модуля (go.mod в корне, internal остаётся internal):
+go test -run "TestModule|TestInternalPackages|TestGoDirective" .
+
+# Unit публичного пакета ir (форма, golden JSON round-trip, forward-compat):
 go test ./ir/...
 ```
 
@@ -176,7 +187,7 @@ git push <remote> v0.1.0
 | SC-003 | Публичное замыкание чистое | `go list -deps` для `ladix`/`ir` НЕ содержит `modernc.org/sqlite` и `internal/{store,engine,daemon}`; `boundary_test.go` краснеет при протечке |
 | SC-004 | Валидный исходник → IR | `Compile` валидной программы → `*ir.Program`, `SchemaVersion == 1`, `err == nil`, без diags уровня error |
 | SC-005 | Невалидный исходник → диагностики | `Compile` невалидной программы → `program == nil`, `[]ir.Diagnostic` с `Message` **дословно** из SPEC §13 |
-| SC-006 | go-директива == 1.23 | `go.mod` `go 1.23`; README и конституция согласованы (расхождение `1.25.0` устранено) |
+| SC-006 | go-директива согласована | **ОТКЛОНЕНИЕ (FR-011 не выполнен)**: директива остаётся `go 1.25.0` — `modernc.org/sqlite v1.52.0` требует её, а директива в модуле одна на всех. Проверка: `go.mod` `go 1.25` и README называет тот же порог (замок `TestGoDirectiveMatchesDocumentedFloor`); обоснование — `docs/module-contract.md` §MC-6 и Complexity Tracking плана |
 | SC-007 | Первый релиз | тег `v0.1.0` по semver; определён `ir.SchemaVersion == 1` |
 | SC-008 | Standalone не сломан | CLI/движок/демон/стор работают; все ~25k LOC тестов зелёные; ни один тест не удалён |
 | SC-009 | 0 новых сущностей языка | нет новых KW/builtins/операторов/кодов eval/wire-ключей; тексты диагностик и числовая модель неизменны; фронтенд не добавил внешних зависимостей |
