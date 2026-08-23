@@ -11,7 +11,7 @@
 
 ## §DB-0. Скоуп и решения владельца
 
-Активируются 7 функций из `deferredNames` (`src/internal/eval/builtins.go:49`):
+Активируются 7 функций из `deferredNames` (`internal/eval/builtins.go:49`):
 `вчера`, `завтра`, `длительность`, `в_секундах`, `в_минутах`, `в_часах`, `в_днях`.
 После активации `deferredNames` пуст — реестр становится **35 активных + 0 deferred = 35**.
 
@@ -53,7 +53,7 @@
 существующая форма). Регистрация — в блоке `builtins.go:88-90` (рядом с активными `сегодня`/`дата`):
 `add(fixed("вчера", 0, builtinVchera))`, `add(fixed("длительность", 2, builtinDlitelnost))`,
 `add(fixed("в_секундах", 1, builtinVSekundah))` и т.д. Реализация Fn — новый файл
-`src/internal/eval/builtins_duration.go` в стиле `builtins_date.go` (`вчера`/`завтра` допустимо
+`internal/eval/builtins_duration.go` в стиле `builtins_date.go` (`вчера`/`завтра` допустимо
 положить в `builtins_date.go`; имя `builtins_duration.go` намеренно парно уже существующему
 тесту `duration_builtins_test.go` — порядок слов инвертирован, это ок). Сигнатура Fn — общая:
 `func(i *Interpreter, args []value.Value, pos ast.Position) (value.Value, error)`.

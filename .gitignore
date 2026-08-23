@@ -34,8 +34,7 @@ bin/
 *.exe
 *.out
 vendor/
-# собранный CLI-бинарник (go build -o ladix ./cmd/ladix из src/ либо -o ../ladix в корень)
-/src/ladix
+# собранный CLI-бинарник (go build -o ladix ./cmd/ladix из корня)
 /ladix
 
 # ladix runtime
