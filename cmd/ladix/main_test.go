@@ -304,7 +304,7 @@ func TestScenarioBSQLiteChain(t *testing.T) {
 	}
 }
 
-// testdataPath — путь к фикстуре impl-чата (src/cmd/ladix/testdata).
+// testdataPath — путь к фикстуре impl-чата (cmd/ladix/testdata).
 func testdataPath(name string) string {
 	return filepath.Join("testdata", name)
 }
