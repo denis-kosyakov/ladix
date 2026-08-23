@@ -23,7 +23,7 @@ func parseProgramSrc(t *testing.T, src string) (*ast.Program, *errors.ErrorList)
 // дерево, синтаксические ошибки парсера и лексические ошибки.
 func parseExampleFile(t *testing.T, name string) (*ast.Program, *errors.ErrorList, *errors.ErrorList) {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "examples", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "examples", name))
 	if err != nil {
 		t.Fatalf("читать %s: %v", name, err)
 	}

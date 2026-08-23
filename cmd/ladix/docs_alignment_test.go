@@ -32,23 +32,23 @@ func TestDocsAlignmentA1GoVersion(t *testing.T) {
 
 	// Команды сборки README не должны обещать Go 1.22 (порог занижен относительно go.mod).
 	if strings.Contains(readme, "1.22") {
-		t.Errorf("A1: README всё ещё упоминает «1.22» — версия Go рассинхронизирована с src/go.mod (go 1.25)")
+		t.Errorf("A1: README всё ещё упоминает «1.22» — версия Go рассинхронизирована с go.mod (go 1.25)")
 	}
 	// Фактический минимум присутствует.
 	if !strings.Contains(readme, "1.25") {
-		t.Errorf("A1: README не называет фактический минимум Go «1.25» из src/go.mod")
+		t.Errorf("A1: README не называет фактический минимум Go «1.25» из go.mod")
 	}
 
 	// Пользовательский quickstart тоже не должен занижать порог до 1.22.
 	quickstart := readRepoDoc(t, "docs/quickstart.md")
 	if strings.Contains(quickstart, "1.22") {
-		t.Errorf("A1: docs/quickstart.md всё ещё упоминает «1.22» — версия Go рассинхронизирована с src/go.mod (go 1.25)")
+		t.Errorf("A1: docs/quickstart.md всё ещё упоминает «1.22» — версия Go рассинхронизирована с go.mod (go 1.25)")
 	}
 
 	// Источник истины — go.mod: порог не понижается ниже зафиксированного там.
-	gomod := readRepoDoc(t, "src/go.mod")
+	gomod := readRepoDoc(t, "go.mod")
 	if !strings.Contains(gomod, "go 1.25") {
-		t.Errorf("A1: src/go.mod не содержит «go 1.25» — обнови привязку версии в README/тесте")
+		t.Errorf("A1: go.mod не содержит «go 1.25» — обнови привязку версии в README/тесте")
 	}
 }
 

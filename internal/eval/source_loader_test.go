@@ -42,7 +42,7 @@ func writeJSON(t *testing.T, dir, name, content string) string {
 // examples/, что проверяет НОВУЮ семантику SetSourceBase + resolveSourcePath без
 // зависимости от cwd (база примешивается к относительному пути).
 func TestLoadSourceSalesJSON(t *testing.T) {
-	base := filepath.Join("..", "..", "..", "examples")
+	base := filepath.Join("..", "..", "examples")
 	if _, err := os.Stat(filepath.Join(base, "data", "sales.json")); err != nil {
 		t.Skipf("examples/data/sales.json недоступен из cwd теста (%v)", err)
 	}

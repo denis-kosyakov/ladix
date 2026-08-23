@@ -36,9 +36,8 @@ func TestReproducibilitySmoke_R1Build_R2RunHello(t *testing.T) {
 		t.Skip("smoke: пропуск в -short (компилирует бинарник)")
 	}
 	root := repoRoot()
-	srcDir := filepath.Join(root, "src")
-	if _, err := os.Stat(filepath.Join(srcDir, "go.mod")); err != nil {
-		t.Fatalf("корень репозитория не найден (нет src/go.mod) от %q: %v", root, err)
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		t.Fatalf("корень репозитория не найден (нет go.mod) от %q: %v", root, err)
 	}
 
 	binName := "ladix"
@@ -47,9 +46,9 @@ func TestReproducibilitySmoke_R1Build_R2RunHello(t *testing.T) {
 	}
 	binPath := filepath.Join(t.TempDir(), binName)
 
-	// R1: cd src && go build -o <tmp>/ladix ./cmd/ladix
+	// R1: go build -o <tmp>/ladix ./cmd/ladix (из корня репозитория)
 	build := exec.Command("go", "build", "-o", binPath, "./cmd/ladix")
-	build.Dir = srcDir
+	build.Dir = root
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("R1 сборка провалилась (мост README сломан?): %v\n%s", err, out)
 	}

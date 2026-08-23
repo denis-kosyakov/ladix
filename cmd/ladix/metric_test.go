@@ -15,12 +15,12 @@ import (
 // Используется smoke-тестами (docs_alignment/reproducibility/quickstart) для чтения
 // файлов из корня репо; metric-тесты на него больше НЕ опираются (фича 026: пути
 // источников резолвятся от каталога .ladix-файла, см. absExample/examplesDir).
-func repoRoot() string { return filepath.Join("..", "..", "..") }
+func repoRoot() string { return filepath.Join("..", "..") }
 
 // metricFixture — путь к метрик-онли фикстуре §SM-10 (internal/eval/testdata),
 // относительно каталога пакета cmd/ladix (на 3 уровня выше — корень репо).
 func metricFixture() string {
-	return filepath.Join("..", "..", "..", "src", "internal", "eval", "testdata", "metric_only.ladix")
+	return filepath.Join("..", "..", "internal", "eval", "testdata", "metric_only.ladix")
 }
 
 // fixedClock2026 — детерминированный Clock golden-приёмки §SM-10 (D=2026-05-31).
@@ -44,7 +44,7 @@ func absExample(t *testing.T, name string) string {
 // фикстур §SM-10, чей файл лежит вне examples/, но ссылается на «data/sales.json».
 func examplesDir(t *testing.T) string {
 	t.Helper()
-	p, err := filepath.Abs(filepath.Join("..", "..", "..", "examples"))
+	p, err := filepath.Abs(filepath.Join("..", "..", "examples"))
 	if err != nil {
 		t.Fatal(err)
 	}

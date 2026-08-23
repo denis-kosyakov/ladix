@@ -785,7 +785,7 @@ func TestAnalyzeDeferredBoundaryUnchanged(t *testing.T) {
 // deferred-builtin статус_процесса в файле нет (D-9) — иначе семантика не была
 // бы чистой; исполнение — рантайм-deferred до 006 (top-level 'запустить процесс').
 func TestAnalyzeOnboardingExampleClean(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "examples", "онбординг.ladix"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "examples", "онбординг.ladix"))
 	if err != nil {
 		t.Fatalf("чтение онбординг.ladix: %v", err)
 	}

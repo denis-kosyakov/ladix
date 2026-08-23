@@ -14,7 +14,7 @@ import (
 // лексер→парсер→Run, без CLI) и возвращает stdout.
 func runExample(t *testing.T, name string) (string, error) {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "examples", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "examples", name))
 	if err != nil {
 		t.Fatalf("чтение %s: %v", name, err)
 	}

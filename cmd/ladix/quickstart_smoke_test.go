@@ -27,9 +27,8 @@ import (
 func buildQuickstartBin(t *testing.T) (binPath, root string) {
 	t.Helper()
 	root = repoRoot()
-	srcDir := filepath.Join(root, "src")
-	if _, err := os.Stat(filepath.Join(srcDir, "go.mod")); err != nil {
-		t.Fatalf("корень репозитория не найден (нет src/go.mod) от %q: %v", root, err)
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		t.Fatalf("корень репозитория не найден (нет go.mod) от %q: %v", root, err)
 	}
 	binName := "ladix"
 	if runtime.GOOS == "windows" {
@@ -37,7 +36,7 @@ func buildQuickstartBin(t *testing.T) (binPath, root string) {
 	}
 	binPath = filepath.Join(t.TempDir(), binName)
 	build := exec.Command("go", "build", "-o", binPath, "./cmd/ladix")
-	build.Dir = srcDir
+	build.Dir = root
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("сборка quickstart-бинарника провалилась (мост README сломан?): %v\n%s", err, out)
 	}

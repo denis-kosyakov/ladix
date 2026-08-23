@@ -17,7 +17,7 @@ import (
 // data/ → examples/data/). Тесты eval бегут из каталога пакета internal/eval;
 // поднимаемся к корню репо (..\..\..) и спускаемся в examples/data. Подставляем этот
 // путь в SourceDecl.File после парса (loadSource принимает его как есть, §SM-8.1).
-func salesPath() string { return filepath.Join("..", "..", "..", "examples", "data", "sales.json") }
+func salesPath() string { return filepath.Join("..", "..", "examples", "data", "sales.json") }
 
 // buildMetricInterp парсит исходник декларатива src, переписывает путь файла
 // ЕДИНСТВЕННОГО источника на абсолютный salesPath() (чтобы загрузка не зависела от

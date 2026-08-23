@@ -14,7 +14,7 @@ import (
 )
 
 func examplePath(name string) string {
-	return filepath.Join("..", "..", "..", "examples", name)
+	return filepath.Join("..", "..", "examples", name)
 }
 
 // deadlineMaskRE — маска времени дедлайна (§EN-9): CLI-тесты не фиксируют абсолютный

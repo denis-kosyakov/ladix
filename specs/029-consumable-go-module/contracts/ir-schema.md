@@ -70,7 +70,7 @@ type Position struct {
 
 type Diagnostic struct {
     Severity string   `json:"severity"`  // ∈ {"error"} в v1
-    Stage    string   `json:"stage"`     // ∈ {"lex","parse","semantic"}
+    Stage    string   `json:"stage"`     // ∈ {"lexical","syntax","semantic"}
     Message  string   `json:"message"`   // дословно SPEC §13
     Pos      Position `json:"pos"`
 }
@@ -133,7 +133,7 @@ type Diagnostic struct {
 ## Диагностика
 
 - `severity` ∈ `{"error"}` (v1 — только ошибки уровня `error`; warning/info отложены).
-- `stage` ∈ `{"lex","parse","semantic"}` — этап, на котором возникла проблема.
+- `stage` ∈ `{"lexical","syntax","semantic"}` — этап, на котором возникла проблема.
 - `message` — **дословно** текст из SPEC §13 (русские формулировки, exact-match);
   переформулирование ЗАПРЕЩЕНО (Принцип VIII, FR-007).
 - `pos` — позиция в исходнике (`line`/`col`, 1-based; Принцип IV).

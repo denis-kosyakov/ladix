@@ -95,7 +95,7 @@ func TestCLIGoldenMetrics(t *testing.T) {
 		"расходы оплаченных: 1000000\n"
 	var out, errBuf bytes.Buffer
 	// Фича 026: источники data/*.json резолвятся от каталога примера (examples/),
-	// поэтому examplePath (../../../examples/метрики.ladix) достаточен — os.Chdir не нужен.
+	// поэтому examplePath (../../examples/метрики.ladix) достаточен — os.Chdir не нужен.
 	code := realMain([]string{"run", examplePath("метрики.ladix")}, &out, &errBuf)
 	if code != 0 {
 		t.Fatalf("код = %d, хотим 0; stderr=%q", code, errBuf.String())

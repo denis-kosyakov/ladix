@@ -19,24 +19,30 @@
 ├── ARCHITECTURE.md    # модули реализации, их ответственность и зависимости
 ├── docs/              # модель-доки (eval/engine/trigger/source/window/automation/reliability…) + grammar/stdlib/quickstart
 ├── examples/          # программы на .ladix (ядро языка + бизнес-витрины + ошибочные) + MANIFEST.md
-├── specs/             # SpecKit-артефакты по фичам (001–023): spec/plan/tasks
-├── tests/             # честная заглушка-отсылка (тесты живут рядом с кодом в src/)
-└── src/               # Go-модуль: cmd/ladix + internal/{lexer,parser,ast,eval,engine,store,daemon,errors,value,jsonval}
+├── specs/             # SpecKit-артефакты по фичам (001–029): spec/plan/tasks
+├── tests/             # честная заглушка-отсылка (тесты живут рядом с кодом)
+├── go.mod  go.sum     # Go-модуль github.com/denis-kosyakov/ladix — В КОРНЕ репозитория
+├── ladix.go  ir/      # ПУБЛИЧНАЯ поверхность библиотеки: фасад Compile/CompileFile + контракт IR
+├── cmd/ladix/         # CLI (reference-implementation)
+└── internal/          # ВНУТРЕННИЕ пакеты: {lexer,parser,ast,value,errors,eval,engine,store,daemon,jsonval}
 ```
 
-Go-модуль лежит в `src/` — все команды сборки/тестов выполняются **из `src/`**.
+Go-модуль лежит **в корне репозитория** — все команды сборки/тестов выполняются **из корня**
+(`go get github.com/denis-kosyakov/ladix` работает; фича 029). Публичная поверхность —
+РОВНО два пакета: корневой `ladix` (фасад) и `ir` (версионируемый контракт вывода); всё
+остальное под `internal/` и частью semver-контракта НЕ является.
 
 ## Команды
 
 ```sh
 # сборка статического бинарника в корень репозитория (без CGO)
-cd src && go build -o ../ladix ./cmd/ladix
+go build -o ladix ./cmd/ladix
 
 # тесты и статический анализ
-cd src && go test ./...
-cd src && go vet ./...
+go test ./...
+go vet ./...
 
-# запуск программы (из корня — там бинарник и каталог data/, на который ссылаются примеры)
+# запуск программы (из корня — там бинарник и examples/, на которые ссылаются примеры)
 ./ladix run examples/hello.ladix
 ```
 
