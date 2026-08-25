@@ -16,8 +16,9 @@ import (
 // семантической валидации, и сам eval sqlite-free (это и доказывает T1).
 
 const (
-	pkgFacade = "github.com/denis-kosyakov/ladix"
-	pkgIR     = "github.com/denis-kosyakov/ladix/ir"
+	pkgFacade  = "github.com/denis-kosyakov/ladix"
+	pkgIR      = "github.com/denis-kosyakov/ladix/ir"
+	pkgMetrics = "github.com/denis-kosyakov/ladix/metrics"
 
 	depSQLite = "modernc.org/sqlite"
 	depStore  = "github.com/denis-kosyakov/ladix/internal/store"
@@ -79,12 +80,20 @@ func TestBoundaryT2IRIsMinimalLeaf(t *testing.T) {
 }
 
 // TestBoundaryT3PublicSurfaceHasNoBackend — T3: ни один пакет ПУБЛИЧНОЙ
-// поверхности (по FR-003 их ровно два) не тянет store/engine/daemon.
-// При аддитивном расширении поверхности новый пакет добавляется в этот список.
+// поверхности (по FR-003 их теперь три: ladix, ir, metrics — 030 добавляет
+// metrics) не тянет sqlite/store/engine/daemon. При аддитивном расширении
+// поверхности новый пакет добавляется в этот список. Проверяется и sqlite:
+// по §MC-4 ни один публичный пакет не тянет modernc.org/sqlite.
+//
+// metrics, как и ladix, ВПРАВЕ зависеть от internal/eval (переиспользует
+// EvalMetricPipeline/ApplySourceSchema) — это не нарушение T3, T3 проверяет
+// sqlite и store/engine/daemon:
+// eval обязан оставаться sqlite-free, и T3 это доказывает для каждого
+// пакета поверхности напрямую.
 func TestBoundaryT3PublicSurfaceHasNoBackend(t *testing.T) {
-	for _, pkg := range []string{pkgFacade, pkgIR} {
+	for _, pkg := range []string{pkgFacade, pkgIR, pkgMetrics} {
 		t.Run(pkg, func(t *testing.T) {
-			assertAbsent(t, pkg, deps(t, pkg), depStore, depEngine, depDaemon)
+			assertAbsent(t, pkg, deps(t, pkg), depSQLite, depStore, depEngine, depDaemon)
 		})
 	}
 }

@@ -3,6 +3,7 @@ package eval
 import (
 	"bytes"
 	"math"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -594,5 +595,54 @@ func TestMetricNoneOperand(t *testing.T) {
 				t.Errorf("msg = %q, хотим %q", msg, tc.wantMsg)
 			}
 		})
+	}
+}
+
+// TestDateFilterПередГде фиксирует ПОРЯДОК шагов фильтра §SM-8 шаг 3 / §10.4:
+// сначала дата-фильтр, и только для попавших в окно записей — «где». Запись вне
+// окна исключается БЕЗ вычисления «где», поэтому невалидное (не-Булево) значение
+// «где» на такой записи НЕ порождает ошибку. Замок на перестановку двух блоков в
+// recordSurvives: при обратном порядке кейс краснеет типовой ошибкой §SM-9.C.
+func TestDateFilterПередГде(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "порядок.json")
+	// Запись 1 — в окне (май 2026, testClock=2026-05-31), «где» даёт Булево.
+	// Запись 2 — ВНЕ окна, «где» даёт Строку (не-Булево): вычислять его нельзя.
+	fixture := `[
+  {"дата_заказа": "2026-05-03", "годен": true,     "сумма_заказа": 10},
+  {"дата_заказа": "2020-01-01", "годен": "строка", "сумма_заказа": 5}
+]`
+	if err := os.WriteFile(path, []byte(fixture), 0o644); err != nil {
+		t.Fatalf("не удалось записать фикстуру: %v", err)
+	}
+
+	src := "источник продажи:\n    файл: \"x.json\"\n\n" +
+		"метрика m:\n    источник: продажи\n" +
+		"    где:      годен\n" +
+		"    агрегат:  сумма(сумма_заказа)\n" +
+		"    период:   ежемесячно\n" +
+		"    по_дате:  дата(дата_заказа)\n"
+
+	tokens, errList := lexer.New(src).Tokenize()
+	prog := parser.New(tokens, errList).Parse()
+	if !errList.Empty() {
+		t.Fatalf("неожиданные лексические/синтаксические ошибки: %v", errList.Error())
+	}
+	for _, item := range prog.Items {
+		if sd, ok := item.(*ast.SourceDecl); ok {
+			sd.File.Value = path
+		}
+	}
+	i := NewInterpreter(&bytes.Buffer{}, 0, testClock)
+	if err := i.Analyze(prog); err != nil {
+		t.Fatalf("Analyze вернул ошибку: %v", err)
+	}
+
+	v, err := i.evalMetricByName("m", ast.Position{Line: 1, Col: 1})
+	if err != nil {
+		t.Fatalf("«где» вычислено на записи вне окна (порядок фильтров нарушен): %v", err)
+	}
+	if got := value.String(v); got != "10" {
+		t.Fatalf("метрика = %s, ожидалось 10", got)
 	}
 }

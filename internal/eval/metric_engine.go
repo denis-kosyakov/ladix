@@ -19,11 +19,38 @@ var aggregateNames = map[string]struct{}{
 	"макс":       {},
 }
 
-// evalMetric — конвейер вычисления одной метрики (§SM-8, §10.2; контракт ME-1/ME-3).
-// Чистая функция по входам: те же данные источника + та же i.now() → тот же
-// результат. Шаги: (2) загрузка источника + схема; (3) окно периода (глобально);
-// (4) фильтр по_дате/где per-record; (5) агрегат-проекция; пустой результат §10.5.
+// evalMetric — тонкая обёртка над EvalMetricPipeline (§SM-8, §10.2; контракт
+// ME-1/ME-3): загружает источник декларации и делегирует конвейер.
 func (i *Interpreter) evalMetric(m *ast.MetricDecl) (value.Value, error) {
+	decl := i.sources[m.Source.Name]
+	records, err := i.loadSource(decl)
+	if err != nil {
+		return nil, err
+	}
+	return i.EvalMetricPipeline(records, m.Where, m.Aggregate, m.Period, m.ByDate)
+}
+
+// EvalMetricPipeline исполняет конвейер метрики (§SM-8, §10.2; контракт
+// ME-1/ME-3) над записями, переданными вызывающим, вместо загрузки источника
+// из файла. Чистая функция по входам: те же records + та же i.now() → тот же
+// результат. Шаги: (2) схема; (3) окно периода (глобально); (4) фильтр
+// по_дате/где per-record; (5) агрегат-проекция; пустой результат §10.5.
+//
+// ПРЕДУСЛОВИЯ вызывающего (метод НЕ проверяет их и НЕ падает осмысленно при
+// нарушении):
+//   - интерпретатор создан NewInterpreter (builtins/global/часы) — иначе агрегаты
+//     и i.now() недоступны;
+//   - по программе прогнан Analyze: он наполняет i.sources/i.metrics/i.funcs, без
+//     чего имена других метрик/функций в где:/агрегат: не разрешатся;
+//   - если где:/агрегат:/период: ссылаются на ГЛОБАЛИ (пусть/постоянная верхнего
+//     уровня), программа должна быть прогнана Run — Analyze их НЕ определяет;
+//   - SetSourceBase нужен только если вычисление затянет ФАЙЛОВЫЙ источник (напр.
+//     ссылка на другую метрику, D-8); для собственно инжектированных records — нет.
+//
+// Выражения передаются в порядке where, aggregate, period, byDate (все ast.Expression,
+// nil = атрибут опущен) — перестановка местами компилируется молча.
+func (i *Interpreter) EvalMetricPipeline(records []value.Запись,
+	where, aggregate, period, byDate ast.Expression) (value.Value, error) {
 	// recordCtx сброшен на входе: период:/глобальные подвыражения метрики
 	// вычисляются в ГЛОБАЛЬНОЙ области (D-9, D9-1). На реентерабельном пути
 	// (метрика-как-значение, D-8: внешняя метрика читает эту по имени во время
@@ -34,26 +61,21 @@ func (i *Interpreter) evalMetric(m *ast.MetricDecl) (value.Value, error) {
 	i.recordCtx = nil
 	defer func() { i.recordCtx = prevCtx }()
 
-	// (2) Загрузка источника + схема. Источник провалидирован Analyze (Шаг 1b).
-	decl := i.sources[m.Source.Name]
-	records, err := i.loadSource(decl)
-	if err != nil {
-		return nil, err
-	}
+	// (2) Схема источника.
 	schema, sortedFields := buildSchema(records)
 
 	// (3) Окно периода — один раз, в ГЛОБАЛЬНОЙ области (recordCtx сброшен на входе,
 	// см. выше), §SM-8 D-9.
 	var winStart, winEnd value.Дата
-	hasPeriod := m.Period != nil
+	hasPeriod := period != nil
 	if hasPeriod {
-		pv, err := i.evalExpr(i.global, m.Period)
+		pv, err := i.evalExpr(i.global, period)
 		if err != nil {
 			return nil, err
 		}
 		per, ok := pv.(value.Период)
 		if !ok {
-			return nil, runtimeErr(m.Period.Pos(),
+			return nil, runtimeErr(period.Pos(),
 				fmt.Sprintf("'период' должно давать Период, получено %s", pv.TypeName()))
 		}
 		winStart, winEnd, _ = periodWindow(per, i.now())
@@ -62,7 +84,7 @@ func (i *Interpreter) evalMetric(m *ast.MetricDecl) (value.Value, error) {
 	// (4) Фильтр по порядку записей: по_дате ∈ окно И где=истина.
 	surviving := make([]value.Запись, 0, len(records))
 	for _, r := range records {
-		keep, err := i.recordSurvives(m, r, schema, sortedFields, hasPeriod, winStart, winEnd)
+		keep, err := i.recordSurvives(r, where, byDate, schema, sortedFields, hasPeriod, winStart, winEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -71,17 +93,17 @@ func (i *Interpreter) evalMetric(m *ast.MetricDecl) (value.Value, error) {
 		}
 	}
 
-	// (5) Пустой набор выживших → решение по КОРНЮ m.Aggregate ДО вычисления
+	// (5) Пустой набор выживших → решение по КОРНЮ aggregate ДО вычисления
 	// (§SM-8 шаг 5, §10.5, ревью №1 D4-1): корневой единичный сумма/количество →
 	// Целое 0; единичный среднее/мин/макс ИЛИ любое составное (деривативное)
 	// выражение → Пусто коротким замыканием, НЕ спускаясь в evalAggExpr/арифметику
 	// (иначе сумма(x)/количество(y) дало бы 0/0, а сумма(x)+1 → Целое 1).
 	if len(surviving) == 0 {
-		return emptyWindowResult(m.Aggregate), nil
+		return emptyWindowResult(aggregate), nil
 	}
 
 	// (5) Агрегат-проекция (R3) поверх выживших.
-	return i.evalAggExpr(m.Aggregate, surviving, schema, sortedFields)
+	return i.evalAggExpr(aggregate, surviving, schema, sortedFields)
 }
 
 // nounToAdverb отображает существительное «последнего завершённого периода»
@@ -127,7 +149,7 @@ func emptyWindowResult(root ast.Expression) value.Value {
 // recordSurvives применяет дату-фильтр и фильтр «где» к одной записи в scope полей
 // (§SM-8 шаг 3). recordCtx сохраняется/восстанавливается реентерабельно (D-9,
 // метрика-как-значение).
-func (i *Interpreter) recordSurvives(m *ast.MetricDecl, r value.Запись,
+func (i *Interpreter) recordSurvives(r value.Запись, where, byDate ast.Expression,
 	schema map[string]struct{}, sortedFields []string,
 	hasPeriod bool, winStart, winEnd value.Дата) (bool, error) {
 	prev := i.recordCtx
@@ -136,7 +158,7 @@ func (i *Interpreter) recordSurvives(m *ast.MetricDecl, r value.Запись,
 
 	// Дата-фильтр (§10.4): по_дате=Пусто → исключить без проверки где/без ошибки.
 	if hasPeriod {
-		dv, err := i.evalExpr(i.global, m.ByDate)
+		dv, err := i.evalExpr(i.global, byDate)
 		if err != nil {
 			return false, err
 		}
@@ -145,7 +167,7 @@ func (i *Interpreter) recordSurvives(m *ast.MetricDecl, r value.Запись,
 		}
 		d, ok := dv.(value.Дата)
 		if !ok {
-			return false, runtimeErr(m.ByDate.Pos(),
+			return false, runtimeErr(byDate.Pos(),
 				fmt.Sprintf("'по_дате' должно давать Дата или Пусто, получено %s", dv.TypeName()))
 		}
 		if c, _ := value.Compare(d, winStart); c < 0 {
@@ -157,14 +179,14 @@ func (i *Interpreter) recordSurvives(m *ast.MetricDecl, r value.Запись,
 	}
 
 	// Фильтр «где» (§SM-8 шаг 3.2): отсутствует → истина; не Булево → §SM-9.C.
-	if m.Where != nil {
-		wv, err := i.evalExpr(i.global, m.Where)
+	if where != nil {
+		wv, err := i.evalExpr(i.global, where)
 		if err != nil {
 			return false, err
 		}
 		b, ok := wv.(value.Булево)
 		if !ok {
-			return false, typeErr(m.Where.Pos(),
+			return false, typeErr(where.Pos(),
 				fmt.Sprintf("'где' должно давать Булево, получено %s", wv.TypeName()))
 		}
 		if !b.V {
