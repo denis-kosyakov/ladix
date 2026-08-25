@@ -57,3 +57,6 @@ target/
 .claude/settings.local.json
 .claude/*.lock
 
+
+# Syncthing conflict files
+*.sync-conflict-*
