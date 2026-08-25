@@ -14,12 +14,13 @@
 ## §MC-1. Что публично
 
 Модуль `github.com/denis-kosyakov/ladix` живёт **в корне репозитория** (`go.mod` в корне,
-module-path **без** сегмента `/src`). Публичная поверхность — **РОВНО два пакета**:
+module-path **без** сегмента `/src`). Публичная поверхность — **РОВНО три пакета**:
 
 | Пакет | Импорт | Роль |
 |---|---|---|
 | `ladix` | `github.com/denis-kosyakov/ladix` | Узкий фасад: `Compile` / `CompileFile` |
 | `ir` | `github.com/denis-kosyakov/ladix/ir` | Версионируемый контракт результата |
+| `metrics` | `github.com/denis-kosyakov/ladix/metrics` | Публичный исполнитель metrics-подмножества IR над данными потребителя (`Evaluate`, фича 030) |
 
 **Всё остальное — под `internal/`** и частью контракта совместимости НЕ является:
 `lexer`, `parser`, `ast`, `value`, `errors` (фронтенд) и `eval`, `engine`, `store`, `daemon`,
@@ -85,6 +86,14 @@ func CompileFile(path string) (*ir.Program, []ir.Diagnostic, error)
   SPEC §13, но не производится — отложен); `stage ∈ {"lexical","syntax","semantic"}`
   (компиляция статическая: ошибки «Типа»/«Выполнения» SPEC §13.1 — runtime, динамическая
   типизация SPEC §4); `kind ∈ {"metric","schedule","event","deadline"}`.
+
+  **Фича 030.** Словарь `stage` пополнен значением `"runtime"` — стадия исполнения метрики
+  публичным исполнителем (пакет `metrics`, диагностики §MC-8). Это АДДИТИВНОЕ расширение по
+  §MC-5: новое значение `stage` не требует bump `ir.SchemaVersion` (правило «новое значение
+  `severity`/`stage` — без bump» применялось и раньше, `"runtime"` — первый его прецедент).
+  Потребитель `ir.Diagnostic` **обязан** быть толерантен к неизвестным значениям `stage`
+  (forward-compat, §MC-5) — код, писавшийся против словаря `{"lexical","syntax","semantic"}`,
+  не должен падать на `"runtime"`.
 - Поля, неприменимые к виду триггера, остаются пустыми (`event`/`schedule` у `kind:"metric"`).
 - В IR v1 представлены **метрики, процессы и триггеры**. Источники, функции и свободные
   операторы программы в IR не понижаются: потребитель (вариант B) подключает данные и
@@ -108,12 +117,16 @@ func CompileFile(path string) (*ir.Program, []ir.Diagnostic, error)
 
 ## §MC-4. Граница «публичное ↔ backend»
 
-**Инвариант.** Публичному замыканию (`ladix`, `ir`) **ЗАПРЕЩЕНО** зависеть — прямо или
+**Инвариант.** Публичному замыканию (`ladix`, `ir`, `metrics`) **ЗАПРЕЩЕНО** зависеть — прямо или
 транзитивно — от `internal/{store, engine, daemon}` и от `modernc.org/sqlite`. Потребитель
 библиотеки не должен затягивать SQLite и исполняющую машинерию в свой граф зависимостей.
 
-**`internal/eval` из запрета ЯВНО ИСКЛЮЧЁН**: фасад зовёт его `Analyze` ради семантической
-валидации, а сам `eval` sqlite-free (не импортирует `store`/`engine`/`daemon`).
+**`internal/eval` из запрета ЯВНО ИСКЛЮЧЁН**: фасад `ladix` зовёт его `Analyze` ради
+семантической валидации, а фасад `metrics` (фича 030) зовёт его конвейер вычисления
+(§SM-8) ради исполнения; сам `eval` sqlite-free (не импортирует `store`/`engine`/`daemon`).
+Как и `ladix`, `metrics` **вправе** зависеть от `internal/eval` (и транзитивно от
+`internal/{lexer,parser,ast,value,errors}` — Д-1/Д-10 дельты спеки `metrics-evaluator`), но
+**не вправе** — от `internal/{store,engine,daemon}` и sqlite.
 
 **Замки** (`boundary_test.go`, через `go list -deps`):
 
@@ -121,7 +134,7 @@ func CompileFile(path string) (*ir.Program, []ir.Diagnostic, error)
 |---|---|---|
 | T1 | `ladix` | замыкание НЕ содержит `modernc.org/sqlite`; при этом `internal/eval` в нём ОБЯЗАН быть (иначе проверка холостая) |
 | T2 | `ir` | строгое минимальное замыкание: ни `sqlite`, ни `store`/`engine`/`daemon`, ни даже `eval` |
-| T3 | `ladix`, `ir` | ни один публичный пакет не содержит `internal/{store,engine,daemon}` |
+| T3 | `ladix`, `ir`, `metrics` | ни один публичный пакет не содержит `internal/{store,engine,daemon}` и `modernc.org/sqlite` |
 
 **Как краснеет.** Импорт `internal/store` в любом публичном пакете роняет T3 (а через
 транзитивный `sqlite` — и T1). Если `internal/eval` когда-нибудь потянет `internal/store`
@@ -184,3 +197,71 @@ func CompileFile(path string) (*ir.Program, []ir.Diagnostic, error)
 (`docs/ladix/integration_v4.md`), зафиксировав в нём: пин версии модуля, ожидаемый
 `ir.SchemaVersion`, обязательство forward-compat (§MC-5) и способ обработки диагностик.
 Это вне диффа фичи 029 — она не может править чужой репозиторий.
+
+---
+
+## §MC-8. Контракт публичного исполнителя метрик (`metrics`, фича 030)
+
+**Якорь фичи 030 «Публичный исполнитель метрик».** Третий публичный пакет: `Evaluate`
+принимает `ir.Metric` (канонические строки `Where`/`Aggregate`/`Period`/`ByDate`, §MC-3) и
+записи потребителя, вычисляет результат по семантике SPEC §10, байт-в-байт совпадающий с
+`ladix metric`. Дельта спеки — `openspec/specs/metrics-evaluator/spec.md`; решения —
+`openspec/changes/030-public-metrics-evaluator/design.md` (Д-1…Д-12).
+
+**Сигнатура (заморожена для v0.2.0):**
+
+```go
+package metrics // github.com/denis-kosyakov/ladix/metrics
+
+type Date struct{ Year, Month, Day int }
+
+type Options struct {
+    Today    Date              // обязательна: дата среза, окно периода строится от неё
+    Fields   map[string]string // объявленная схема полей источника (имя поля → тип Ladix)
+    MaxDepth int               // 0 → значение по умолчанию
+}
+
+type Result struct {
+    Type  string // имя типа Ladix
+    Text  string // каноническая печать, как у `ladix metric`
+    Value any    // Go-значение в JSON-семантике
+}
+
+func Evaluate(m ir.Metric, records []map[string]any, opts Options) (Result, []ir.Diagnostic, error)
+
+var ErrInvalidOptions, ErrEvaluation, ErrInternal error
+```
+
+Изменение этой сигнатуры — MAJOR модуля, симметрично §MC-2.
+
+**Детерминизм.** Дата «сегодня» инжектируется значением (`Options.Today`), а не читается с
+wall-clock — в пакете `metrics` чтения системного времени нет конструктивно (не «дисциплина»
+кода, а свойство сигнатуры: `Options.Today` — обязательное поле, других источников даты нет).
+Отсюда — воспроизводимость: одинаковый вход (метрика + записи + `Options`) всегда даёт
+одинаковый результат.
+
+**Схема полей источника и почему она нужна в опциях, а не в IR.** `ir.Program` несёт только
+`Metrics`/`Processes`/`Triggers` — объявлений источников в IR нет, а `ir.Metric.Source` — это
+только имя источника (строка), не его схема `поля:`. Без объявленной схемы поле, лежащее в
+записи ISO-строкой, остаётся типом `Строка` (§9.4 SPEC), а любая метрика с `период:`/
+`по_дате:` неисполнима (эти атрибуты требуют `Дата`). Поэтому схема передаётся потребителем
+явно через `Options.Fields` (имя поля → имя типа Ladix); неизвестное имя типа в `Fields` →
+`ErrInvalidOptions`.
+
+**Типизация чисел входа.** §9.3 SPEC типизирует числа по форме токена, но в `[]map[string]any`
+формы токена нет (`json.Unmarshal` без `UseNumber` даёт всем числам `float64`). Правило
+исполнителя: `int`/`int8`…`int64`/`uint`…`uint64` → `Целое`; `float32`/`float64` → `Дробное`;
+`json.Number` — строго по форме токена, дословно как §9.3 (побайтовый паритет с CLI доступен,
+если потребитель декодирует свой JSON с `json.Decoder.UseNumber()`). Прочие Go-типы, не
+входящие в JSON-семантику (`time.Time`, произвольные struct), дают структурную диагностику,
+а не панику.
+
+**Потолок сложности выражений.** До исполнения (после разбора канонической строки) исполнитель
+отклоняет выражение с глубиной вложенности > 100 или числом узлов > 10000 — тексты диагностик
+и позиции см. `docs/diagnostics-model.md`. Потолок действует только в `metrics.Evaluate`; в
+`ladix.Compile` его нет (существующие программы компилируются как прежде, §MC-2).
+
+**Семантическая стабильность результатов.** Модуль несёт корпус golden result-фикстур
+`(программа + вход + фиксированные часы) → результат`. MINOR/PATCH-релиз НЕ меняет результат
+исполнения существующей программы на существующем входе — изменение результата является
+BREAKING, симметрично гарантии §MC-2/§MC-5 «старые программы компилируются в тот же IR».

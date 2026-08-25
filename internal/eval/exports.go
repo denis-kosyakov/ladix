@@ -56,3 +56,23 @@ func (i *Interpreter) ExecStepBody(processEnv, stepEnv *Environment, body []ast.
 	}
 	return Signal{Kind: SigNormal}, nil
 }
+
+// ApplySourceSchema — экспортированная обёртка applySchema (source_loader.go) для
+// публичного исполнителя метрик (фича 030, Д-7). Приводит записи recs по объявленной
+// схеме decl.Fields ТЕМ ЖЕ кодом, которым это делает загрузчик источника CLI: тексты
+// ошибок приведения (§SC-9.B) и результат совпадают дословно, второй семантики нет.
+// decl — обычно декларация из разобранной программы (для JSON-семантики decl.Type.Name
+// пусто/"json"; "csv" включает строковый парс, §SC-D-COERCE). Пустой decl.Fields —
+// no-op-копия. Метод НЕ читает файлы и НЕ трогает кеш записей.
+func (i *Interpreter) ApplySourceSchema(decl *ast.SourceDecl, recs []value.Запись) ([]value.Запись, error) {
+	if len(decl.Fields) == 0 {
+		return recs, nil
+	}
+	return i.applySchema(decl, recs)
+}
+
+// MakeDate — экспортированная обёртка makeDate (builtins_date.go): построение
+// value.Дата с ТОЙ ЖЕ григорианской проверкой календаря, что у встроенной «дата» и
+// у коэрсии поля Дата. Нужна публичному исполнителю метрик (030, Д-3) для валидации
+// инжектированной даты среза без второго календаря. ok == false ⟺ дата не существует.
+func MakeDate(y, m, d int64) (value.Дата, bool) { return makeDate(y, m, d) }

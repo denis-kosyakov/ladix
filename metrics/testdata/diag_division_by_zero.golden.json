@@ -1,0 +1,15 @@
+{
+  "result": null,
+  "diagnostics": [
+    {
+      "severity": "error",
+      "stage": "runtime",
+      "message": "деление на ноль",
+      "pos": {
+        "line": 1,
+        "col": 4
+      }
+    }
+  ],
+  "err": "ErrEvaluation"
+}

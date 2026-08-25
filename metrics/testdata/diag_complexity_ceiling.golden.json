@@ -1,0 +1,15 @@
+{
+  "result": null,
+  "diagnostics": [
+    {
+      "severity": "error",
+      "stage": "runtime",
+      "message": "метрика 'потолок': где: выражение слишком сложное — глубина вложенности 101 превышает предел 100",
+      "pos": {
+        "line": 1,
+        "col": 1
+      }
+    }
+  ],
+  "err": "ErrEvaluation"
+}
